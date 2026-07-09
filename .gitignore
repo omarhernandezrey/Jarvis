@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Logs y datos locales
+logs/*.log
+logs/
+
+# Entorno virtual
+venv/
+.venv/
+jarvis_venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Archivos temporales de voz/audio
+*.wav
+*.mp3

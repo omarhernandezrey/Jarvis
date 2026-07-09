@@ -1,0 +1,6 @@
+# JARVIS Local - Fase 2
+# Dependencias para herramientas locales y seguridad
+# Hereda las de Fase 1 (requests, pyyaml)
+
+requests>=2.31.0
+pyyaml>=6.0

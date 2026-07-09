@@ -1,0 +1,35 @@
+jarvis:
+  language: es
+  max_history: 20
+  name: JARVIS
+logging:
+  actions_log: actions.log
+  dir: logs
+  errors_log: errors.log
+ollama:
+  host: http://localhost:11434
+  model: qwen2.5:3b
+  num_ctx: 4096
+  timeout: 120
+safety:
+  allowed_apps:
+  - chrome
+  - vscode
+  - explorador
+  - powershell
+  - terminal
+  allowed_folders:
+  - '%USERPROFILE%\Documents'
+  - '%USERPROFILE%\Downloads'
+  - '%USERPROFILE%\Desktop'
+  simulation_mode: true
+voice:
+  stt_compute_type: int8
+  stt_duration: 8
+  stt_language: es
+  stt_min_threshold: 5.0e-05
+  stt_model: base
+  stt_noise_floor: 5.591e-05
+  stt_sample_rate: 16000
+  tts_enabled: false
+  tts_voice: es_MX-ald-x_low

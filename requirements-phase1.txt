@@ -1,0 +1,5 @@
+# JARVIS Local - Fase 1
+# Dependencias minimas para chat local con Ollama
+
+requests>=2.31.0
+pyyaml>=6.0
