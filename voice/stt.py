@@ -5,9 +5,21 @@ Con calibracion de ruido y diagnostico.
 """
 import os
 import time
+import yaml
 from typing import Optional
-from jarvis_local.config import get_config, CONFIG_FILE
+from jarvis_local.config import CONFIG_FILE
 from jarvis_local.safety.logger import logger
+
+
+def load_voice_config() -> dict:
+    """Lee config.yaml desde disco CADA VEZ. Sin cache."""
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    else:
+        data = {}
+    return data.get("voice", {})
+
 
 try:
     import sounddevice as _sd
@@ -20,7 +32,7 @@ except ImportError:
 
 
 def _get_threshold() -> float:
-    cfg = get_config().get("voice", {})
+    cfg = load_voice_config()
     noise_floor = cfg.get("stt_noise_floor")
     min_threshold = cfg.get("stt_min_threshold", 0.00005)
     if noise_floor is not None and isinstance(noise_floor, (int, float)):
@@ -70,7 +82,6 @@ def calibrate() -> dict:
 
     threshold = max(rms * 2.0, 0.00005)
 
-    import yaml
     cfg_path = CONFIG_FILE
     if cfg_path.exists():
         with open(cfg_path, "r", encoding="utf-8") as f:
@@ -80,6 +91,11 @@ def calibrate() -> dict:
     cfg_data.setdefault("voice", {})["stt_noise_floor"] = round(rms, 8)
     with open(cfg_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg_data, f, allow_unicode=True, default_flow_style=False)
+
+    verify_cfg = load_voice_config()
+    verify_noise = verify_cfg.get("stt_noise_floor")
+    verify_threshold = _get_threshold()
+    print(f"  Configuracion persistida: ruido_base={verify_noise}, umbral={verify_threshold}")
 
     print(f"  Ruido base: {rms:.8f}")
     print(f"  Umbral de voz: {threshold:.8f} (formula: ruido_base * 2, min 0.00005)")
@@ -110,7 +126,7 @@ def diagnose() -> dict:
     except Exception:
         pass
 
-    cfg = get_config().get("voice", {})
+    cfg = load_voice_config()
     info["config"] = {
         "stt_model": cfg.get("stt_model", "base"),
         "stt_language": cfg.get("stt_language", "es"),
@@ -174,7 +190,7 @@ def listen() -> Optional[str]:
     Returns:
         Texto transcrito en espanol, o None si fallo.
     """
-    cfg = get_config().get("voice", {})
+    cfg = load_voice_config()
     duration = cfg.get("stt_duration", 8)
     sample_rate = cfg.get("stt_sample_rate", 16000)
     model_name = cfg.get("stt_model", "base")

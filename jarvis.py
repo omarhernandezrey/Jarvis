@@ -3,11 +3,50 @@ JARVIS Local - Orquestador (Fase 1: Solo Chat)
 Coordina la conversacion entre el usuario y Ollama.
 En Fase 1, el modelo SOLO conversa. Sin herramientas.
 """
+import re
 from jarvis_local.ollama_client.client import OllamaClient
 from jarvis_local.memory.history import ConversationHistory
 from jarvis_local.safety.logger import logger
 from jarvis_local.safety.secrets import redact_secrets
 from jarvis_local.config import get_config
+
+_EXACT_TRIGGERS = [
+    "responde solamente",
+    "responde solo",
+    "di solamente",
+    "di solo",
+    "dime solamente",
+    "dime solo",
+    "contesta solamente",
+    "contesta solo",
+]
+
+_QUOTE_PAIRS = [('"', '"'), ("'", "'"), ("\u201c", "\u201d"), ("\u2018", "\u2019"), ("\u00ab", "\u00bb")]
+_TRAILING_PUNCT = ".!?\u00a1\u00bf"
+
+
+def _exact_response(message: str) -> str | None:
+    m = " ".join(message.strip().split())
+    m_lower = m.lower()
+    for trigger in _EXACT_TRIGGERS:
+        idx = m_lower.find(trigger)
+        if idx == -1:
+            continue
+        after = m[idx + len(trigger):].strip()
+        if not after:
+            return None
+        for left, right in _QUOTE_PAIRS:
+            if after.startswith(left) and after.endswith(right):
+                after = after[1:-1]
+                break
+        while after and after[-1] in _TRAILING_PUNCT:
+            after = after[:-1]
+        after = after.strip()
+        if after:
+            return after
+        return None
+    return None
+
 
 SYSTEM_PROMPT = """Eres JARVIS, un asistente de IA local que corre en Windows 10.
 Tu trabajo es ayudar a Omar con tareas en su computadora.
@@ -67,6 +106,13 @@ class Jarvis:
                     "Por favor, elimina esa informacion y vuelve a intentarlo."
                 )
 
+            exact = _exact_response(safe_input)
+            if exact is not None:
+                self.history.add_user(safe_input)
+                self.history.add_assistant(exact)
+                logger.log_action(instruction=instruction, result=exact)
+                return exact
+
             self.history.add_user(safe_input)
 
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -100,7 +146,6 @@ class Jarvis:
         except Exception as e:
             logger.log_error("chat", str(e))
             raise RuntimeError(f"Error inesperado al comunicarse con Ollama: {e}")
-
 
     def get_status(self) -> str:
         try:

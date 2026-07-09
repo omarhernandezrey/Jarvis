@@ -1,108 +1,129 @@
 """
-JARVIS Local - Text-to-Speech con Piper (Fase 3)
-Sintetiza voz en espanol offline y reproduce.
-
-NOTA: piper-tts en PyPI actualmente es GPL-3.0 (OHF-Voice).
-El import se llama 'piper', no 'piper_tts'.
+JARVIS Local - Text-to-Speech con SAPI5/pyttsx3 (Fase 3B)
+Usa el motor de voz nativo de Windows. MIT. Sin modelos, sin descargas.
 """
-import io
-import os
-import tempfile
-import time
+import threading
 from typing import Optional
 from jarvis_local.config import get_config
-from jarvis_local.safety.logger import logger
 
 
-def _get_voice_path() -> Optional[str]:
-    """Busca la voz Piper instalada. None si no existe."""
-    cfg = get_config().get("voice", {})
-    voice_name = cfg.get("tts_voice", "es_MX-ald-x_low")
-
-    data_dirs = [
-        os.path.join(os.path.expanduser("~"), ".local", "share", "piper-tts"),
-        os.path.join(os.path.expanduser("~"), ".config", "piper-tts"),
-        os.path.join(os.path.expanduser("~"), "piper-voices"),
-    ]
-
-    for base in data_dirs:
-        onnx_path = os.path.join(base, f"{voice_name}.onnx")
-        json_path = os.path.join(base, f"{voice_name}.onnx.json")
-        if os.path.exists(onnx_path) and os.path.exists(json_path):
-            return voice_name
-
-    return None
+_engine = None
+_voice_index = None
+_rate = 175
+_volume = 1.0
 
 
-def is_piper_available() -> bool:
-    """Verifica si Piper y la voz estan disponibles."""
+def _get_engine():
+    global _engine
+    if _engine is None:
+        import pyttsx3
+        _engine = pyttsx3.init()
+        _apply_settings()
+    return _engine
+
+
+def _apply_settings():
+    if _engine is None:
+        return
+    voices = _engine.getProperty("voices")
+    idx = _voice_index if _voice_index is not None else _auto_spanish_index(voices)
+    if idx is not None and 0 <= idx < len(voices):
+        _engine.setProperty("voice", voices[idx].id)
+    _engine.setProperty("rate", _rate)
+    _engine.setProperty("volume", _volume)
+
+
+def _auto_spanish_index(voices) -> Optional[int]:
+    for i, v in enumerate(voices):
+        for lang in (v.languages or []):
+            lang_l = str(lang).lower()
+            if any(x in lang_l for x in ["es-co", "es-mx", "es-es", "es_", "es-",
+                                          "spanish", "español", "espagnol"]):
+                return i
+    for i, v in enumerate(voices):
+        name_l = (v.name or "").lower()
+        if any(x in name_l for x in ["spanish", "español", "espanol", "espagnol"]):
+            return i
+    return 0 if voices else None
+
+
+def list_voices() -> list[dict]:
     try:
-        import piper
-    except ImportError:
+        engine = _get_engine()
+        voices = engine.getProperty("voices")
+        result = []
+        for i, v in enumerate(voices):
+            result.append({
+                "index": i,
+                "name": v.name,
+                "id": v.id[:80],
+                "languages": [str(l) for l in (v.languages or [])],
+            })
+        return result
+    except Exception as e:
+        return [{"index": -1, "name": f"ERROR: {e}", "id": "", "languages": []}]
+
+
+def select_voice(index: int) -> bool:
+    global _voice_index
+    try:
+        engine = _get_engine()
+        voices = engine.getProperty("voices")
+        if 0 <= index < len(voices):
+            _voice_index = index
+            _apply_settings()
+            return True
         return False
-    return _get_voice_path() is not None
+    except Exception:
+        return False
+
+
+def set_rate(wpm: int) -> bool:
+    global _rate
+    if 120 <= wpm <= 250:
+        _rate = wpm
+        if _engine is not None:
+            _engine.setProperty("rate", _rate)
+        return True
+    return False
+
+
+def set_volume(vol: float) -> bool:
+    global _volume
+    if 0.0 <= vol <= 1.0:
+        _volume = vol
+        if _engine is not None:
+            _engine.setProperty("volume", _volume)
+        return True
+    return False
+
+
+def get_voice_state() -> dict:
+    return {
+        "voice_index": _voice_index,
+        "rate": _rate,
+        "volume": _volume,
+        "engine": "pyttsx3 (SAPI5)",
+    }
+
+
+def is_available() -> bool:
+    try:
+        import pyttsx3
+        e = pyttsx3.init()
+        return len(e.getProperty("voices")) > 0
+    except Exception:
+        return False
 
 
 def speak(text: str) -> bool:
-    """
-    Sintetiza y reproduce voz en espanol con Piper.
-
-    Returns:
-        True si se reprodujo correctamente, False si fallo.
-    """
     if not text:
         return False
-
     try:
-        import piper
-    except ImportError:
-        print("[Voz] Piper no instalado. Respuesta solo texto.")
-        return False
-
-    voice_name = _get_voice_path()
-    if not voice_name:
-        cfg = get_config().get("voice", {})
-        vname = cfg.get("tts_voice", "es_MX-ald-x_low")
-        print("[Voz] Voz Piper no descargada. Respuesta solo texto.")
-        print(f"  Descargala con: python -c \"import piper; piper.download_voice('{vname}')\"")
-        return False
-
-    print("[Reproduciendo respuesta...]")
-
-    try:
-        wav_bytes = piper.synthesize(text, voice_name)
-
-        try:
-            import sounddevice as sd
-            import numpy as np
-            import wave
-
-            wav_io = io.BytesIO(wav_bytes)
-            with wave.open(wav_io, "rb") as wf:
-                sample_rate = wf.getframerate()
-                audio_data = wf.readframes(wf.getnframes())
-                audio_array = (
-                    np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-                )
-
-            sd.play(audio_array, samplerate=sample_rate)
-            sd.wait()
-
-        except Exception:
-            tmp_path = os.path.join(tempfile.gettempdir(), "jarvis_tts_temp.wav")
-            try:
-                with open(tmp_path, "wb") as f:
-                    f.write(wav_bytes)
-                os.startfile(tmp_path)
-                time.sleep(max(1.0, len(text) * 0.06))
-            finally:
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
-
+        engine = _get_engine()
+        engine.say(text)
+        engine.runAndWait()
         return True
-
     except Exception as e:
-        logger.log_error("tts", str(e))
+        print(f"[TTS Error] {e}")
         return False

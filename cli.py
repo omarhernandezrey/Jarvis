@@ -19,11 +19,11 @@ from jarvis_local.tools.apps import open_app, list_apps, execute_open_app, ALLOW
 from jarvis_local.tools.terminal import plan_command
 from jarvis_local.config import get_config
 
-BANNER = r"""
-  ╔══════════════════════════════════════════════╗
-  ║           JARVIS LOCAL - Fase 3              ║
-  ║  Chat + Herramientas + Voz Local Offline     ║
-  ╚══════════════════════════════════════════════╝
+BANNER = """
+  ==================================================
+             JARVIS LOCAL - Fase 3
+    Chat + Herramientas + Voz Local Offline
+  ==================================================
 """
 
 HELP_TEXT = """
@@ -40,7 +40,12 @@ Voz (/voz):
   /voz                   Capturar voz, transcribir, enviar a Ollama
   /voz calibrar          Calibrar ruido base del microfono
   /voz diagnostico       Mostrar diagnostico del sistema de voz
-  /voz on                Activar lectura de respuestas con Piper
+  /voz voces             Listar voces TTS disponibles
+  /voz voz <indice>      Seleccionar voz TTS por indice
+  /voz velocidad <120-250> Cambiar velocidad TTS (palabras/min)
+  /voz volumen <0.0-1.0> Cambiar volumen TTS
+  /voz probar            Reproducir prueba de voz
+  /voz on                Activar lectura de respuestas con TTS
   /voz off               Desactivar lectura de respuestas
   /voz estado            Mostrar configuracion de voz
 
@@ -263,7 +268,7 @@ def main():
                         _handle_voz_capture(jarvis, tts_enabled)
                     elif parts[1].lower() == "on":
                         tts_enabled = True
-                        print("[Voz] Lectura de respuestas ACTIVADA")
+                        print("[Voz] Lectura de respuestas ACTIVADA (SAPI5)")
                     elif parts[1].lower() == "off":
                         tts_enabled = False
                         print("[Voz] Lectura de respuestas DESACTIVADA")
@@ -279,23 +284,74 @@ def main():
                             diagnose()
                         except Exception as e:
                             print(f"[ERROR Diagnostico] {e}")
+                    elif parts[1].lower() == "voces":
+                        try:
+                            from jarvis_local.voice.tts import list_voices
+                            voces = list_voices()
+                            print(f"\nVoces TTS disponibles ({len(voces)}):")
+                            for v in voces:
+                                print(f"  [{v['index']}] {v['name']} | langs={v['languages']}")
+                        except Exception as e:
+                            print(f"[ERROR Voces] {e}")
+                    elif parts[1].lower() == "voz":
+                        try:
+                            idx = int(parts[2])
+                            from jarvis_local.voice.tts import select_voice
+                            if select_voice(idx):
+                                print(f"[Voz] Voz cambiada a indice {idx}")
+                            else:
+                                print(f"[ERROR] Indice de voz invalido: {idx}")
+                        except (IndexError, ValueError):
+                            print("Uso: /voz voz <indice>")
+                        except Exception as e:
+                            print(f"[ERROR] {e}")
+                    elif parts[1].lower() == "velocidad":
+                        try:
+                            wpm = int(parts[2])
+                            from jarvis_local.voice.tts import set_rate
+                            if set_rate(wpm):
+                                print(f"[Voz] Velocidad: {wpm} palabras/min")
+                            else:
+                                print(f"[ERROR] Velocidad fuera de rango (120-250)")
+                        except (IndexError, ValueError):
+                            print("Uso: /voz velocidad <120-250>")
+                        except Exception as e:
+                            print(f"[ERROR] {e}")
+                    elif parts[1].lower() == "volumen":
+                        try:
+                            vol = float(parts[2])
+                            from jarvis_local.voice.tts import set_volume
+                            if set_volume(vol):
+                                print(f"[Voz] Volumen: {vol:.1f}")
+                            else:
+                                print(f"[ERROR] Volumen fuera de rango (0.0-1.0)")
+                        except (IndexError, ValueError):
+                            print("Uso: /voz volumen <0.0-1.0>")
+                        except Exception as e:
+                            print(f"[ERROR] {e}")
+                    elif parts[1].lower() == "probar":
+                        from jarvis_local.voice.tts import speak
+                        speak("Prueba de voz de Jarvis.")
+                        print("[Voz] Prueba de voz reproducida.")
                     else:
                         stt_model = cfg.get("voice", {}).get("stt_model", "base")
-                        tts_voice = cfg.get("voice", {}).get("tts_voice", "es_MX-ald-x_low")
                         threshold_val = None
+                        noise_floor = None
                         try:
-                            from jarvis_local.voice.stt import _get_threshold
+                            from jarvis_local.voice.stt import _get_threshold, load_voice_config
+                            vcfg = load_voice_config()
                             threshold_val = _get_threshold()
+                            noise_floor = vcfg.get("stt_noise_floor")
                         except Exception:
                             pass
+                        from jarvis_local.voice.tts import get_voice_state
+                        tts_state = get_voice_state()
                         print(f"[Voz] STT: faster-whisper {stt_model}")
-                        print(f"[Voz] TTS: {'ON' if tts_enabled else 'OFF'}")
-                        print(f"[Voz] Voz Piper: {tts_voice} (pendiente)")
+                        print(f"[Voz] TTS: pyttsx3 (SAPI5) | {'ON' if tts_enabled else 'OFF'}")
+                        print(f"[Voz] Voz: indice {tts_state['voice_index']}")
+                        print(f"[Voz] Velocidad: {tts_state['rate']} wpm | Volumen: {tts_state['volume']:.1f}")
                         if threshold_val is not None:
-                            print(f"[Voz] Umbral: {threshold_val:.6f}")
-                            noise = cfg.get("voice", {}).get("stt_noise_floor")
-                            if noise:
-                                print(f"[Voz] Ruido base: {noise:.8f}")
+                            print(f"[Voz] Umbral STT: {threshold_val:.6f}")
                 elif sub == "archivos":
                     handle_archivos(parts[1:])
                 elif sub == "apps":

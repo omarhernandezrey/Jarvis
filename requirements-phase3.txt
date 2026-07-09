@@ -4,12 +4,9 @@
 # Reconocimiento de voz (STT) - offline, CPU int8, MIT
 faster-whisper>=1.0,<2
 
-# Sintesis de voz (TTS) - offline, CPU
-# ATENCION: piper-tts en PyPI >=1.4 es GPL-3.0 (OHF-Voice fork)
-# La version MIT original de rhasspy esta archivada.
-# Si requieres MIT, considera usar la version 1.1.0 (ultima MIT)
-# o investigar alternativas como Coqui TTS o espeak.
-piper-tts>=1.2,<2
+# Sintesis de voz (TTS) - SAPI5 de Windows, MIT
+# pyttsx3 usa el motor nativo de Windows. Sin modelos ni descargas.
+pyttsx3>=2.90,<3
 
 # Ya instaladas de fases anteriores (no reinstalar):
 # sounddevice>=0.5
