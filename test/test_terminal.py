@@ -20,9 +20,9 @@ def test_plan_blocked_del():
     assert plan.status == ActionStatus.BLOCKED
 
 
-def test_plan_blocked_curl():
-    plan = plan_command("curl http://x.com")
-    assert plan.status == ActionStatus.BLOCKED
+def test_plan_not_blocked_curl():
+    plan = plan_command("curl http://example.com")
+    assert plan.status != ActionStatus.BLOCKED
 
 
 def test_plan_blocked_rmdir():
@@ -40,17 +40,17 @@ def test_plan_blocked_iex():
     assert plan.status == ActionStatus.BLOCKED
 
 
-def test_plan_blocked_pipe():
-    plan = plan_command("ls | cat")
-    assert plan.status == ActionStatus.BLOCKED
+def test_plan_not_blocked_pipe():
+    plan = plan_command("dir | findstr test")
+    assert plan.status != ActionStatus.BLOCKED
 
 
 if __name__ == "__main__":
     test_plan_safe_command()
     test_plan_blocked_del()
-    test_plan_blocked_curl()
+    test_plan_not_blocked_curl()
     test_plan_blocked_rmdir()
     test_plan_blocked_shutdown()
     test_plan_blocked_iex()
-    test_plan_blocked_pipe()
+    test_plan_not_blocked_pipe()
     print("OK: Todos los tests de terminal pasaron.")

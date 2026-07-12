@@ -10,6 +10,10 @@ ALLOWED_FOLDERS = [
     os.path.expandvars(r"%USERPROFILE%\Documents"),
     os.path.expandvars(r"%USERPROFILE%\Downloads"),
     os.path.expandvars(r"%USERPROFILE%\Desktop"),
+    os.path.expandvars(r"%USERPROFILE%\Music"),
+    os.path.expandvars(r"%USERPROFILE%\Pictures"),
+    os.path.expandvars(r"%USERPROFILE%\Videos"),
+    os.path.expandvars(r"%USERPROFILE%\OneDrive"),
 ]
 
 ALLOWED_APPS = {
@@ -44,35 +48,78 @@ ALLOWED_APPS = {
         ],
         "description": "Windows Terminal",
     },
+    "wsl": {
+        "paths": [
+            r"C:\Windows\System32\wsl.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\wsl.exe"),
+        ],
+        "description": "Terminal WSL (Ubuntu)",
+    },
+    "notepad": {
+        "paths": [r"C:\Windows\System32\notepad.exe"],
+        "description": "Bloc de notas",
+    },
+    "calculadora": {
+        "paths": [r"C:\Windows\System32\calc.exe"],
+        "description": "Calculadora",
+    },
+    "control": {
+        "paths": [r"C:\Windows\System32\control.exe"],
+        "description": "Panel de control",
+    },
+    "configuracion": {
+        "paths": [
+            os.path.expandvars(r"%WINDIR%\explorer.exe"),
+        ],
+        "description": "Configuracion de Windows (abre con start ms-settings:)",
+    },
+    "cmd": {
+        "paths": [r"C:\Windows\System32\cmd.exe"],
+        "description": "Simbolo del sistema (CMD)",
+    },
+    "taskmgr": {
+        "paths": [r"C:\Windows\System32\Taskmgr.exe"],
+        "description": "Administrador de tareas",
+    },
+    "edge": {
+        "paths": [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ],
+        "description": "Microsoft Edge",
+    },
+    "firefox": {
+        "paths": [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+        ],
+        "description": "Mozilla Firefox",
+    },
 }
 
 BLOCKED_COMMAND_PATTERNS = [
     r"\.ps1",
     r"\.bat",
     r"\.cmd",
-    r"\.exe\b",
     r"Invoke-Expression",
     r"iex\b",
-    r"curl\b",
-    r"irm\b",
-    r"iwr\b",
-    r"Start-Process",
     r"Remove-Item\s+-Force",
-    r"Remove-Item\s+-Recurse",
+    r"Remove-Item\s+-Recurse.*System",
     r"\bdel\b\s+/",
     r"\bdel\b\s+.",
     r"\brmdir\b",
     r"\brd\b\s+/",
     r"\bformat\b",
     r"\bdiskpart\b",
-    r"\breg\b\s+(add|delete|import|export)",
-    r"\bschtasks\b",
-    r"\btaskkill\b",
+    r"\breg\b\s+(add|delete|import)",
+    r"\bschtasks\b.*\/create",
+    r"\btaskkill\b\s+\/f",
     r"\bshutdown\b",
-    r">\s*\S",
-    r"\|\s*\S",
     r"\brm\s+-rf\b",
     r"\brm\s+-r\b",
+    r"Set-ExecutionPolicy",
+    r"\bicacls\b",
+    r"\btakeown\b",
 ]
 
 BLOCKED_CMD_KEYWORDS = [

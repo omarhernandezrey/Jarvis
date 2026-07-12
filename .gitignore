@@ -10,11 +10,16 @@ build/
 # Logs y datos locales
 logs/*.log
 logs/
+data/*.json
+data/*.corrupt*
 
 # Entorno virtual
 venv/
 .venv/
 jarvis_venv/
+
+# Configuracion local
+jarvis_local/config.yaml
 
 # IDE
 .vscode/

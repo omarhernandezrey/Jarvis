@@ -4,9 +4,10 @@ Graba del microfono, transcribe offline en espanol.
 Con calibracion de ruido y diagnostico.
 """
 import os
+import threading
 import time
 import yaml
-from typing import Optional
+from typing import Optional, Union
 from jarvis_local.config import CONFIG_FILE
 from jarvis_local.safety.logger import logger
 
@@ -29,6 +30,24 @@ except ImportError:
     _AUDIO_OK = False
     _sd = None
     _np = None
+
+_whisper_model = None
+_whisper_lock = threading.Lock()
+_whisper_model_key = None
+
+
+def _get_whisper_model(model_name: str, compute_type: str):
+    """Singleton compartido de WhisperModel. Reutiliza entre fragmentos."""
+    global _whisper_model, _whisper_model_key
+    key = (model_name, compute_type)
+    with _whisper_lock:
+        if _whisper_model is None or _whisper_model_key != key:
+            from faster_whisper import WhisperModel
+            _whisper_model = WhisperModel(
+                model_name, device="cpu", compute_type=compute_type,
+            )
+            _whisper_model_key = key
+        return _whisper_model
 
 
 def _get_threshold() -> float:
@@ -128,7 +147,7 @@ def diagnose() -> dict:
 
     cfg = load_voice_config()
     info["config"] = {
-        "stt_model": cfg.get("stt_model", "base"),
+        "stt_model": cfg.get("stt_model", "small"),
         "stt_language": cfg.get("stt_language", "es"),
         "stt_duration": cfg.get("stt_duration", 8),
         "stt_sample_rate": cfg.get("stt_sample_rate", 16000),
@@ -140,7 +159,7 @@ def diagnose() -> dict:
 
     try:
         from faster_whisper import WhisperModel
-        model = WhisperModel("base", device="cpu", compute_type="int8",
+        model = WhisperModel("small", device="cpu", compute_type="int8",
                              download_root=None, local_files_only=True)
         info["config"]["whisper_model_downloaded"] = True
     except Exception:
@@ -193,7 +212,7 @@ def listen() -> Optional[str]:
     cfg = load_voice_config()
     duration = cfg.get("stt_duration", 8)
     sample_rate = cfg.get("stt_sample_rate", 16000)
-    model_name = cfg.get("stt_model", "base")
+    model_name = cfg.get("stt_model", "small")
     compute_type = cfg.get("stt_compute_type", "int8")
     language = cfg.get("stt_language", "es")
     threshold = _get_threshold()
@@ -242,16 +261,12 @@ def listen() -> Optional[str]:
     print("[Procesando...]")
 
     try:
-        from faster_whisper import WhisperModel
-        model = WhisperModel(model_name, device="cpu", compute_type=compute_type)
-    except FileNotFoundError:
-        print(f"[ERROR Voz] El modelo '{model_name}' no esta descargado.")
-        print(f"  Descargalo con: python -c \"from faster_whisper import WhisperModel; WhisperModel('{model_name}', device='cpu', compute_type='{compute_type}')\"")
-        logger.log_error("stt", f"Modelo no descargado: {model_name}")
-        return None
+        model = _get_whisper_model(model_name, compute_type)
     except Exception as e:
         msg = f"No se pudo cargar faster-whisper: {e}"
         print(f"[ERROR Voz] {msg}")
+        print(f"  Si el modelo no esta descargado, ejecuta:")
+        print(f"  python -c \"from faster_whisper import WhisperModel; WhisperModel('{model_name}', device='cpu', compute_type='{compute_type}')\"")
         logger.log_error("stt", msg)
         return None
 
@@ -262,6 +277,7 @@ def listen() -> Optional[str]:
             language=language,
             beam_size=5,
             vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 500},
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
 
@@ -283,4 +299,89 @@ def listen() -> Optional[str]:
         msg = f"Error en la transcripcion: {e}"
         print(f"[ERROR Voz] {msg}")
         logger.log_error("stt", msg)
+        return None
+
+def capture_and_transcribe(
+    duration_seconds: float,
+    show_stats: bool = True,
+    return_extra: bool = False,
+) -> Union[str, dict, None]:
+    """Captura audio y transcribe. Reutilizada por /voz y modo continuo.
+
+    Args:
+        duration_seconds: Duracion de la captura.
+        show_stats: Mostrar estadisticas en consola.
+        return_extra: Si True, retorna dict con claves:
+            text (str|None), rms (float), has_voice (bool).
+
+    Returns:
+        str|None si return_extra=False.
+        dict si return_extra=True.
+    """
+    cfg = load_voice_config()
+    sample_rate = cfg.get("stt_sample_rate", 16000)
+    model_name = cfg.get("stt_model", "small")
+    compute_type = cfg.get("stt_compute_type", "int8")
+    language = cfg.get("stt_language", "es")
+    threshold = _get_threshold()
+
+    if not _AUDIO_OK:
+        if show_stats:
+            print("[Voz] sounddevice/numpy no disponibles.")
+        if return_extra:
+            return {"text": None, "rms": 0.0, "has_voice": False}
+        return None
+
+    try:
+        mic_name = "desconocido"
+        try:
+            default = _sd.query_devices(kind="input")
+            mic_name = default.get("name", "desconocido")[:40]
+        except Exception:
+            pass
+
+        if show_stats:
+            print(f"[Voz] Escuchando {duration_seconds:.0f}s... Mic: {mic_name}")
+
+        recording = _sd.rec(
+            int(duration_seconds * sample_rate),
+            samplerate=sample_rate, channels=1, dtype="int16",
+        )
+        _sd.wait()
+
+        audio = recording.flatten().astype("float32") / 32768.0
+        rms = float(_np.sqrt(_np.mean(audio ** 2)))
+
+        if show_stats:
+            print(f"[Voz] RMS: {rms:.6f} | Duracion: {duration_seconds:.0f}s")
+
+    except Exception as e:
+        if show_stats:
+            print(f"[Voz] ERROR captura: {e}")
+        if return_extra:
+            return {"text": None, "rms": 0.0, "has_voice": False}
+        return None
+
+    try:
+        model = _get_whisper_model(model_name, compute_type)
+        segments, _ = model.transcribe(
+            audio, language=language, beam_size=5, vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 500},
+        )
+        text = " ".join(s.text.strip() for s in segments).strip()
+        if show_stats:
+            print(f"[Voz] Transcripcion: \"{text}\"" if text else "[Voz] Sin texto reconocido.")
+
+        if return_extra:
+            return {
+                "text": text if text else None,
+                "rms": rms,
+                "has_voice": rms > threshold,
+            }
+        return text if text else None
+    except Exception as e:
+        if show_stats:
+            print(f"[Voz] ERROR transcripcion: {type(e).__name__}: {e}")
+        if return_extra:
+            return {"text": None, "rms": rms, "has_voice": True}
         return None

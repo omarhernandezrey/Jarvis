@@ -8,13 +8,29 @@ from jarvis_local.safety.permissions import get_app_path, list_allowed_apps
 from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus, policy
 
 
-ALLOWED_APP_NAMES = ["chrome", "vscode", "explorador", "powershell", "terminal"]
+ALLOWED_APP_NAMES = ["chrome", "vscode", "explorador", "powershell", "terminal",
+                       "wsl", "notepad", "calculadora", "control", "configuracion",
+                       "cmd", "taskmgr", "edge", "firefox"]
+
+# Directorio inicial (ruta Linux) al abrir la terminal de WSL
+WSL_START_DIR = "/home/omarhernandez/personalProjects"
+
+
+def _launch_wsl(wsl_path: str) -> None:
+    """Abre WSL en WSL_START_DIR, en Windows Terminal si esta disponible."""
+    wt_path = get_app_path("terminal")
+    args = [wsl_path, "--cd", WSL_START_DIR]
+    if wt_path:
+        subprocess.Popen([wt_path] + args, shell=False)
+    else:
+        subprocess.Popen(args, shell=False,
+                         creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
 def open_app(name: str) -> ActionPlan:
     name_lower = name.lower()
     if name_lower not in ALLOWED_APP_NAMES:
-        return policy.block(f"App no permitida: '{name}'. Apps permitidas: {', '.join(ALLOWED_APP_NAMES)}")
+        return _open_installed_app(name)
 
     path = get_app_path(name_lower)
     if not path:
@@ -31,10 +47,55 @@ def open_app(name: str) -> ActionPlan:
         params={"app": name_lower, "path": path},
         paths_affected=[path],
         risk=RiskLevel.EXECUTE,
-        reason=f"Abrir {name} requiere confirmacion explicita",
+        reason=f"Abrir {name}",
     )
-    plan = policy.simulate(plan)
-    policy.pending_plan = plan
+    try:
+        if name_lower == "configuracion":
+            subprocess.Popen(["start", "ms-settings:"], shell=True)
+        elif name_lower == "wsl":
+            _launch_wsl(path)
+        else:
+            subprocess.Popen([path], shell=False)
+        plan.result = f"{name} abierto correctamente."
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"No se pudo abrir {name}: {e}"
+    return plan
+
+
+def _open_installed_app(name: str) -> ActionPlan:
+    """Abre una app instalada (menu inicio) por nombre con busqueda difusa."""
+    from jarvis_local.tools.app_index import find_app, launch_app
+    try:
+        matches = find_app(name)
+    except Exception as e:
+        return policy.block(f"No pude consultar las apps instaladas: {e}")
+    if not matches:
+        return policy.block(
+            f"No encontre ninguna aplicacion parecida a '{name}' en este equipo. "
+            f"Tambien puedo abrir: {', '.join(ALLOWED_APP_NAMES)}")
+
+    best = matches[0]
+    plan = ActionPlan(
+        action="abrir_app",
+        params={"app": best["name"], "appid": best["appid"]},
+        paths_affected=[best["appid"]],
+        risk=RiskLevel.EXECUTE,
+        reason=f"Abrir {best['name']} (app instalada)",
+    )
+    try:
+        launch_app(best["appid"])
+        plan.result = f"{best['name']} abierto correctamente."
+        if len(matches) > 1:
+            otros = ", ".join(m["name"] for m in matches[1:4])
+            plan.result += f" (Tambien encontre: {otros})"
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"No se pudo abrir {best['name']}: {e}"
     return plan
 
 
@@ -59,7 +120,7 @@ def execute_open_app(name: str) -> ActionPlan:
     name_lower = name.lower()
     path = get_app_path(name_lower)
     if not path:
-        return policy.block(f"No se pudo abrir {name}: ejecutable no encontrado")
+        return _open_installed_app(name)
     plan = ActionPlan(
         action="abrir_app_ejecutando",
         params={"app": name_lower, "path": path},
@@ -68,7 +129,10 @@ def execute_open_app(name: str) -> ActionPlan:
         status=ActionStatus.CONFIRMED,
     )
     try:
-        subprocess.Popen([path], shell=False)
+        if name_lower == "wsl":
+            _launch_wsl(path)
+        else:
+            subprocess.Popen([path], shell=False)
         plan.result = f"{name} abierto correctamente"
         plan.status = ActionStatus.EXECUTED
     except Exception as e:

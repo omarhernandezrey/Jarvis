@@ -63,7 +63,8 @@ def test_create_file_simulated():
     p = setup()
     plan = create_file(str(p / "nuevo.txt"), "contenido")
     assert plan.action == "crear_archivo"
-    assert plan.status == ActionStatus.PLANNED
+    assert plan.status == ActionStatus.EXECUTED
+    assert (p / "nuevo.txt").exists()
     teardown(p)
 
 
@@ -71,7 +72,8 @@ def test_create_directory_simulated():
     p = setup()
     plan = create_directory(str(p / "nueva_carpeta"))
     assert plan.action == "crear_carpeta"
-    assert plan.status == ActionStatus.PLANNED
+    assert plan.status == ActionStatus.EXECUTED
+    assert (p / "nueva_carpeta").is_dir()
     teardown(p)
 
 
@@ -80,7 +82,8 @@ def test_copy_simulated():
     (p / "origen.txt").write_text("data")
     plan = copy_file(str(p / "origen.txt"), str(p / "destino.txt"))
     assert plan.action == "copiar_archivo"
-    assert plan.status == ActionStatus.PLANNED
+    assert plan.status == ActionStatus.EXECUTED
+    assert (p / "destino.txt").exists()
     teardown(p)
 
 
@@ -89,7 +92,9 @@ def test_rename_simulated():
     (p / "viejo.txt").write_text("data")
     plan = rename_file(str(p / "viejo.txt"), "nuevo.txt")
     assert plan.action == "renombrar"
-    assert plan.status == ActionStatus.PLANNED
+    assert plan.status == ActionStatus.EXECUTED
+    assert (p / "nuevo.txt").exists()
+    assert not (p / "viejo.txt").exists()
     teardown(p)
 
 

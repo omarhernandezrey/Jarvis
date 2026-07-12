@@ -98,7 +98,8 @@ class OllamaClient:
             "messages": messages,
             "stream": stream,
             "options": {
-                "num_ctx": cfg.get("num_ctx", 4096),
+                "num_ctx": cfg.get("num_ctx", 2048),
+                "num_predict": cfg.get("num_predict", 120),
                 "temperature": 0.7,
             },
         }
@@ -106,7 +107,7 @@ class OllamaClient:
         r = requests.post(
             self._url("/api/chat"),
             json=payload,
-            timeout=self.timeout,
+            timeout=(15, self.timeout),
             stream=True,
         )
         r.raise_for_status()

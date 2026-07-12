@@ -1,43 +1,39 @@
-# Configuracion por defecto de JARVIS Local
-
-ollama:
-  host: "http://localhost:11434"
-  model: "qwen2.5:3b"
-  timeout: 120
-  num_ctx: 4096
-
 jarvis:
-  name: "JARVIS"
-  language: "es"
+  language: es
   max_history: 20
-
-safety:
-  simulation_mode: true
-  allowed_folders:
-    - "%USERPROFILE%\\Documents"
-    - "%USERPROFILE%\\Downloads"
-    - "%USERPROFILE%\\Desktop"
-  allowed_apps:
-    - chrome
-    - vscode
-    - explorador
-    - powershell
-    - terminal
-
-voice:
-  stt_model: "base"
-  stt_language: "es"
-  stt_compute_type: "int8"
-  stt_duration: 8
-  stt_sample_rate: 16000
-  stt_noise_floor: null
-  stt_min_threshold: 0.00005
-  tts_voice: "auto"
-  tts_rate: 175
-  tts_volume: 1.0
-  tts_enabled: false
-
+  name: JARVIS
 logging:
-  dir: "logs"
-  actions_log: "actions.log"
-  errors_log: "errors.log"
+  actions_log: actions.log
+  dir: logs
+  errors_log: errors.log
+ollama:
+  host: http://localhost:11434
+  model: qwen2.5:3b
+  num_ctx: 2048
+  num_predict: 120
+  timeout: 600
+safety:
+  allowed_apps:
+  - chrome
+  - vscode
+  - explorador
+  - powershell
+  - terminal
+  - wsl
+  allowed_folders:
+  - '%USERPROFILE%\Documents'
+  - '%USERPROFILE%\Downloads'
+  - '%USERPROFILE%\Desktop'
+  simulation_mode: false
+voice:
+  stt_compute_type: int8
+  stt_duration: 8
+  stt_language: es
+  stt_min_threshold: 5.0e-05
+  stt_model: small
+  stt_noise_floor: 0.00033246
+  stt_sample_rate: 16000
+  tts_enabled: false
+  tts_rate: 175
+  tts_voice: auto
+  tts_volume: 1.0

@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "ollama": {
         "host": "http://localhost:11434",
         "model": "qwen2.5:3b",
-        "timeout": 120,
+        "timeout": 600,
         "num_ctx": 4096,
     },
     "jarvis": {

@@ -79,7 +79,7 @@ class SafetyPolicy:
     def __init__(self):
         cfg = get_config()
         safety_cfg = cfg.get("safety", {})
-        self.simulation_mode = safety_cfg.get("simulation_mode", True)
+        self.simulation_mode = safety_cfg.get("simulation_mode", False)
         self.pending_plan: Optional[ActionPlan] = None
 
     def is_simulation_mode(self) -> bool:
@@ -119,6 +119,31 @@ class SafetyPolicy:
         self.pending_plan = None
         return plan
 
+    def auto_confirm(self) -> Optional[ActionPlan]:
+        """Auto-confirma para modo voz: confirma operaciones de riesgo bajo
+        sin intervencion del usuario. DELETE y CRITICAL siguen bloqueados."""
+        if not self.pending_plan:
+            return None
+        if self.pending_plan.risk.value >= RiskLevel.DELETE.value:
+            self.pending_plan.status = ActionStatus.BLOCKED
+            self.pending_plan.result = (
+                "OPERACION BLOQUEADA: Borrado requiere confirmacion manual. "
+                "Usa /confirmar en la consola."
+            )
+            logger.log_action(
+                instruction=self.pending_plan.action,
+                result=self.pending_plan.result,
+                error="Auto-confirm bloqueada para DELETE",
+            )
+            plan = self.pending_plan
+            self.pending_plan = None
+            return plan
+        self.pending_plan.status = ActionStatus.CONFIRMED
+        self._log_plan(self.pending_plan, "AUTO-CONFIRMADO")
+        plan = self.pending_plan
+        self.pending_plan = None
+        return plan
+
     def reject(self) -> Optional[ActionPlan]:
         """Rechaza el plan pendiente."""
         if not self.pending_plan:
@@ -130,13 +155,16 @@ class SafetyPolicy:
         return plan
 
     def execute_plan(self, plan: ActionPlan, executor_fn) -> ActionPlan:
-        """Ejecuta un plan confirmado usando la funcion proporcionada."""
-        if plan.status != ActionStatus.CONFIRMED and plan.risk != RiskLevel.NONE:
-            plan.status = ActionStatus.BLOCKED
-            plan.result = "El plan no ha sido confirmado"
-            return plan
-        if self.simulation_mode and plan.risk.value > RiskLevel.READ.value:
-            return self.simulate(plan)
+        """Ejecuta un plan usando la funcion proporcionada.
+        Si no esta confirmado y no es DELETE, auto-confirma."""
+        if plan.status == ActionStatus.PLANNED:
+            if plan.risk.value < RiskLevel.DELETE.value:
+                plan.status = ActionStatus.CONFIRMED
+                self._log_plan(plan, "AUTO-CONFIRMADO-EXECUTE")
+            else:
+                plan.status = ActionStatus.BLOCKED
+                plan.result = "El plan de borrado requiere confirmacion manual."
+                return plan
         try:
             plan.result = executor_fn(plan)
             plan.status = ActionStatus.EXECUTED

@@ -1,0 +1,81 @@
+"""
+JARVIS Local - Respuestas instantaneas sin Ollama.
+Personalidad JARVIS: formal, alterna entre "senor" y "senor Omar".
+"""
+import re
+import random
+from datetime import datetime
+
+_DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+          "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+# Formas de dirigirse al usuario (como JARVIS real)
+_TRATO = ["senor", "senor Omar"]
+
+
+def _sr() -> str:
+    """Alterna aleatoriamente entre 'senor' y 'senor Omar'."""
+    return random.choice(_TRATO)
+
+
+def _normalize(text: str) -> str:
+    t = text.lower().strip()
+    for k, v in {"á":"a","é":"e","í":"i","ó":"o","ú":"u","ü":"u","ñ":"n",
+                 "¿":"","¡":"","?":"","!":"",",":"",".":""}.items():
+        t = t.replace(k, v)
+    return t
+
+
+def fast_respond(message: str) -> str | None:
+    """
+    Respuesta instantanea sin Ollama, o None si requiere razonamiento.
+    Todas las respuestas usan tono JARVIS: formal, "senor"/"senor Omar".
+    """
+    m = _normalize(message)
+
+    # --- SALUDOS ---
+    if re.search(r'\b(hola|hey|hi|buenas|buenos dias|buenos tardes|buenas noches|saludos|que tal|que hay)\b', m):
+        hora = datetime.now().hour
+        if hora < 12:
+            return f"Buenos dias, {_sr()}. Sistemas en linea y listos. En que le puedo asistir?"
+        elif hora < 18:
+            return f"Buenas tardes, {_sr()}. Todos los sistemas operando normalmente. Como puedo ayudarle?"
+        else:
+            return f"Buenas noches, {_sr()}. JARVIS en linea. En que le puedo ser de ayuda?"
+
+    # --- HORA ---
+    if re.search(r'\b(que hora es|hora actual|dime la hora|que horas son|la hora)\b', m):
+        ahora = datetime.now()
+        return f"Son las {ahora.strftime('%H:%M')}, {_sr()}."
+
+    # --- FECHA ---
+    if re.search(r'\b(que dia es|que fecha|fecha de hoy|dia de hoy|que dia estamos|cual es la fecha)\b', m):
+        ahora = datetime.now()
+        return f"Hoy es {_DIAS[ahora.weekday()]}, {ahora.day} de {_MESES[ahora.month - 1]} de {ahora.year}, {_sr()}."
+
+    # --- QUIEN ERES ---
+    if re.search(r'\b(quien eres|que eres|presentate|como te llamas)\b', m):
+        return (f"Soy JARVIS, su asistente de inteligencia artificial personal, {_sr()}. "
+                "Opero localmente en su computador. Puedo gestionar archivos, abrir aplicaciones, "
+                "ejecutar comandos y responder preguntas usando el modelo de lenguaje local.")
+
+    # --- QUE PUEDES HACER ---
+    if re.search(r'\b(que puedes|que sabes|capacidades|funciones|puedes hacer|para que sirves)\b', m):
+        return (f"A sus ordenes, {_sr()}. Puedo gestionar archivos, abrir aplicaciones como Chrome y VS Code, "
+                "ejecutar comandos de terminal, responder preguntas y razonar usando el modelo local qwen2.5. "
+                "Todo opera de forma privada en su propio equipo.")
+
+    # --- GRACIAS ---
+    if re.search(r'\b(gracias|muchas gracias|te lo agradezco|genial|perfecto|excelente|muy bien|chevere|bacano)\b', m):
+        return f"A sus ordenes, {_sr()}. Para eso estoy."
+
+    # --- DESPEDIDA ---
+    if re.search(r'\b(adios|hasta luego|hasta manana|nos vemos|chao|bye|hasta pronto|me voy)\b', m):
+        return f"Hasta luego, {_sr()}. Estare disponible cuando me necesite."
+
+    # --- ESTADO ---
+    if re.search(r'\b(como estas|todo bien|como vas|estas bien)\b', m):
+        return f"Todos los sistemas operando con normalidad, {_sr()}. Listo para asistirle."
+
+    return None

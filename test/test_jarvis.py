@@ -153,11 +153,12 @@ def test_chat_saves_exact_to_history():
     assert msgs[1]["content"] == "exacto"
 
 def test_chat_normal_uses_ollama():
+    # Usar un mensaje que no sea interceptado por fast_respond ni intent parser
     j = _make_jarvis()
     mc = _mc(j)
-    mc.chat.return_value = iter(["Hola"])
-    r = j.chat("hola")
-    assert r == "Hola"
+    mc.chat.return_value = iter(["Respuesta del modelo"])
+    r = j.chat("explica el algoritmo de quicksort en detalle")
+    assert r == "Respuesta del modelo"
     assert mc.chat.call_count == 1
 
 def test_chat_intercept_no_comma():

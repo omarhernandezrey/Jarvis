@@ -21,16 +21,17 @@ def test_open_allowed_app_simulated():
     for app in ALLOWED_APP_NAMES:
         plan = open_app(app)
         if plan.status == ActionStatus.BLOCKED:
-            assert "no esta instalada" in plan.simulation_result.lower() or \
-                   "no se encontro" in plan.simulation_result.lower() or \
+            assert "no esta instalada" in plan.result.lower() or \
+                   "no se encontro" in plan.result.lower() or \
                    "no permitida" in plan.reason.lower()
         else:
-            assert plan.status == ActionStatus.PLANNED
+            assert plan.status in (ActionStatus.EXECUTED, ActionStatus.ERROR)
             assert plan.action == "abrir_app"
 
 
 def test_open_blocked_app():
-    plan = open_app("calc")
+    # Nombre que no existe ni en whitelist ni en apps instaladas
+    plan = open_app("zzz_app_inexistente_9x")
     assert plan.status == ActionStatus.BLOCKED
 
 

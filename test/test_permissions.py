@@ -63,13 +63,15 @@ def test_blocked_command_rmdir():
 
 
 def test_blocked_command_curl():
-    blocked, reason = is_command_blocked("curl http://evil.com")
-    assert blocked
+    # curl ya no esta bloqueado: es util para consultas
+    blocked, reason = is_command_blocked("curl http://example.com")
+    assert not blocked
 
 
 def test_blocked_command_pipe():
+    # pipes y redirects ya no estan bloqueados
     blocked, reason = is_command_blocked("dir | findstr test")
-    assert blocked
+    assert not blocked
 
 
 def test_blocked_command_shutdown():

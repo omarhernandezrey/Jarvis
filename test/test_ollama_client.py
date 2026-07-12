@@ -12,7 +12,7 @@ from jarvis_local.ollama_client.client import OllamaClient
 def test_client_creation():
     client = OllamaClient()
     assert client.host == "http://localhost:11434"
-    assert client.timeout == 120
+    assert client.timeout == 600
 
 
 def test_client_custom_params():

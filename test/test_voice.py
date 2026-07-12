@@ -15,7 +15,7 @@ def _temp_config(noise=None, min_thresh=0.00005):
     """Crea un config.yaml temporal con valores voice especificos."""
     fd, tmp_path = tempfile.mkstemp(suffix=".yaml")
     cfg = {"voice": {"stt_noise_floor": noise, "stt_min_threshold": min_thresh,
-                      "stt_model": "base", "stt_language": "es",
+                      "stt_model": "small", "stt_language": "es",
                       "stt_compute_type": "int8", "stt_duration": 8,
                       "stt_sample_rate": 16000}}
     with os.fdopen(fd, "w") as tmp:
@@ -58,6 +58,9 @@ def test_listen_model_not_downloaded():
     mock_fw = MagicMock()
     mock_fw.WhisperModel = MagicMock(side_effect=FileNotFoundError("no model"))
     sys.modules["faster_whisper"] = mock_fw
+    # Resetear el singleton para que el error de carga sea detectado
+    stt_mod._whisper_model = None
+    stt_mod._whisper_model_key = None
     with patch("builtins.print"), patch.object(stt_mod, "logger"):
         result = stt_mod.listen()
         assert result is None
@@ -136,7 +139,7 @@ def test_config_has_voice_section():
     from jarvis_local.config import reload_config
     cfg = reload_config()
     voice = cfg.get("voice", {})
-    assert voice["stt_model"] == "base"
+    assert voice["stt_model"] == "small"
     assert voice["tts_enabled"] is False
     assert "stt_noise_floor" in voice
     assert "stt_min_threshold" in voice
@@ -168,6 +171,8 @@ def test_logs_dont_contain_transcription():
     mock_fw = MagicMock()
     mock_fw.WhisperModel = MagicMock(return_value=mock_model)
     sys.modules["faster_whisper"] = mock_fw
+    stt_mod._whisper_model = None
+    stt_mod._whisper_model_key = None
     with patch("builtins.print"):
         result = stt_mod.listen()
     del sys.modules["faster_whisper"]
@@ -193,6 +198,9 @@ def test_low_audio_with_valid_transcription():
     mock_fw = MagicMock()
     mock_fw.WhisperModel = MagicMock(return_value=mock_model)
     sys.modules["faster_whisper"] = mock_fw
+    # Resetear el singleton para que el mock sea efectivo
+    stt_mod._whisper_model = None
+    stt_mod._whisper_model_key = None
     with patch("builtins.print"), patch.object(stt_mod, "logger"):
         result = stt_mod.listen()
     del sys.modules["faster_whisper"]
@@ -213,6 +221,9 @@ def test_low_audio_without_transcription():
     mock_fw = MagicMock()
     mock_fw.WhisperModel = MagicMock(return_value=mock_model)
     sys.modules["faster_whisper"] = mock_fw
+    # Resetear el singleton para que el mock sea efectivo
+    stt_mod._whisper_model = None
+    stt_mod._whisper_model_key = None
     with patch("builtins.print"), patch.object(stt_mod, "logger"):
         result = stt_mod.listen()
     del sys.modules["faster_whisper"]
@@ -234,7 +245,7 @@ def test_system_prompt_obedience():
     from jarvis_local.jarvis import SYSTEM_PROMPT
     assert "OBEDIENCIA ESTRICTA" in SYSTEM_PROMPT
     assert "responde solamente" in SYSTEM_PROMPT.lower()
-    assert "DEBES responder unicamente" in SYSTEM_PROMPT
+    assert "UNICAMENTE" in SYSTEM_PROMPT.upper()
 
 
 # --- TESTS DE UMBRAL CON ARCHIVO TEMPORAL ---

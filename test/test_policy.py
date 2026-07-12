@@ -12,7 +12,7 @@ from jarvis_local.safety.permissions import is_within_allowed
 
 def test_simulation_mode_default():
     sp = SafetyPolicy()
-    assert sp.is_simulation_mode() is True
+    assert sp.is_simulation_mode() is False
 
 
 def test_set_simulation_mode():

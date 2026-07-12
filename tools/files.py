@@ -76,17 +76,23 @@ def create_file(path_str: str, content: str = "") -> ActionPlan:
     if blocked:
         return blocked
     if resolved.exists():
-        plan = policy.block(f"El archivo ya existe: {path_str}")
-        return plan
+        return policy.block(f"El archivo ya existe: {path_str}")
     plan = ActionPlan(
         action="crear_archivo",
         params={"path": str(resolved), "content_size": len(content)},
         paths_affected=[str(resolved)],
         risk=RiskLevel.CREATE,
-        reason="Crear archivo requiere confirmacion explicita",
+        reason="Crear archivo",
     )
-    plan = policy.simulate(plan)
-    policy.pending_plan = plan
+    try:
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.write_text(content or "", encoding="utf-8")
+        plan.result = f"Archivo creado: {resolved}"
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"Error al crear archivo: {e}"
     return plan
 
 
@@ -95,17 +101,22 @@ def create_directory(path_str: str) -> ActionPlan:
     if blocked:
         return blocked
     if resolved.exists():
-        plan = policy.block(f"La carpeta ya existe: {path_str}")
-        return plan
+        return policy.block(f"La carpeta ya existe: {path_str}")
     plan = ActionPlan(
         action="crear_carpeta",
         params={"path": str(resolved)},
         paths_affected=[str(resolved)],
         risk=RiskLevel.CREATE,
-        reason="Crear carpeta requiere confirmacion explicita",
+        reason="Crear carpeta",
     )
-    plan = policy.simulate(plan)
-    policy.pending_plan = plan
+    try:
+        resolved.mkdir(parents=True, exist_ok=True)
+        plan.result = f"Carpeta creada: {resolved}"
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"Error al crear carpeta: {e}"
     return plan
 
 
@@ -121,10 +132,21 @@ def copy_file(src_str: str, dst_str: str) -> ActionPlan:
         params={"origen": str(src), "destino": str(dst)},
         paths_affected=[str(src), str(dst)],
         risk=RiskLevel.CREATE,
-        reason="Copiar archivo requiere confirmacion explicita",
+        reason="Copiar archivo",
     )
-    plan = policy.simulate(plan)
-    policy.pending_plan = plan
+    try:
+        import shutil as _shutil
+        if src.is_dir():
+            _shutil.copytree(str(src), str(dst))
+        else:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            _shutil.copy2(str(src), str(dst))
+        plan.result = f"Copiado: {src} -> {dst}"
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"Error al copiar: {e}"
     return plan
 
 
@@ -140,10 +162,18 @@ def move_file(src_str: str, dst_str: str) -> ActionPlan:
         params={"origen": str(src), "destino": str(dst)},
         paths_affected=[str(src), str(dst)],
         risk=RiskLevel.CREATE,
-        reason="Mover archivo requiere confirmacion explicita",
+        reason="Mover archivo",
     )
-    plan = policy.simulate(plan)
-    policy.pending_plan = plan
+    try:
+        import shutil as _shutil
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _shutil.move(str(src), str(dst))
+        plan.result = f"Movido: {src} -> {dst}"
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"Error al mover: {e}"
     return plan
 
 
@@ -160,10 +190,16 @@ def rename_file(path_str: str, new_name: str) -> ActionPlan:
         params={"ruta": str(resolved), "nuevo_nombre": new_name},
         paths_affected=[str(resolved), str(new_path)],
         risk=RiskLevel.CREATE,
-        reason="Renombrar requiere confirmacion explicita",
+        reason="Renombrar",
     )
-    plan = policy.simulate(plan)
-    policy.pending_plan = plan
+    try:
+        resolved.rename(new_path)
+        plan.result = f"Renombrado: {resolved.name} -> {new_name}"
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"Error al renombrar: {e}"
     return plan
 
 

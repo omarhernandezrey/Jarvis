@@ -7,6 +7,14 @@ import sys
 import os
 import shlex
 
+# Forzar UTF-8 en la consola de Windows para que los acentos se muestren correctamente
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.jarvis import Jarvis
@@ -35,6 +43,8 @@ Chat (prefijo /):
   /ayuda                 Muestra esta ayuda
   /estado                Estado de Ollama
   /limpiar               Borrar historial
+  /ui                    Abrir Interfaz Web de JARVIS
+  /desktop               Abrir Interfaz de Escritorio nativa
 
 Voz (/voz):
   /voz                   Capturar voz, transcribir, enviar a Ollama
@@ -179,7 +189,7 @@ def handle_terminal(args: list[str]):
     print(plan)
 
 
-def handle_confirm():
+def handle_confirm(jarvis=None):
     plan = policy.confirm()
     if not plan:
         print("No hay ningun plan pendiente para confirmar.")
@@ -200,6 +210,26 @@ def handle_confirm():
         elif plan.action == "ejecutar_comando":
             print(plan)
             print("[INFO] Comando confirmado pero no ejecutado en esta fase (solo simulacion).")
+        elif plan.action == "borrar_historial":
+            if jarvis is not None:
+                jarvis.history.clear()
+                jarvis.store.clear()
+            print("[OK] Historial borrado.")
+        elif plan.action == "borrar_memoria":
+            from jarvis_local.storage.memory import MemoryStore
+            from jarvis_local.config import BASE_DIR
+            mem = MemoryStore(BASE_DIR / "data")
+            mem_id = getattr(plan, "_mem_id", plan.params.get("memory_id", ""))
+            if mem.delete(mem_id):
+                print(f"[OK] Memoria {mem_id[:8]}... borrada.")
+            else:
+                print("[ERROR] Memoria no encontrada.")
+        elif plan.action == "limpiar_memorias":
+            from jarvis_local.storage.memory import MemoryStore
+            from jarvis_local.config import BASE_DIR
+            mem = MemoryStore(BASE_DIR / "data")
+            mem.clear()
+            print("[OK] Todas las memorias borradas.")
         else:
             print(plan)
     else:
@@ -231,10 +261,25 @@ def main():
     tts_enabled = cfg.get("voice", {}).get("tts_enabled", False)
 
     print(f"[OK] {jarvis.get_status()}")
-    print(f"Modelo: {jarvis.cfg['ollama']['model']}")
-    print(f"Voz: {'ON' if tts_enabled else 'OFF'}")
+    print(f"Modelo: {jarvis.cfg['ollama']['model']} (cargando en segundo plano...)")
+    print(f"Voz: {'ON (edge-tts)' if tts_enabled else 'OFF'}")
     print(HELP_TEXT)
-    print("Escribe tu mensaje y presiona Enter.\n")
+    print("Escribe tu mensaje y presiona Enter. Para activar voz: /voz on\n")
+
+    if tts_enabled:
+        try:
+            from datetime import datetime
+            from jarvis_local.voice.tts import speak as _tts_speak
+            hora = datetime.now().hour
+            if hora < 12:
+                _greeting = "Buenos dias Omar. JARVIS listo."
+            elif hora < 18:
+                _greeting = "Buenas tardes Omar. JARVIS listo."
+            else:
+                _greeting = "Buenas noches Omar. JARVIS listo."
+            _tts_speak(_greeting)
+        except Exception:
+            pass
 
     try:
         while True:
@@ -246,6 +291,8 @@ def main():
             cmd = user_input.lower().lstrip("/")
 
             if cmd in ("salir", "exit", "quit"):
+                if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
+                    jarvis._continuous_ctrl.stop()
                 print("\n[JARVIS]: Hasta luego, Omar.")
                 break
 
@@ -262,7 +309,126 @@ def main():
                     print(f"[Voz: {'ON' if tts_enabled else 'OFF'}]")
                 elif sub in ("limpiar", "clear"):
                     jarvis.history.clear()
+                    jarvis.store.clear()
                     print("[OK] Historial borrado.")
+                elif sub == "historial":
+                    if len(parts) > 1 and parts[1].lower() == "limpiar":
+                        from jarvis_local.safety.policy import policy, ActionPlan, RiskLevel, ActionStatus
+                        plan = ActionPlan(
+                            action="borrar_historial", risk=RiskLevel.DELETE,
+                            reason="Borrar historial local requiere confirmacion",
+                            simulation_result="[Plan pendiente] Accion: borrar historial local. Escribe /confirmar para ejecutar o /cancelar para cancelar.",
+                        )
+                        plan.status = ActionStatus.PLANNED
+                        policy.pending_plan = plan
+                        print(plan)
+                    else:
+                        msgs = jarvis.store.to_list(10)
+                        if not msgs:
+                            print("[Historial vacio]")
+                        else:
+                            print(f"\nHistorial (ultimos {len(msgs)} mensajes):")
+                            for m in msgs:
+                                role = "Tu" if m["role"] == "user" else "JARVIS"
+                                content = m["content"][:80] + ("..." if len(m["content"]) > 80 else "")
+                                print(f"  [{role}] {content}")
+                elif sub == "memoria":
+                    from jarvis_local.storage.memory import MemoryStore
+                    from jarvis_local.config import BASE_DIR
+                    mem = MemoryStore(BASE_DIR / "data")
+                    if len(parts) < 2:
+                        print("Uso: /memoria <guardar|listar|borrar|limpiar|usar|dejar|activas|desactivar-todas|buscar>")
+                    elif parts[1].lower() == "guardar":
+                        if len(parts) < 3:
+                            print("Uso: /memoria guardar <texto>")
+                        else:
+                            text = " ".join(parts[2:])
+                            item = mem.add(text)
+                            if item:
+                                print(f"[OK] Memoria guardada. ID: {item['id'][:8]}...")
+                            else:
+                                print("[ERROR] Limite de memorias alcanzado (max 100) o texto vacio.")
+                    elif parts[1].lower() == "listar":
+                        items = mem.list()
+                        if not items:
+                            print("[Sin memorias guardadas]")
+                        else:
+                            print(f"\nMemorias ({len(items)}):")
+                            for it in items:
+                                print(f"  [{it['id'][:8]}] {it['text'][:80]}")
+                    elif parts[1].lower() == "borrar":
+                        if len(parts) < 3:
+                            print("Uso: /memoria borrar <id>")
+                        else:
+                            mem_id = parts[2]
+                            from jarvis_local.safety.policy import policy as pol, ActionPlan, RiskLevel, ActionStatus
+                            plan = ActionPlan(
+                                action="borrar_memoria", risk=RiskLevel.DELETE,
+                                params={"memory_id": mem_id},
+                                reason="Borrar memoria requiere confirmacion",
+                                simulation_result=f"[Plan pendiente] Accion: borrar memoria {mem_id[:8]}... Escribe /confirmar para ejecutar o /cancelar para cancelar.",
+                            )
+                            plan.status = ActionStatus.PLANNED
+                            pol.pending_plan = plan
+                            pol.pending_plan._mem_id = mem_id
+                            print(plan)
+                    elif parts[1].lower() == "limpiar":
+                        from jarvis_local.safety.policy import policy as pol, ActionPlan, RiskLevel, ActionStatus
+                        plan = ActionPlan(
+                            action="limpiar_memorias", risk=RiskLevel.DELETE,
+                            reason="Limpiar todas las memorias requiere confirmacion",
+                            simulation_result="[Plan pendiente] Accion: borrar todas las memorias. Escribe /confirmar para ejecutar o /cancelar para cancelar.",
+                        )
+                        plan.status = ActionStatus.PLANNED
+                        pol.pending_plan = plan
+                        print(plan)
+                    elif parts[1].lower() == "usar":
+                        if len(parts) < 3:
+                            print("Uso: /memoria usar <id>")
+                        else:
+                            mem_id = parts[2]
+                            items = mem.list()
+                            found = next((it for it in items if it["id"].startswith(mem_id)), None)
+                            if not found:
+                                print(f"Memoria con ID '{mem_id[:8]}...' no encontrada.")
+                            else:
+                                ok, msg = jarvis.memory_context.activate(found)
+                                print(f"[{'OK' if ok else 'ERROR'}] {msg}")
+                    elif parts[1].lower() == "dejar":
+                        if len(parts) < 3:
+                            print("Uso: /memoria dejar <id>")
+                        else:
+                            mem_id = parts[2]
+                            if jarvis.memory_context.deactivate(mem_id):
+                                print(f"[OK] Memoria {mem_id[:8]}... desactivada.")
+                            else:
+                                print(f"No se encontro la memoria activa con ID '{mem_id[:8]}...'.")
+                    elif parts[1].lower() == "activas":
+                        actives = jarvis.memory_context.list_active()
+                        if not actives:
+                            print("[Sin memorias activas]")
+                        else:
+                            print(f"\nMemorias activas ({len(actives)}/{5}):")
+                            for a in actives:
+                                print(f"  [{a['id'][:8]}] {a['text'][:80]}")
+                    elif parts[1].lower() == "desactivar-todas":
+                        jarvis.memory_context.clear()
+                        print("[OK] Todas las memorias desactivadas.")
+                    elif parts[1].lower() == "buscar":
+                        if len(parts) < 3:
+                            print("Uso: /memoria buscar <texto>")
+                        else:
+                            query = " ".join(parts[2:]).lower()
+                            items = mem.list()
+                            results = [it for it in items if query in it["text"].lower()]
+                            if not results:
+                                print(f"No se encontraron memorias con '{query}'.")
+                            else:
+                                print(f"\nResultados ({len(results)}):")
+                                for it in results:
+                                    print(f"  [{it['id'][:8]}] {it['text'][:80]}")
+                    else:
+                        print(f"Comando memoria desconocido: {parts[1]}")
                 elif sub == "voz":
                     if len(parts) < 2:
                         _handle_voz_capture(jarvis, tts_enabled)
@@ -284,6 +450,75 @@ def main():
                             diagnose()
                         except Exception as e:
                             print(f"[ERROR Diagnostico] {e}")
+                    elif parts[1].lower() == "continuo":
+                        if len(parts) == 2:
+                            if (hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl
+                                    and jarvis._continuous_ctrl.is_running()):
+                                print("[Voz continua] Ya esta activa. Usa /voz continuo detener para detenerla.")
+                            else:
+                                from jarvis_local.voice.continuous import ContinuousVoiceController
+                                from jarvis_local.voice.stt import capture_and_transcribe, load_voice_config
+                                from jarvis_local.voice.tts import speak as tts_speak_fn
+                                from jarvis_local.voice.tts import is_speaking as tts_is_speaking_fn
+                                vcfg = load_voice_config()
+                                mic_name = "auto"
+                                try:
+                                    import sounddevice as sd
+                                    d = sd.query_devices(kind="input")
+                                    mic_name = d.get("name", "auto")
+                                except Exception:
+                                    pass
+                                ctrl = ContinuousVoiceController(
+                                    stt_fn=capture_and_transcribe,
+                                    chat_fn=jarvis.chat,
+                                    tts_speak_fn=tts_speak_fn if tts_enabled else None,
+                                    tts_speaking_fn=tts_is_speaking_fn,
+                                )
+                                jarvis._continuous_ctrl = ctrl
+                                ctrl.start()
+                                print("[Voz continua] ACTIVADA. Di 'Jarvis' seguido de tu solicitud.")
+                                print(f"[Voz continua] Microfono: {mic_name}")
+                                print(f"[Voz continua] Fragmentos: 2s | STT: faster-whisper {vcfg.get('stt_model','base')}")
+                                print("  Usa /voz continuo detener para parar.")
+                        elif parts[2].lower() == "detener":
+                            if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
+                                jarvis._continuous_ctrl.stop()
+                                jarvis._continuous_ctrl = None
+                            print("[Voz continua] DETENIDA.")
+                        elif parts[2].lower() == "estado":
+                            if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
+                                st = jarvis._continuous_ctrl.get_state()
+                                print(f"[Voz continua] {'ON' if st['active'] else 'OFF'}")
+                                print(f"  Estado: {st['state']}")
+                                print(f"  Wake word: {st['wake_word']}")
+                                print(f"  Fragmento: {st['fragment_duration_s']}s")
+                                print(f"  Pausa TTS: {st['tts_pause_ms']}ms")
+                                if st.get('buffer'):
+                                    print(f"  Buffer actual: {st['buffer']}")
+                                if st.get('last_command'):
+                                    print(f"  Ultimo comando: {st['last_command'][:80]}")
+                                if st.get('silence_count'):
+                                    print(f"  Silencio: {st['silence_count']}/{st.get('command_timeout_s',8)//2}")
+                            else:
+                                print("[Voz continua] OFF")
+                        elif parts[2].lower() == "prueba":
+                            from jarvis_local.voice.stt import capture_and_transcribe, load_voice_config
+                            vcfg = load_voice_config()
+                            mic_name = "auto"
+                            try:
+                                import sounddevice as sd
+                                d = sd.query_devices(kind="input")
+                                mic_name = d.get("name", "auto")
+                            except Exception:
+                                pass
+                            print(f"[Voz continua prueba] Microfono: {mic_name}")
+                            text = capture_and_transcribe(2, show_stats=True)
+                            if text:
+                                print(f"[Voz continua prueba] Transcripcion: \"{text}\"")
+                            else:
+                                print("[Voz continua prueba] Sin texto reconocido.")
+                        else:
+                            print("Uso: /voz continuo [detener|estado|prueba]")
                     elif parts[1].lower() == "voces":
                         try:
                             from jarvis_local.voice.tts import list_voices
@@ -334,7 +569,7 @@ def main():
                         speak("Prueba de voz de Jarvis.")
                         print("[Voz] Prueba de voz reproducida.")
                     else:
-                        stt_model = cfg.get("voice", {}).get("stt_model", "base")
+                        stt_model = cfg.get("voice", {}).get("stt_model", "small")
                         threshold_val = None
                         noise_floor = None
                         try:
@@ -364,8 +599,26 @@ def main():
                         print(p)
                     else:
                         print("No hay ningun plan pendiente.")
+                elif sub == "ui":
+                    print("Iniciando Interfaz Web JARVIS...")
+                    try:
+                        from jarvis_local.ui.server import main as ui_main
+                        ui_main()
+                    except KeyboardInterrupt:
+                        print("\nInterfaz web detenida.")
+                    except Exception as e:
+                        print(f"[ERROR UI] {e}")
+                elif sub == "desktop":
+                    print("Iniciando JARVIS Desktop...")
+                    try:
+                        from jarvis_local.ui.desktop import main as desktop_main
+                        desktop_main()
+                    except KeyboardInterrupt:
+                        print("\nInterfaz desktop cerrada.")
+                    except Exception as e:
+                        print(f"[ERROR Desktop] {e}")
                 elif sub == "confirmar":
-                    handle_confirm()
+                    handle_confirm(jarvis)
                 elif sub == "cancelar":
                     handle_cancel()
                 else:
@@ -394,6 +647,8 @@ def main():
                     pass
 
     except KeyboardInterrupt:
+        if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
+            jarvis._continuous_ctrl.stop()
         print("\n\n[JARVIS]: Hasta luego, Omar.")
     except EOFError:
         print()
