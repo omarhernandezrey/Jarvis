@@ -58,16 +58,49 @@ def navigate(url: str) -> ActionPlan:
 
 
 def show_jobs_in_browser(puesto: str = "", ciudad: str = "") -> ActionPlan:
-    """Abre la busqueda de Computrabajo en el Chrome automatizado."""
-    from jarvis_local.tools.jobs import build_search_url, last_search_url
-    if puesto:
-        url = build_search_url(puesto, ciudad)
-    else:
-        url = last_search_url() or "https://co.computrabajo.com"
-    plan = navigate(url)
-    if plan.status == ActionStatus.EXECUTED:
-        que = f"ofertas de {puesto}" if puesto else "la ultima busqueda de empleo"
-        plan.result = f"Le muestro {que} en el navegador, senor."
+    """Abre la busqueda en los tres portales, cada uno en su pestana.
+
+    En El Empleo la busqueda solo funciona con su propio JavaScript, asi que
+    verla en el navegador es la unica forma de tener sus resultados filtrados.
+    """
+    from jarvis_local.tools.jobs import portal_urls, last_query
+    if not puesto:
+        puesto, ciudad = last_query()
+    if not puesto:
+        plan = navigate("https://co.computrabajo.com")
+        if plan.status == ActionStatus.EXECUTED:
+            plan.result = ("No hay una busqueda reciente, senor. Le abro "
+                           "Computrabajo; diga 'busca trabajo de <cargo> en "
+                           "<ciudad>' para una busqueda concreta.")
+        return plan
+
+    urls = portal_urls(puesto, ciudad)
+    plan = ActionPlan(action="mostrar_ofertas",
+                      params={"puesto": puesto, "ciudad": ciudad},
+                      risk=RiskLevel.EXECUTE,
+                      reason=f"Mostrar ofertas de {puesto} en los portales")
+    if not browser_available():
+        plan.status = ActionStatus.ERROR
+        plan.result = "Selenium no esta instalado, senor. Ejecute: pip install selenium"
+        return plan
+    try:
+        d = _get_driver()
+        primero = True
+        for _portal, url in urls.items():
+            if primero:
+                d.get(url)
+                primero = False
+            else:
+                d.switch_to.new_window("tab")
+                d.get(url)
+        donde = f" en {ciudad}" if ciudad else ""
+        plan.result = (f"Le abro las ofertas de {puesto}{donde} en "
+                       f"{', '.join(urls)}, senor. Una pestana por portal.")
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"No pude controlar el navegador: {e}"
     return plan
 
 

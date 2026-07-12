@@ -63,11 +63,14 @@ JARVIS Local es un asistente personal estilo "Iron Man" diseñado para hardware 
 - Las credenciales viven en `secrets.yaml` / `credentials.json`, ambos **fuera de git** (.gitignore).
 
 ### 💼 Empleo y navegador automatizado (Fase 5)
-- **Búsqueda de empleo**: *"busca trabajo de desarrollador en Bogotá"*, *"hay vacantes de vendedor en Cali"* — JARVIS consulta **Computrabajo** y te lee las 5 mejores ofertas con **empresa, ubicación, salario, modalidad y antigüedad**.
+- **Búsqueda de empleo multi-portal**: *"busca trabajo de desarrollador en Bogotá"*, *"hay vacantes de vendedor en Cali"* — JARVIS consulta **Computrabajo y LinkedIn en paralelo** (~2 s) y te lee las 8 ofertas **más recientes primero**, con fuente, empresa, ubicación, salario, modalidad y antigüedad.
+- **Solo lo relevante**: filtra el ruido (buscar "desarrollador" no te trae "auxiliar de cocina") y elimina ofertas duplicadas entre portales.
 - **Abrir una oferta**: *"abre la oferta 2"* — la abre en tu navegador.
-- **Ver todas**: *"muéstrame las ofertas"* — abre la búsqueda completa en el Chrome automatizado.
+- **Los tres portales**: *"muéstrame las ofertas"* — abre Computrabajo, **El Empleo** y LinkedIn, cada uno en su pestaña, con tu búsqueda ya aplicada.
 - **Navegador controlado (Selenium)**: *"navega a github.com"* / *"cierra el navegador"* — JARVIS maneja su propia ventana de Chrome, que queda abierta para que sigas navegando.
-- Sin API key ni credenciales: scraping ligero con `requests` + Selenium Manager (descarga el chromedriver solo).
+- Sin API key ni credenciales: `requests` + Selenium Manager (descarga el chromedriver solo).
+
+> **Nota sobre El Empleo**: su buscador solo filtra desde el JavaScript del propio sitio — el HTML que sirve trae siempre un listado genérico, así que no es posible leer sus resultados filtrados por scraping. Por eso El Empleo se abre en el navegador (donde sí funciona) en vez de leerse en voz alta.
 
 ### 📁 Archivos
 - Listar, buscar, crear (archivos y carpetas), copiar, mover, renombrar y ver metadatos.
