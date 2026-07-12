@@ -1,3 +1,8 @@
+agent:
+  # Tool calling: el LLM elige que herramienta usar cuando el parser
+  # deterministico no reconoce la frase. false = solo parser (mas rapido,
+  # menos flexible).
+  enabled: true
 jarvis:
   language: es
   max_history: 20
@@ -7,6 +12,10 @@ logging:
   dir: logs
   errors_log: errors.log
 ollama:
+  # Parametros del agente (tool calling). Mas ajustados que los del chat:
+  # el modelo solo debe emitir una llamada a herramienta, no redactar.
+  agent_num_ctx: 2048
+  agent_num_predict: 120
   host: http://localhost:11434
   model: qwen2.5:3b
   num_ctx: 2048

@@ -137,6 +137,46 @@ class OllamaClient:
             full += token
         return full
 
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model: Optional[str] = None,
+    ) -> dict:
+        """
+        Chat con herramientas (tool calling nativo de Ollama).
+
+        Returns:
+            El mensaje del modelo: {"role": "assistant", "content": str,
+            "tool_calls": [{"function": {"name": str, "arguments": dict}}]}
+            La clave "tool_calls" solo aparece si el modelo decide usar una herramienta.
+        """
+        cfg = get_config()["ollama"]
+        payload = {
+            "model": model or cfg["model"],
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+            "options": {
+                # Contexto justo: el prompt de herramientas ya viene acotado
+                # (selector.py) y en CPU cada token de KV cache cuesta.
+                "num_ctx": cfg.get("agent_num_ctx", 2048),
+                # Un tool call cabe de sobra en 120 tokens. Sin este tope el
+                # modelo se pone a redactar ensayos y la latencia se dispara.
+                "num_predict": cfg.get("agent_num_predict", 120),
+                # Elegir herramienta es una decision, no creatividad
+                "temperature": 0.1,
+                "top_p": 0.9,
+            },
+        }
+        r = requests.post(
+            self._url("/api/chat"),
+            json=payload,
+            timeout=(15, self.timeout),
+        )
+        r.raise_for_status()
+        return r.json().get("message", {})
+
     def get_model_info(self, model_name: str) -> dict:
         """Obtiene informacion de un modelo (tamano, parametros, etc.)."""
         r = requests.post(

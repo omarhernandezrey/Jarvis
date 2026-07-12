@@ -328,6 +328,9 @@ class Jarvis:
         self.history = ConversationHistory()
         self.store = HistoryStore(BASE_DIR / "data")
         self.memory_context = SessionMemoryContext()
+        # Agente con tool calling (Fase 6). Se puede apagar en config.yaml
+        # (agent.enabled: false) para volver al comportamiento por parser.
+        self.agent_enabled = self.cfg.get("agent", {}).get("enabled", True)
         self._ensure_model()
         self._restore_history()
 
@@ -413,11 +416,19 @@ class Jarvis:
                 logger.log_action(instruction=instruction, result=fast[:150])
                 return fast
 
+            # Camino rapido: el parser deterministico reconoce la frase
+            # (instantaneo, sin gastar el LLM)
             intent = _parse_and_execute(safe_input, self)
             if intent is not None:
                 self._persist_message("user", safe_input)
                 self._persist_message("assistant", intent)
                 return intent
+
+            # Camino agentico: el LLM decide que herramientas usar.
+            # Cubre las frases que el parser no anticipo y encadena acciones.
+            agent_reply = self._try_agent(safe_input, instruction)
+            if agent_reply is not None:
+                return agent_reply
 
             self.history.add_user(safe_input)
             self._persist_message("user", safe_input)
@@ -457,6 +468,35 @@ class Jarvis:
         except Exception as e:
             logger.log_error("chat", str(e))
             raise RuntimeError(f"Error inesperado al comunicarse con Ollama: {e}")
+
+    def _try_agent(self, safe_input: str, instruction: str) -> str | None:
+        """Deja que el LLM elija herramientas (tool calling).
+
+        Devuelve la respuesta si el agente uso alguna herramienta; None si no
+        uso ninguna, para que la peticion siga al chat normal (mas barato y
+        con la personalidad y el contexto de memoria completos).
+        """
+        if not self.agent_enabled:
+            return None
+        try:
+            from jarvis_local.agent.loop import run_agent
+            result = run_agent(self.client, safe_input,
+                               history=self.history.get_messages())
+        except Exception as e:
+            logger.log_error("agente", str(e))
+            return None  # si el agente falla, seguimos con el chat normal
+
+        if not result.tools_used or not result.text:
+            return None
+
+        self.history.add_user(safe_input)
+        self.history.add_assistant(result.text)
+        self._persist_message("user", safe_input)
+        self._persist_message("assistant", result.text)
+        logger.log_action(instruction=instruction,
+                          result=f"[agente:{','.join(result.tools_used)}] "
+                                 f"{result.text[:120]}")
+        return result.text
 
     def get_status(self) -> str:
         try:
