@@ -3,7 +3,8 @@ JARVIS Local - Chistes (Fase 4)
 Chistes en espanol, 100% offline, con el tono formal de JARVIS.
 """
 import random
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 _JOKES = [
     "Por que los programadores confunden Halloween con Navidad? Porque OCT 31 es igual a DEC 25.",

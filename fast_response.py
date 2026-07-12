@@ -2,8 +2,8 @@
 JARVIS Local - Respuestas instantaneas sin Ollama.
 Personalidad JARVIS: formal, alterna entre "senor" y "senor Omar".
 """
-import re
 import random
+import re
 from datetime import datetime
 
 _DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]

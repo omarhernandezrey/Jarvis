@@ -1,7 +1,9 @@
 """Tests de arranque y validacion - Fase 7"""
-import sys, os, tempfile
+import os
+import sys
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -66,12 +68,12 @@ def test_python_available():
 
 def test_no_regressions_after_phase7():
     """Todas las suites existentes deben seguir importables."""
-    from jarvis_local.jarvis import Jarvis
     from jarvis_local.intent.parser import parse_intent
-    from jarvis_local.storage.history import HistoryStore
-    from jarvis_local.storage.memory import MemoryStore
+    from jarvis_local.jarvis import Jarvis
     from jarvis_local.memory_context.session import SessionMemoryContext
     from jarvis_local.safety.policy import SafetyPolicy
+    from jarvis_local.storage.history import HistoryStore
+    from jarvis_local.storage.memory import MemoryStore
     from jarvis_local.voice.stt import load_voice_config
     assert True
 

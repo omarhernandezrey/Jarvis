@@ -1,14 +1,20 @@
 """Tests de escucha continua - Fase 8 (maquina de estados real)"""
-import sys, os, threading, time
-from unittest.mock import MagicMock, patch, call
+import os
+import sys
+import threading
+import time
+from unittest.mock import MagicMock, call, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from jarvis_local.voice.continuous import (
-    find_wake_word, extract_command_after_wake_word,
-    ContinuousVoiceController, VoiceState, _merge_fragments, _normalize,
+    ContinuousVoiceController,
+    VoiceState,
+    _merge_fragments,
+    _normalize,
+    extract_command_after_wake_word,
+    find_wake_word,
 )
-
 
 # ============= Wake Word Detection Tests =============
 
@@ -329,9 +335,7 @@ def test_27_buffer_cleared_after_processing():
         call_n[0] += 1
         if call_n[0] == 1:
             return "jarvis comando uno"
-        elif call_n[0] == 2:
-            return None
-        elif call_n[0] == 3:
+        elif call_n[0] == 2 or call_n[0] == 3:
             return None
         elif call_n[0] == 4:
             return "jarvis comando dos"

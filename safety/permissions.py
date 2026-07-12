@@ -4,7 +4,6 @@ Define carpetas, apps y comandos permitidos. Valida rutas contra escapes.
 """
 import os
 from pathlib import Path
-from typing import Optional, Tuple
 
 ALLOWED_FOLDERS = [
     os.path.expandvars(r"%USERPROFILE%\Documents"),
@@ -128,7 +127,7 @@ BLOCKED_CMD_KEYWORDS = [
 ]
 
 
-def is_within_allowed(path_str: str) -> Tuple[bool, Optional[Path]]:
+def is_within_allowed(path_str: str) -> tuple[bool, Path | None]:
     """
     Verifica que una ruta este dentro de las carpetas permitidas.
     Resuelve rutas reales y bloquea escapes con ../, symlinks, etc.
@@ -152,7 +151,7 @@ def is_within_allowed(path_str: str) -> Tuple[bool, Optional[Path]]:
         return False, None
 
 
-def get_app_path(name: str) -> Optional[str]:
+def get_app_path(name: str) -> str | None:
     """Busca el ejecutable de una app permitida. Devuelve None si no existe."""
     info = ALLOWED_APPS.get(name.lower())
     if not info:
@@ -182,7 +181,7 @@ def list_allowed_apps() -> dict:
     return result
 
 
-def is_command_blocked(command: str) -> Tuple[bool, str]:
+def is_command_blocked(command: str) -> tuple[bool, str]:
     """
     Verifica si un comando esta bloqueado.
     Returns:
@@ -197,5 +196,5 @@ def is_command_blocked(command: str) -> Tuple[bool, str]:
             return True, f"Comando bloqueado: '{kw}' no esta permitido"
     for pattern in BLOCKED_COMMAND_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
-            return True, f"El comando contiene un patron bloqueado"
+            return True, "El comando contiene un patron bloqueado"
     return False, ""

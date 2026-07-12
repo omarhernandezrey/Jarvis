@@ -3,9 +3,9 @@ JARVIS Local - Cliente HTTP para Ollama
 Comunicacion pura con la API de Ollama, sin dependencias externas.
 """
 import json
-import time
+from collections.abc import Iterator
+
 import requests
-from typing import Optional, Iterator
 
 from jarvis_local.config import get_config
 
@@ -13,7 +13,7 @@ from jarvis_local.config import get_config
 class OllamaClient:
     """Cliente HTTP para la API de Ollama."""
 
-    def __init__(self, host: Optional[str] = None, timeout: Optional[int] = None):
+    def __init__(self, host: str | None = None, timeout: int | None = None):
         cfg = get_config()["ollama"]
         self.host = host or cfg["host"]
         self.timeout = timeout or cfg.get("timeout", 120)
@@ -78,7 +78,7 @@ class OllamaClient:
     def chat(
         self,
         messages: list[dict],
-        model: Optional[str] = None,
+        model: str | None = None,
         stream: bool = False,
     ) -> str | Iterator[str]:
         """
@@ -141,7 +141,7 @@ class OllamaClient:
         self,
         messages: list[dict],
         tools: list[dict],
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> dict:
         """
         Chat con herramientas (tool calling nativo de Ollama).

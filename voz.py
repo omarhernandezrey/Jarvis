@@ -5,11 +5,11 @@ Sin umbral manual — funciona con micrófonos de cualquier volumen.
 
 Uso: python -m jarvis_local.voz
 """
+import contextlib
+import io as _io
 import os
 import sys
 import time
-import contextlib
-import io as _io
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     try:
@@ -43,7 +43,7 @@ def _escuchar() -> str | None:
     Sin umbral de volumen — funciona con cualquier microfono.
     """
     import sounddevice as sd
-    import numpy as np
+
     from jarvis_local.voice.stt import _get_whisper_model, load_voice_config
 
     cfg = load_voice_config()
@@ -102,7 +102,7 @@ def main():
         _log(f"[ERROR] {e}")
         sys.exit(1)
 
-    from jarvis_local.voice.tts import speak, is_speaking
+    from jarvis_local.voice.tts import is_speaking, speak
 
     _log("JARVIS activo. Habla cuando quieras. Ctrl+C para salir.")
     _log("-" * 50)

@@ -1,9 +1,12 @@
 """Tests de respuestas exactas - jarvis.py"""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from jarvis_local.jarvis import _exact_response, Jarvis
 from unittest.mock import MagicMock, patch
+
+from jarvis_local.jarvis import Jarvis, _exact_response
 
 
 def _mc(jarvis_obj):

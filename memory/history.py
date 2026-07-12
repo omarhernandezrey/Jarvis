@@ -3,7 +3,7 @@ JARVIS Local - Historial de conversacion
 Guarda las ultimas N interacciones para contexto del LLM.
 """
 import json
-from pathlib import Path
+
 from jarvis_local.config import get_config
 
 

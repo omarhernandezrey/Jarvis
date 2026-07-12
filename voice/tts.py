@@ -7,7 +7,6 @@ Fallback  : pyttsx3/SAPI5 (offline).
 import asyncio
 import io
 import threading
-from typing import Optional
 
 import numpy as np
 import sounddevice as sd
@@ -121,7 +120,7 @@ def _apply_pyttsx3_settings():
     _engine_pyttsx3.setProperty("volume", _volume_float)
 
 
-def _auto_spanish_idx(voices) -> Optional[int]:
+def _auto_spanish_idx(voices) -> int | None:
     for i, v in enumerate(voices):
         for lang in (v.languages or []):
             if any(x in str(lang).lower() for x in ["es-co", "es-mx", "es-es", "es_", "es-", "spanish"]):

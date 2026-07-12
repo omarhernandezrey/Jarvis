@@ -4,10 +4,10 @@ Proximos eventos del calendario. Requiere configuracion OAuth opcional:
   pip install google-api-python-client google-auth-oauthlib
   credentials.json en jarvis_local/ (ver secrets.example.yaml)
 """
-import os
-from datetime import datetime, timezone
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+from datetime import UTC, datetime
+
 from jarvis_local.config import BASE_DIR
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 CREDENTIALS_FILE = BASE_DIR / "credentials.json"
 TOKEN_FILE = BASE_DIR / "token.json"
@@ -55,7 +55,7 @@ def upcoming_events(limit: int = 5) -> ActionPlan:
         return plan
     try:
         service = _get_service()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         events = service.events().list(
             calendarId="primary", timeMin=now, maxResults=limit,
             singleEvents=True, orderBy="startTime").execute().get("items", [])

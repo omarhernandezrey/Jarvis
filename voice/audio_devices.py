@@ -1,7 +1,6 @@
 """
 JARVIS Local - Deteccion de dispositivos de audio (Fase 3)
 """
-from typing import Optional
 
 
 def list_microphones() -> list[dict]:
@@ -19,11 +18,11 @@ def list_microphones() -> list[dict]:
                     "default_samplerate": dev.get("default_samplerate", 16000),
                 })
         return mics
-    except Exception as e:
+    except Exception:
         return []
 
 
-def get_default_microphone() -> Optional[dict]:
+def get_default_microphone() -> dict | None:
     """Obtiene el microfono por defecto."""
     mics = list_microphones()
     if not mics:

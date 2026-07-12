@@ -9,8 +9,10 @@ import json
 import re
 import unicodedata
 import webbrowser
+
 import requests
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 CT_BASE = "https://co.computrabajo.com"
 EE_BASE = "https://www.elempleo.com"

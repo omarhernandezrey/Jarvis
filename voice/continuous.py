@@ -8,7 +8,7 @@ import re
 import threading
 import time
 import unicodedata
-from typing import Optional, Callable
+from collections.abc import Callable
 
 _WAKE_VARIANTS = [
     "jarvis", "yarbis", "yarvis", "garbis", "gerbis",
@@ -56,7 +56,7 @@ def find_wake_word(text: str) -> tuple[bool, str]:
     return True, cmd_normalized
 
 
-def extract_command_after_wake_word(text: str) -> Optional[str]:
+def extract_command_after_wake_word(text: str) -> str | None:
     detected, cmd = find_wake_word(text)
     if not detected:
         return None
@@ -103,7 +103,7 @@ class ContinuousVoiceController:
         self._tts_speak = tts_speak_fn
         self._tts_speaking = tts_speaking_fn
         self._running = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._fragment_duration = 2
         self._tts_pause_ms = 500
         self._command_timeout_s = 8
@@ -176,7 +176,7 @@ class ContinuousVoiceController:
 
     # -- fragment capture helper --
 
-    def _capture_fragment(self) -> Optional[str]:
+    def _capture_fragment(self) -> str | None:
         """Captura un fragmento. Retorna texto transcrito o None."""
         try:
             result = self._stt(self._fragment_duration, show_stats=True)
@@ -303,7 +303,7 @@ class ContinuousVoiceController:
 
     # -- single-shot methods (mantenidos para compatibilidad) --
 
-    def process_transcription(self, text: str) -> Optional[str]:
+    def process_transcription(self, text: str) -> str | None:
         cmd = extract_command_after_wake_word(text)
         if cmd is None:
             return None
@@ -313,5 +313,5 @@ class ContinuousVoiceController:
             return ""
         return self._chat(cmd)
 
-    def _loop_step(self, text: str) -> Optional[str]:
+    def _loop_step(self, text: str) -> str | None:
         return self.process_transcription(text)

@@ -3,7 +3,8 @@ JARVIS Local - Estado del sistema (Fase 4)
 Uso de CPU, RAM, disco y estado de la bateria (psutil).
 """
 import psutil
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 
 def system_status() -> ActionPlan:

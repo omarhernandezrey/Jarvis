@@ -3,9 +3,9 @@
 JARVIS Local - Interfaz de Linea de Comandos (Fase 3)
 Chat local con Ollama + Herramientas + Voz.
 """
-import sys
 import os
 import shlex
+import sys
 
 # Forzar UTF-8 en la consola de Windows para que los acentos se muestren correctamente
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
@@ -17,15 +17,22 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jarvis_local.jarvis import Jarvis
-from jarvis_local.safety.policy import policy, ActionStatus, RiskLevel
-from jarvis_local.tools.files import (
-    list_files, search_files, create_file, create_directory,
-    copy_file, move_file, rename_file, plan_delete, read_metadata,
-)
-from jarvis_local.tools.apps import open_app, list_apps, execute_open_app, ALLOWED_APP_NAMES
-from jarvis_local.tools.terminal import plan_command
 from jarvis_local.config import get_config
+from jarvis_local.jarvis import Jarvis
+from jarvis_local.safety.policy import ActionStatus, policy
+from jarvis_local.tools.apps import ALLOWED_APP_NAMES, execute_open_app, list_apps, open_app
+from jarvis_local.tools.files import (
+    copy_file,
+    create_directory,
+    create_file,
+    list_files,
+    move_file,
+    plan_delete,
+    read_metadata,
+    rename_file,
+    search_files,
+)
+from jarvis_local.tools.terminal import plan_command
 
 BANNER = """
   ==================================================
@@ -202,6 +209,23 @@ def handle_terminal(args: list[str]):
     print(plan)
 
 
+def _set_voice(jarvis, enabled: bool):
+    """Conecta (o desconecta) el TTS al streaming del chat.
+
+    Con esto JARVIS empieza a hablar la primera frase mientras el modelo aun
+    escribe el resto, en vez de esperar la respuesta completa.
+    """
+    if not enabled:
+        jarvis.speak_fn = None
+        return
+    try:
+        from jarvis_local.voice.tts import speak
+        jarvis.speak_fn = speak
+    except Exception as e:
+        print(f"[ERROR Voz] No pude activar la voz: {e}")
+        jarvis.speak_fn = None
+
+
 def handle_confirm(jarvis=None):
     plan = policy.confirm()
     if not plan:
@@ -238,8 +262,8 @@ def handle_confirm(jarvis=None):
                 jarvis.store.clear()
             print("[OK] Historial borrado.")
         elif plan.action == "borrar_memoria":
-            from jarvis_local.storage.memory import MemoryStore
             from jarvis_local.config import BASE_DIR
+            from jarvis_local.storage.memory import MemoryStore
             mem = MemoryStore(BASE_DIR / "data")
             mem_id = getattr(plan, "_mem_id", plan.params.get("memory_id", ""))
             if mem.delete(mem_id):
@@ -247,8 +271,8 @@ def handle_confirm(jarvis=None):
             else:
                 print("[ERROR] Memoria no encontrada.")
         elif plan.action == "limpiar_memorias":
-            from jarvis_local.storage.memory import MemoryStore
             from jarvis_local.config import BASE_DIR
+            from jarvis_local.storage.memory import MemoryStore
             mem = MemoryStore(BASE_DIR / "data")
             mem.clear()
             print("[OK] Todas las memorias borradas.")
@@ -291,6 +315,7 @@ def main():
     if tts_enabled:
         try:
             from datetime import datetime
+
             from jarvis_local.voice.tts import speak as _tts_speak
             hora = datetime.now().hour
             if hora < 12:
@@ -335,7 +360,12 @@ def main():
                     print("[OK] Historial borrado.")
                 elif sub == "historial":
                     if len(parts) > 1 and parts[1].lower() == "limpiar":
-                        from jarvis_local.safety.policy import policy, ActionPlan, RiskLevel, ActionStatus
+                        from jarvis_local.safety.policy import (
+                            ActionPlan,
+                            ActionStatus,
+                            RiskLevel,
+                            policy,
+                        )
                         plan = ActionPlan(
                             action="borrar_historial", risk=RiskLevel.DELETE,
                             reason="Borrar historial local requiere confirmacion",
@@ -355,8 +385,8 @@ def main():
                                 content = m["content"][:80] + ("..." if len(m["content"]) > 80 else "")
                                 print(f"  [{role}] {content}")
                 elif sub == "memoria":
-                    from jarvis_local.storage.memory import MemoryStore
                     from jarvis_local.config import BASE_DIR
+                    from jarvis_local.storage.memory import MemoryStore
                     mem = MemoryStore(BASE_DIR / "data")
                     if len(parts) < 2:
                         print("Uso: /memoria <guardar|listar|borrar|limpiar|usar|dejar|activas|desactivar-todas|buscar>")
@@ -383,7 +413,12 @@ def main():
                             print("Uso: /memoria borrar <id>")
                         else:
                             mem_id = parts[2]
-                            from jarvis_local.safety.policy import policy as pol, ActionPlan, RiskLevel, ActionStatus
+                            from jarvis_local.safety.policy import (
+                                ActionPlan,
+                                ActionStatus,
+                                RiskLevel,
+                            )
+                            from jarvis_local.safety.policy import policy as pol
                             plan = ActionPlan(
                                 action="borrar_memoria", risk=RiskLevel.DELETE,
                                 params={"memory_id": mem_id},
@@ -395,7 +430,8 @@ def main():
                             pol.pending_plan._mem_id = mem_id
                             print(plan)
                     elif parts[1].lower() == "limpiar":
-                        from jarvis_local.safety.policy import policy as pol, ActionPlan, RiskLevel, ActionStatus
+                        from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+                        from jarvis_local.safety.policy import policy as pol
                         plan = ActionPlan(
                             action="limpiar_memorias", risk=RiskLevel.DELETE,
                             reason="Limpiar todas las memorias requiere confirmacion",
@@ -438,17 +474,27 @@ def main():
                         print("[OK] Todas las memorias desactivadas.")
                     elif parts[1].lower() == "buscar":
                         if len(parts) < 3:
-                            print("Uso: /memoria buscar <texto>")
+                            print("Uso: /memoria buscar <texto o pregunta>")
                         else:
-                            query = " ".join(parts[2:]).lower()
+                            query = " ".join(parts[2:])
                             items = mem.list()
-                            results = [it for it in items if query in it["text"].lower()]
+                            # Busqueda semantica: encuentra por significado
+                            # ("que me gusta tomar?" -> "prefiero el cafe")
+                            results = []
+                            if jarvis.auto_recall is not None:
+                                hits = jarvis.auto_recall.index.search(
+                                    query, items, top_k=5, min_score=0.4)
+                                results = [(m, s) for m, s in hits]
+                            if not results:  # respaldo: coincidencia literal
+                                results = [(it, 0.0) for it in items
+                                           if query.lower() in it["text"].lower()]
                             if not results:
-                                print(f"No se encontraron memorias con '{query}'.")
+                                print(f"No se encontraron memorias sobre '{query}'.")
                             else:
                                 print(f"\nResultados ({len(results)}):")
-                                for it in results:
-                                    print(f"  [{it['id'][:8]}] {it['text'][:80]}")
+                                for it, score in results:
+                                    rel = f" ({score:.0%})" if score else ""
+                                    print(f"  [{it['id'][:8]}]{rel} {it['text'][:80]}")
                     else:
                         print(f"Comando memoria desconocido: {parts[1]}")
                 elif sub == "voz":
@@ -456,9 +502,12 @@ def main():
                         _handle_voz_capture(jarvis, tts_enabled)
                     elif parts[1].lower() == "on":
                         tts_enabled = True
-                        print("[Voz] Lectura de respuestas ACTIVADA (SAPI5)")
+                        _set_voice(jarvis, True)
+                        print("[Voz] Lectura de respuestas ACTIVADA "
+                              "(habla mientras genera)")
                     elif parts[1].lower() == "off":
                         tts_enabled = False
+                        _set_voice(jarvis, False)
                         print("[Voz] Lectura de respuestas DESACTIVADA")
                     elif parts[1].lower() == "calibrar":
                         try:
@@ -479,9 +528,12 @@ def main():
                                 print("[Voz continua] Ya esta activa. Usa /voz continuo detener para detenerla.")
                             else:
                                 from jarvis_local.voice.continuous import ContinuousVoiceController
-                                from jarvis_local.voice.stt import capture_and_transcribe, load_voice_config
-                                from jarvis_local.voice.tts import speak as tts_speak_fn
+                                from jarvis_local.voice.stt import (
+                                    capture_and_transcribe,
+                                    load_voice_config,
+                                )
                                 from jarvis_local.voice.tts import is_speaking as tts_is_speaking_fn
+                                from jarvis_local.voice.tts import speak as tts_speak_fn
                                 vcfg = load_voice_config()
                                 mic_name = "auto"
                                 try:
@@ -524,7 +576,10 @@ def main():
                             else:
                                 print("[Voz continua] OFF")
                         elif parts[2].lower() == "prueba":
-                            from jarvis_local.voice.stt import capture_and_transcribe, load_voice_config
+                            from jarvis_local.voice.stt import (
+                                capture_and_transcribe,
+                                load_voice_config,
+                            )
                             vcfg = load_voice_config()
                             mic_name = "auto"
                             try:
@@ -569,7 +624,7 @@ def main():
                             if set_rate(wpm):
                                 print(f"[Voz] Velocidad: {wpm} palabras/min")
                             else:
-                                print(f"[ERROR] Velocidad fuera de rango (120-250)")
+                                print("[ERROR] Velocidad fuera de rango (120-250)")
                         except (IndexError, ValueError):
                             print("Uso: /voz velocidad <120-250>")
                         except Exception as e:
@@ -581,7 +636,7 @@ def main():
                             if set_volume(vol):
                                 print(f"[Voz] Volumen: {vol:.1f}")
                             else:
-                                print(f"[ERROR] Volumen fuera de rango (0.0-1.0)")
+                                print("[ERROR] Volumen fuera de rango (0.0-1.0)")
                         except (IndexError, ValueError):
                             print("Uso: /voz volumen <0.0-1.0>")
                         except Exception as e:
@@ -601,6 +656,8 @@ def main():
                             noise_floor = vcfg.get("stt_noise_floor")
                         except Exception:
                             pass
+                        if noise_floor is not None:
+                            print(f"[Voz] Ruido base calibrado: {noise_floor:.6f}")
                         from jarvis_local.voice.tts import get_voice_state
                         tts_state = get_voice_state()
                         print(f"[Voz] STT: faster-whisper {stt_model}")
@@ -661,7 +718,10 @@ def main():
 
             print(f"\n[JARVIS]: {response}\n")
 
-            if tts_enabled and response:
+            # Con la voz activa, el chat ya hablo por frases mientras generaba
+            # (jarvis.speak_fn). Aqui solo se habla lo que no paso por el LLM:
+            # respuestas instantaneas, resultados de herramientas y planes.
+            if tts_enabled and response and not jarvis.spoke_last_response:
                 try:
                     from jarvis_local.voice.tts import speak
                     speak(response)

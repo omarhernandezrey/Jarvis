@@ -4,7 +4,6 @@ Detecta y redacta API keys, tokens, passwords y cookies en texto.
 """
 
 import re
-from typing import Tuple
 
 SECRET_PATTERNS = [
     (r'sk-[A-Za-z0-9_-]{20,}', "[OPENAI_API_KEY]"),
@@ -27,7 +26,7 @@ SECRET_PATTERNS = [
 ]
 
 
-def redact_secrets(text: str) -> Tuple[str, int]:
+def redact_secrets(text: str) -> tuple[str, int]:
     """
     Redacta secretos en el texto.
 

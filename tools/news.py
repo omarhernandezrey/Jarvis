@@ -4,9 +4,11 @@ Titulares principales via RSS de Google News (sin API key).
 Fuente configurable en config.yaml (news.rss_url).
 """
 import xml.etree.ElementTree as ET
+
 import requests
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
 from jarvis_local.config import get_config
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 DEFAULT_RSS = "https://news.google.com/rss?hl=es-419&gl=CO&ceid=CO:es-419"
 

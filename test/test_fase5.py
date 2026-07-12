@@ -3,21 +3,28 @@ Tests de Fase 5: busqueda de empleo en Computrabajo y navegador automatizado.
 Offline: parser de intents, construccion de URLs y parseo de HTML de ejemplo.
 No abre Chrome ni consulta la red.
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from jarvis_local.intent.parser import parse_intent
-from jarvis_local.tools import jobs as jobs_mod
-from jarvis_local.tools.jobs import (
-    build_search_url, build_elempleo_url, build_linkedin_url, portal_urls,
-    parse_jobs, parse_elempleo, parse_linkedin, antiguedad_minutos,
-    es_relevante, _slug, open_job,
-)
-from jarvis_local.tools.browser import browser_available
 from jarvis_local.safety.policy import ActionStatus
-
+from jarvis_local.tools import jobs as jobs_mod
+from jarvis_local.tools.browser import browser_available
+from jarvis_local.tools.jobs import (
+    _slug,
+    antiguedad_minutos,
+    build_elempleo_url,
+    build_linkedin_url,
+    build_search_url,
+    es_relevante,
+    open_job,
+    parse_elempleo,
+    parse_jobs,
+    parse_linkedin,
+    portal_urls,
+)
 
 # HTML minimo con la estructura real de Computrabajo
 _HTML = """

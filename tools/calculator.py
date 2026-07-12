@@ -6,7 +6,8 @@ Soporta lenguaje natural: "cuanto es 5 mas 3 por 2".
 import ast
 import math
 import operator
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 _OPS = {
     ast.Add: operator.add, ast.Sub: operator.sub,

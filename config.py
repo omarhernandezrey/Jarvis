@@ -2,9 +2,9 @@
 JARVIS Local - Configuracion
 Carga configuraciones desde config.yaml.
 """
-import os
-import yaml
 from pathlib import Path
+
+import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.yaml"
@@ -34,7 +34,7 @@ _config_cache = None
 def _load_config() -> dict:
     cfg = DEFAULT_CONFIG.copy()
     if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
             user_cfg = yaml.safe_load(f) or {}
             _deep_merge(cfg, user_cfg)
     return cfg
@@ -72,7 +72,7 @@ def get_secrets() -> dict:
     global _secrets_cache
     if _secrets_cache is None:
         if SECRETS_FILE.exists():
-            with open(SECRETS_FILE, "r", encoding="utf-8") as f:
+            with open(SECRETS_FILE, encoding="utf-8") as f:
                 _secrets_cache = yaml.safe_load(f) or {}
         else:
             _secrets_cache = {}

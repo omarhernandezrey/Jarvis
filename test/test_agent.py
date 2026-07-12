@@ -3,18 +3,21 @@ Tests del agente con tool calling (Fase 6).
 El cliente de Ollama se simula: los tests no dependen del modelo ni de la red,
 solo verifican el contrato del bucle, el registro y la preseleccion.
 """
-import sys
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from jarvis_local.agent.loop import _arguments, _clean_text, run_agent
 from jarvis_local.agent.registry import (
-    TOOLS, all_schemas, get_tool, tool_names, execute,
+    TOOLS,
+    all_schemas,
+    execute,
+    get_tool,
+    tool_names,
 )
-from jarvis_local.agent.selector import select_tools, selected_names, score_tools
-from jarvis_local.agent.loop import run_agent, _clean_text, _arguments
-
+from jarvis_local.agent.selector import score_tools, select_tools, selected_names
 
 # ---------- Registro ----------
 

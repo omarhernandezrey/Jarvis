@@ -7,8 +7,8 @@ El LLM recibe estos esquemas via tool calling nativo de Ollama y decide cual
 usar. Las herramientas de riesgo (borrar, correo, ocultar) devuelven un plan
 que exige /confirmar: el modelo NUNCA ejecuta acciones destructivas por si solo.
 """
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from jarvis_local.safety.policy import ActionPlan, ActionStatus
 
@@ -56,12 +56,14 @@ def _open_app(app: str):
 
 def _list_files(path: str = ""):
     import os
+
     from jarvis_local.tools.files import list_files
     return list_files(path or os.path.expandvars(r"%USERPROFILE%\Documents"))
 
 
 def _search_files(name: str, path: str = ""):
     import os
+
     from jarvis_local.tools.files import search_files
     return search_files(name, path or os.path.expandvars(r"%USERPROFILE%\Documents"))
 
@@ -77,8 +79,8 @@ def _create_file(path: str, content: str = ""):
 
 
 def _delete_file(path: str):
-    from jarvis_local.tools.files import plan_delete
     from jarvis_local.safety.policy import policy
+    from jarvis_local.tools.files import plan_delete
     plan = plan_delete(path)
     policy.pending_plan = plan
     return plan
@@ -90,8 +92,8 @@ def _run_command(command: str):
 
 
 def _weather(city: str = ""):
-    from jarvis_local.tools.weather import get_weather
     from jarvis_local.tools.location import my_location
+    from jarvis_local.tools.weather import get_weather
     if not city:
         loc = my_location()
         city = loc["city"] if loc else ""
@@ -222,8 +224,8 @@ def _close_browser():
 
 
 def _remember(text: str):
-    from jarvis_local.storage.memory import MemoryStore
     from jarvis_local.config import BASE_DIR
+    from jarvis_local.storage.memory import MemoryStore
     mem = MemoryStore(BASE_DIR / "data")
     item = mem.add(text)
     return (f"Lo recordare, senor: {text}" if item

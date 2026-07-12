@@ -3,7 +3,7 @@ JARVIS Local - Navegador automatizado con Selenium (Fase 5)
 Chrome controlado por JARVIS: navegar, buscar y mostrar ofertas de empleo.
 El chromedriver lo gestiona Selenium Manager automaticamente.
 """
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 _driver = None
 
@@ -63,7 +63,7 @@ def show_jobs_in_browser(puesto: str = "", ciudad: str = "") -> ActionPlan:
     En El Empleo la busqueda solo funciona con su propio JavaScript, asi que
     verla en el navegador es la unica forma de tener sus resultados filtrados.
     """
-    from jarvis_local.tools.jobs import portal_urls, last_query
+    from jarvis_local.tools.jobs import last_query, portal_urls
     if not puesto:
         puesto, ciudad = last_query()
     if not puesto:

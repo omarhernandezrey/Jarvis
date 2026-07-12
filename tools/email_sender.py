@@ -7,8 +7,9 @@ import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus, policy
+
 from jarvis_local.config import get_secrets
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
 
 _EMAIL_RE = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.-]+$")
 

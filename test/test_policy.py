@@ -1,13 +1,13 @@
 """
 Tests de politicas de seguridad - Fase 2
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from jarvis_local.safety.policy import SafetyPolicy, ActionPlan, RiskLevel, ActionStatus
 from jarvis_local.safety.permissions import is_within_allowed
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, SafetyPolicy
 
 
 def test_simulation_mode_default():

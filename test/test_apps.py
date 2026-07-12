@@ -1,13 +1,13 @@
 """
 Tests de herramientas de apps - Fase 2
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from jarvis_local.tools.apps import open_app, list_apps, ALLOWED_APP_NAMES
 from jarvis_local.safety.policy import ActionStatus
+from jarvis_local.tools.apps import ALLOWED_APP_NAMES, list_apps, open_app
 
 
 def test_list_apps():

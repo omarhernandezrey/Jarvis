@@ -7,6 +7,11 @@ jarvis:
   language: es
   max_history: 20
   name: JARVIS
+memory:
+  # Recuerdo automatico: JARVIS busca por significado las memorias relevantes
+  # al mensaje y las inyecta como contexto. Requiere el modelo de embeddings
+  # (ollama pull bge-m3). Si no esta, cae a busqueda por palabras.
+  auto_recall: true
 logging:
   actions_log: actions.log
   dir: logs

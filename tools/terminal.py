@@ -3,8 +3,9 @@ JARVIS Local - Herramientas de Terminal (Fase 2)
 Preparacion y ejecucion de comandos PowerShell/CMD.
 """
 import subprocess
+
 from jarvis_local.safety.permissions import is_command_blocked
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus, policy
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
 
 
 def plan_command(command: str) -> ActionPlan:

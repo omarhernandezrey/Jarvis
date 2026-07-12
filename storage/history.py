@@ -6,7 +6,7 @@ import json
 import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 MAX_MESSAGES = 50
@@ -26,7 +26,7 @@ class HistoryStore:
             self._messages = []
             return
         try:
-            with open(self._path, "r", encoding="utf-8") as f:
+            with open(self._path, encoding="utf-8") as f:
                 data = json.load(f)
             self._messages = data.get("messages", [])
         except (json.JSONDecodeError, KeyError, ValueError):
@@ -38,7 +38,7 @@ class HistoryStore:
     def _save(self):
         data = {
             "version": 1,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "messages": self._messages,
         }
         fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
@@ -75,7 +75,7 @@ class HistoryStore:
         self._messages.append({
             "role": role,
             "content": clean,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         if len(self._messages) > MAX_MESSAGES:
             self._messages = self._messages[-MAX_MESSAGES:]

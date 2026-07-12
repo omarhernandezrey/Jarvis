@@ -4,8 +4,10 @@ Abre cualquier lugar en el mapa e indica la distancia desde tu ubicacion.
 """
 import math
 import webbrowser
+
 import requests
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 from jarvis_local.tools.weather import geocode_city
 
 MY_LOCATION_URL = "http://ip-api.com/json/?fields=status,city,country,lat,lon"

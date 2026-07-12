@@ -3,11 +3,11 @@ JARVIS Local - Speech-to-Text con faster-whisper (Fase 3)
 Graba del microfono, transcribe offline en espanol.
 Con calibracion de ruido y diagnostico.
 """
-import os
 import threading
 import time
+
 import yaml
-from typing import Optional, Union
+
 from jarvis_local.config import CONFIG_FILE
 from jarvis_local.safety.logger import logger
 
@@ -15,7 +15,7 @@ from jarvis_local.safety.logger import logger
 def load_voice_config() -> dict:
     """Lee config.yaml desde disco CADA VEZ. Sin cache."""
     if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     else:
         data = {}
@@ -23,8 +23,8 @@ def load_voice_config() -> dict:
 
 
 try:
-    import sounddevice as _sd
     import numpy as _np
+    import sounddevice as _sd
     _AUDIO_OK = True
 except ImportError:
     _AUDIO_OK = False
@@ -103,7 +103,7 @@ def calibrate() -> dict:
 
     cfg_path = CONFIG_FILE
     if cfg_path.exists():
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             cfg_data = yaml.safe_load(f) or {}
     else:
         cfg_data = {}
@@ -202,7 +202,7 @@ def diagnose() -> dict:
     return info
 
 
-def listen() -> Optional[str]:
+def listen() -> str | None:
     """
     Captura audio del microfono y transcribe con faster-whisper.
 
@@ -265,7 +265,7 @@ def listen() -> Optional[str]:
     except Exception as e:
         msg = f"No se pudo cargar faster-whisper: {e}"
         print(f"[ERROR Voz] {msg}")
-        print(f"  Si el modelo no esta descargado, ejecuta:")
+        print("  Si el modelo no esta descargado, ejecuta:")
         print(f"  python -c \"from faster_whisper import WhisperModel; WhisperModel('{model_name}', device='cpu', compute_type='{compute_type}')\"")
         logger.log_error("stt", msg)
         return None
@@ -287,7 +287,7 @@ def listen() -> Optional[str]:
 
         if stats["rms_avg"] < threshold:
             print(f"[Voz] No se detecto habla. RMS={stats['rms_avg']:.6f} < umbral={threshold:.6f}")
-            print(f"  Ejecuta /voz calibrar para ajustar el umbral a tu ambiente.")
+            print("  Ejecuta /voz calibrar para ajustar el umbral a tu ambiente.")
             logger.log_action(instruction="/voz", result="no_speech_detected")
             return None
 
@@ -305,7 +305,7 @@ def capture_and_transcribe(
     duration_seconds: float,
     show_stats: bool = True,
     return_extra: bool = False,
-) -> Union[str, dict, None]:
+) -> str | dict | None:
     """Captura audio y transcribe. Reutilizada por /voz y modo continuo.
 
     Args:

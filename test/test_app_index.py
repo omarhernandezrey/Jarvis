@@ -3,14 +3,13 @@ Tests del indice dinamico de aplicaciones instaladas - Fase 3
 Usan un indice falso en memoria para no depender de las apps del equipo
 ni lanzar ninguna aplicacion real.
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from jarvis_local.tools import app_index
-from jarvis_local.tools.app_index import find_app, _normalize, _is_launchable
-
+from jarvis_local.tools.app_index import _is_launchable, _normalize, find_app
 
 _FAKE_INDEX = [
     {"name": "WhatsApp", "appid": "5319275A.WhatsAppDesktop!App", "norm": "whatsapp"},

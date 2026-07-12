@@ -3,8 +3,10 @@ JARVIS Local - Direccion IP (Fase 4)
 IP local (offline) y publica (api.ipify.org).
 """
 import socket
+
 import requests
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 
 def local_ip() -> str:

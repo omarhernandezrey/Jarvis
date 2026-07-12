@@ -3,17 +3,17 @@ JARVIS Local - Orquestador (Fase 1: Solo Chat)
 Coordina la conversacion entre el usuario y Ollama.
 En Fase 1, el modelo SOLO conversa. Sin herramientas.
 """
-import re
 import threading
-from pathlib import Path
-from jarvis_local.ollama_client.client import OllamaClient
+from collections.abc import Callable
+
+from jarvis_local.config import BASE_DIR, get_config
+from jarvis_local.fast_response import fast_respond
 from jarvis_local.memory.history import ConversationHistory
-from jarvis_local.storage.history import HistoryStore
 from jarvis_local.memory_context.session import SessionMemoryContext
+from jarvis_local.ollama_client.client import OllamaClient
 from jarvis_local.safety.logger import logger
 from jarvis_local.safety.secrets import redact_secrets
-from jarvis_local.fast_response import fast_respond
-from jarvis_local.config import get_config, BASE_DIR
+from jarvis_local.storage.history import HistoryStore
 
 _EXACT_TRIGGERS = [
     "responde solamente",
@@ -132,9 +132,9 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
 
 
 def _execute_tool_read(tool: str, args: dict) -> str:
-    from jarvis_local.tools.files import list_files, search_files, read_metadata
-    from jarvis_local.tools.apps import list_apps
     from jarvis_local.safety.policy import ActionStatus
+    from jarvis_local.tools.apps import list_apps
+    from jarvis_local.tools.files import list_files, read_metadata, search_files
     plan = None
     if tool == "list_files":
         plan = list_files(args.get("path", "."))
@@ -145,8 +145,8 @@ def _execute_tool_read(tool: str, args: dict) -> str:
     elif tool == "list_apps":
         plan = list_apps()
     elif tool == "weather":
-        from jarvis_local.tools.weather import get_weather
         from jarvis_local.tools.location import my_location
+        from jarvis_local.tools.weather import get_weather
         city = args.get("city", "")
         if not city:
             loc = my_location()
@@ -195,11 +195,17 @@ def _execute_tool_read(tool: str, args: dict) -> str:
 
 
 def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
-    from jarvis_local.tools.files import (create_file, create_directory,
-        copy_file, move_file, rename_file, plan_delete)
-    from jarvis_local.tools.apps import open_app
-    from jarvis_local.tools.terminal import plan_command
     from jarvis_local.safety.policy import policy
+    from jarvis_local.tools.apps import open_app
+    from jarvis_local.tools.files import (
+        copy_file,
+        create_directory,
+        create_file,
+        move_file,
+        plan_delete,
+        rename_file,
+    )
+    from jarvis_local.tools.terminal import plan_command
     plan = None
     if tool == "open_app":
         plan = open_app(args.get("app", ""))
@@ -233,9 +239,15 @@ def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
 
 
 def _execute_tool_write(tool: str, args: dict) -> str:
-    from jarvis_local.tools.files import (create_file, create_directory,
-        copy_file, move_file, rename_file, plan_delete)
     from jarvis_local.tools.apps import open_app
+    from jarvis_local.tools.files import (
+        copy_file,
+        create_directory,
+        create_file,
+        move_file,
+        plan_delete,
+        rename_file,
+    )
     from jarvis_local.tools.terminal import execute_command
     plan = None
     if tool == "open_app":
@@ -331,6 +343,14 @@ class Jarvis:
         # Agente con tool calling (Fase 6). Se puede apagar en config.yaml
         # (agent.enabled: false) para volver al comportamiento por parser.
         self.agent_enabled = self.cfg.get("agent", {}).get("enabled", True)
+        self.auto_recall = self._build_recall()
+        # Si se asigna una funcion de TTS, las respuestas del chat se hablan
+        # por frases mientras el modelo genera (ver voice/streaming.py).
+        # El CLI la conecta cuando /voz esta en ON.
+        self.speak_fn: Callable[[str], None] | None = None
+        # True si la ultima respuesta ya se hablo durante el streaming: evita
+        # que la interfaz la vuelva a pronunciar al terminar.
+        self.spoke_last_response = False
         self._ensure_model()
         self._restore_history()
 
@@ -366,6 +386,21 @@ class Jarvis:
         t = threading.Thread(target=_do_warm, daemon=True)
         t.start()
 
+    def _build_recall(self):
+        """Recuerdo automatico por significado. Si falla, JARVIS sigue sin el."""
+        try:
+            from jarvis_local.memory_context.recall import AutoRecall
+            from jarvis_local.storage.memory import MemoryStore
+            from jarvis_local.storage.semantic import SemanticIndex
+            store = MemoryStore(BASE_DIR / "data")
+            index = SemanticIndex(BASE_DIR / "data")
+            recall = AutoRecall(store, index)
+            recall.enabled = self.cfg.get("memory", {}).get("auto_recall", True)
+            return recall
+        except Exception as e:
+            logger.log_error("auto_recall_init", str(e))
+            return None
+
     def _restore_history(self):
         for msg in self.store.load():
             role = msg.get("role", "user")
@@ -380,6 +415,7 @@ class Jarvis:
 
     def chat(self, user_input: str) -> str:
         instruction = user_input[:100]
+        self.spoke_last_response = False
         try:
             if user_input.strip() == "":
                 return ""
@@ -434,16 +470,31 @@ class Jarvis:
             self._persist_message("user", safe_input)
 
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            partes = [SYSTEM_PROMPT]
+            # Memorias activadas a mano (/memoria usar)
             ctx = self.memory_context.build_context()
             if ctx:
-                messages[0]["content"] = SYSTEM_PROMPT + "\n\n" + ctx
+                partes.append(ctx)
+            # Memorias recuperadas por significado (automatico)
+            if self.auto_recall is not None:
+                auto = self.auto_recall.build_context(safe_input)
+                if auto:
+                    partes.append(auto)
+            if len(partes) > 1:
+                messages[0]["content"] = "\n\n".join(partes)
             messages.extend(self.history.get_messages())
 
             print("\r[JARVIS pensando...]", end="", flush=True)
 
-            response = ""
-            for token in self.client.chat(messages, stream=True):
-                response += token
+            tokens = self.client.chat(messages, stream=True)
+            if self.speak_fn is not None:
+                # Habla por frases mientras el modelo sigue generando: la
+                # primera palabra suena a los ~5 s en vez de a los ~40 s.
+                from jarvis_local.voice.streaming import speak_stream
+                response = speak_stream(tokens, self.speak_fn)
+                self.spoke_last_response = True
+            else:
+                response = "".join(tokens)
 
             if not response:
                 response = "Lo siento, no pude generar una respuesta. Intenta de nuevo."
@@ -467,7 +518,8 @@ class Jarvis:
             raise
         except Exception as e:
             logger.log_error("chat", str(e))
-            raise RuntimeError(f"Error inesperado al comunicarse con Ollama: {e}")
+            raise RuntimeError(
+                f"Error inesperado al comunicarse con Ollama: {e}") from e
 
     def _try_agent(self, safe_input: str, instruction: str) -> str | None:
         """Deja que el LLM elija herramientas (tool calling).

@@ -4,8 +4,8 @@ ActionPlan, modo simulacion, confirmacion de acciones.
 """
 import enum
 from dataclasses import dataclass, field
-from typing import Optional
 from datetime import datetime
+
 from jarvis_local.config import get_config
 from jarvis_local.safety.logger import logger
 from jarvis_local.safety.secrets import redact_secrets
@@ -80,7 +80,7 @@ class SafetyPolicy:
         cfg = get_config()
         safety_cfg = cfg.get("safety", {})
         self.simulation_mode = safety_cfg.get("simulation_mode", False)
-        self.pending_plan: Optional[ActionPlan] = None
+        self.pending_plan: ActionPlan | None = None
 
     def is_simulation_mode(self) -> bool:
         return self.simulation_mode
@@ -95,7 +95,7 @@ class SafetyPolicy:
         self._log_plan(plan)
         return plan
 
-    def confirm(self) -> Optional[ActionPlan]:
+    def confirm(self) -> ActionPlan | None:
         """Confirma el plan pendiente si existe y es de bajo riesgo."""
         if not self.pending_plan:
             return None
@@ -119,7 +119,7 @@ class SafetyPolicy:
         self.pending_plan = None
         return plan
 
-    def auto_confirm(self) -> Optional[ActionPlan]:
+    def auto_confirm(self) -> ActionPlan | None:
         """Auto-confirma para modo voz: confirma operaciones de riesgo bajo
         sin intervencion del usuario. DELETE y CRITICAL siguen bloqueados."""
         if not self.pending_plan:
@@ -144,7 +144,7 @@ class SafetyPolicy:
         self.pending_plan = None
         return plan
 
-    def reject(self) -> Optional[ActionPlan]:
+    def reject(self) -> ActionPlan | None:
         """Rechaza el plan pendiente."""
         if not self.pending_plan:
             return None

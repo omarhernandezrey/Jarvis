@@ -3,20 +3,19 @@ Tests de Fase 4: clima, web, sistema, wikipedia, correo, calculadora, etc.
 Solo pruebas offline: parser de intents, calculadora, chistes, utilidades.
 Nada de red ni acciones reales (no se abre navegador ni se envian correos).
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from jarvis_local.intent.parser import parse_intent
-from jarvis_local.tools.calculator import evaluate, normalize_expression, calculate
-from jarvis_local.tools.web import build_url, build_google_url, build_youtube_url
-from jarvis_local.tools.location import haversine_km
-from jarvis_local.tools.jokes import tell_joke
-from jarvis_local.tools.news import parse_rss_titles
-from jarvis_local.tools.email_sender import resolve_recipient
 from jarvis_local.safety.policy import ActionStatus
-
+from jarvis_local.tools.calculator import calculate, evaluate, normalize_expression
+from jarvis_local.tools.email_sender import resolve_recipient
+from jarvis_local.tools.jokes import tell_joke
+from jarvis_local.tools.location import haversine_km
+from jarvis_local.tools.news import parse_rss_titles
+from jarvis_local.tools.web import build_google_url, build_url, build_youtube_url
 
 # ---------- Parser de intents ----------
 

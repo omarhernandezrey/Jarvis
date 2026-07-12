@@ -5,7 +5,8 @@ Toma notas en archivos de texto dentro de Documentos y las abre en el Bloc de no
 import os
 import subprocess
 from datetime import datetime
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 NOTES_DIR = os.path.expandvars(r"%USERPROFILE%\Documents\JARVIS Notas")
 

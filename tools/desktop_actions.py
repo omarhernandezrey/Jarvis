@@ -6,10 +6,10 @@ import ctypes
 import os
 import random
 import re
-import subprocess
 import time
 from datetime import datetime
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 SCREENSHOTS_DIR = os.path.expandvars(r"%USERPROFILE%\Pictures\Capturas JARVIS")
 MUSIC_DIR = os.path.expandvars(r"%USERPROFILE%\Music")

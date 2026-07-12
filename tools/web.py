@@ -4,7 +4,8 @@ Abrir sitios web, buscar en Google y reproducir en YouTube.
 """
 import webbrowser
 from urllib.parse import quote_plus
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 
 def build_url(site: str) -> str:

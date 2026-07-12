@@ -1,12 +1,12 @@
 """
 Tests de redaccion de secretos - Fase 1
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from jarvis_local.safety.secrets import redact_secrets, contains_secrets
+from jarvis_local.safety.secrets import contains_secrets, redact_secrets
 
 
 def test_redact_openai_key():

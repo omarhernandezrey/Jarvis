@@ -4,8 +4,9 @@ Responde preguntas de datos/calculo via WolframAlpha si hay App ID en
 secrets.yaml; si no, JARVIS respondera con el modelo local (Ollama).
 """
 import requests
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
 from jarvis_local.config import get_secrets
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 API_URL = "https://api.wolframalpha.com/v1/result"
 

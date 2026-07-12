@@ -1,16 +1,16 @@
 """
 Tests de permisos y whitelists - Fase 2
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from jarvis_local.safety.permissions import (
-    is_within_allowed,
     get_app_path,
-    list_allowed_apps,
     is_command_blocked,
+    is_within_allowed,
+    list_allowed_apps,
 )
 from jarvis_local.tools.apps import ALLOWED_APP_NAMES
 

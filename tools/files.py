@@ -4,14 +4,13 @@ Listar, buscar, crear, copiar, mover, renombrar y plan de borrado.
 Todas las operaciones pasan por validacion de permisos y politica de seguridad.
 """
 import os
-import shutil
 from pathlib import Path
-from typing import Optional
+
 from jarvis_local.safety.permissions import is_within_allowed
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus, policy
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
 
 
-def _validate_path(path_str: str, require_exist: bool = False) -> tuple[bool, Optional[Path], Optional[ActionPlan]]:
+def _validate_path(path_str: str, require_exist: bool = False) -> tuple[bool, Path | None, ActionPlan | None]:
     allowed, resolved = is_within_allowed(path_str)
     if not allowed:
         plan = policy.block(f"Ruta fuera de carpetas permitidas: {path_str}")

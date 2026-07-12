@@ -3,7 +3,8 @@ JARVIS Local - Clima (Fase 4)
 Clima de cualquier ciudad via Open-Meteo (gratis, sin API key).
 """
 import requests
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"

@@ -3,9 +3,14 @@ JARVIS Local — Interfaz de Escritorio Holográfica Ultra-Moderna
 GUI tkinter con estética HUD / arc-reactor / "tecnología de otro mundo".
 Sin dependencias externas.
 """
-import os, sys, queue, threading, time, math, random, tkinter as tk
-from tkinter import ttk
-from pathlib import Path
+import math
+import os
+import queue
+import random
+import sys
+import threading
+import time
+import tkinter as tk
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -112,7 +117,7 @@ def _voice_stop():
 
 def _tts_speak(text: str):
     try:
-        from jarvis_local.voice.tts import speak, is_speaking
+        from jarvis_local.voice.tts import is_speaking, speak
         while is_speaking():
             time.sleep(0.05)
         speak(text)
@@ -917,8 +922,11 @@ class JarvisDesktop:
                     self.orb_state = "speaking"; self._speaking = True
                     self._append("jarvis", data); self._reset_ui()
                     if self.tts_enabled and data:
-                        def _speak_then_reset():
-                            _tts_speak(data)
+                        # 'texto' se fija como argumento por defecto: si el bucle
+                        # sigue iterando, el hilo hablaria el mensaje siguiente
+                        # en vez del suyo (la clausura veria el 'data' nuevo).
+                        def _speak_then_reset(texto=data):
+                            _tts_speak(texto)
                             self._speaking = False
                             if self.orb_state == "speaking":
                                 self.orb_state = "idle"

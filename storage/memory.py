@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 MAX_MEMORIES = 100
@@ -27,7 +27,7 @@ class MemoryStore:
             self._items = []
             return
         try:
-            with open(self._path, "r", encoding="utf-8") as f:
+            with open(self._path, encoding="utf-8") as f:
                 data = json.load(f)
             self._items = data.get("items", [])
         except (json.JSONDecodeError, KeyError, ValueError):
@@ -39,7 +39,7 @@ class MemoryStore:
     def _save(self):
         data = {
             "version": 1,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "items": self._items,
         }
         fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
@@ -63,7 +63,7 @@ class MemoryStore:
         item = {
             "id": str(uuid.uuid4()),
             "text": clean,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         self._items.append(item)
         self._save()

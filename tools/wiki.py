@@ -2,9 +2,11 @@
 JARVIS Local - Wikipedia (Fase 4)
 Habla de cualquier persona o tema via la API REST de Wikipedia en espanol.
 """
-import requests
 from urllib.parse import quote
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus
+
+import requests
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 SUMMARY_URL = "https://es.wikipedia.org/api/rest_v1/page/summary/{}"
 SEARCH_URL = "https://es.wikipedia.org/w/api.php"

@@ -5,9 +5,9 @@ Sin regex fragiles. Sin Ollama. Solo keywords y extraccion de argumentos.
 """
 import os
 import re
+
 from jarvis_local.intent.schemas import IntentResult
-from jarvis_local.safety.permissions import is_within_allowed, is_command_blocked
-from jarvis_local.tools.apps import ALLOWED_APP_NAMES
+from jarvis_local.safety.permissions import is_command_blocked, is_within_allowed
 
 _APP_ALIASES = {
     "chrome": ["chrome", "google chrome", "navegador", "google"],

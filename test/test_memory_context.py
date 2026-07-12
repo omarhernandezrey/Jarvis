@@ -1,9 +1,12 @@
 """Tests de contexto de memorias - Fase 6"""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from jarvis_local.memory_context.session import SessionMemoryContext, MAX_ACTIVE, MAX_COMBINED_CHARS
 from unittest.mock import MagicMock
+
+from jarvis_local.memory_context.session import MAX_ACTIVE, MAX_COMBINED_CHARS, SessionMemoryContext
 
 
 def test_activate():
@@ -82,8 +85,9 @@ def test_new_instance_no_memories():
 
 def test_context_not_in_chat_for_tools():
     """El contexto solo debe aparecer en chat, no en tool_read/tool_plan."""
-    from jarvis_local.jarvis import Jarvis, _parse_and_execute, _mc_test
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
+
+    from jarvis_local.jarvis import Jarvis, _mc_test, _parse_and_execute
     j, mc = _mc_test()
     j.history.clear()
     j.memory_context.activate({"id": "1", "text": "usuario se llama Omar"})

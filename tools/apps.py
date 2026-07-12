@@ -3,10 +3,9 @@ JARVIS Local - Herramientas de Aplicaciones (Fase 2)
 Abrir aplicaciones de la whitelist con subprocess controlado.
 """
 import subprocess
-import os
-from jarvis_local.safety.permissions import get_app_path, list_allowed_apps
-from jarvis_local.safety.policy import ActionPlan, RiskLevel, ActionStatus, policy
 
+from jarvis_local.safety.permissions import get_app_path, list_allowed_apps
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
 
 ALLOWED_APP_NAMES = ["chrome", "vscode", "explorador", "powershell", "terminal",
                        "wsl", "notepad", "calculadora", "control", "configuracion",

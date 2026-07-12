@@ -1,10 +1,14 @@
 """
 Tests de voz - Fase 3 (corregido: usa archivo temp para threshold)
 """
-import sys, os, yaml, tempfile
+import os
+import sys
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import numpy as np
+import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -77,7 +81,7 @@ def test_tts_list_voices():
 
 
 def test_tts_select_valid_voice():
-    from jarvis_local.voice.tts import select_voice, list_voices
+    from jarvis_local.voice.tts import list_voices, select_voice
     voices = list_voices()
     if voices:
         result = select_voice(0)

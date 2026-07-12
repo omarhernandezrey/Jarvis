@@ -1,13 +1,13 @@
 """
 Tests de herramientas de terminal - Fase 2
 """
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from jarvis_local.tools.terminal import plan_command
 from jarvis_local.safety.policy import ActionStatus
+from jarvis_local.tools.terminal import plan_command
 
 
 def test_plan_safe_command():

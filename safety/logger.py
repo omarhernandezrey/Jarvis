@@ -3,10 +3,10 @@ JARVIS Local - Logger de acciones y errores
 Registra cada accion en formato JSON Lines.
 """
 import json
-import os
 from datetime import datetime
 from pathlib import Path
-from jarvis_local.config import get_config, BASE_DIR
+
+from jarvis_local.config import BASE_DIR, get_config
 
 
 class ActionLogger:
@@ -49,7 +49,7 @@ class ActionLogger:
         if not path.exists():
             return []
         entries = []
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 try:
                     entries.append(json.loads(line))
