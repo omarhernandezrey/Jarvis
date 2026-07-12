@@ -81,6 +81,17 @@ Control de planes:
   /plan                  Ver plan pendiente
   /confirmar             Confirmar plan pendiente
   /cancelar              Cancelar plan pendiente
+
+Tambien entiendo lenguaje natural (texto o voz):
+  "abre whatsapp" / "abre youtube.com" / "busca gatos en google"
+  "reproduce <cancion> en youtube" / "pon musica"
+  "clima en <ciudad>" / "donde queda <lugar>" / "estado del sistema"
+  "quien es <persona>" / "noticias" / "cuentame un chiste"
+  "calcula 5 mas 3 por 2" / "cual es mi ip" / "toma nota <texto>"
+  "captura de pantalla llamada <nombre>" / "cambia de ventana"
+  "envia un correo a <destino> asunto <asunto> mensaje <texto>"
+  "oculta los archivos de <carpeta>" / "muestra los archivos ocultos de <carpeta>"
+  "mis proximos eventos" (Google Calendar, requiere configuracion)
 """
 
 
@@ -201,6 +212,15 @@ def handle_confirm(jarvis=None):
         if plan.action == "abrir_app":
             plan = execute_open_app(plan.params["app"])
             print(plan)
+        elif plan.action == "enviar_correo":
+            from jarvis_local.tools.email_sender import execute_send
+            plan = execute_send(plan.params["to"], plan.params["subject"],
+                                plan.params["body"])
+            print(plan.result or plan)
+        elif plan.action in ("ocultar_archivos", "mostrar_archivos"):
+            from jarvis_local.tools.hidden_files import execute_hide
+            plan = execute_hide(plan.params["path"], plan.params["hide"])
+            print(plan.result or plan)
         elif plan.action in ("crear_archivo", "crear_carpeta"):
             print(plan)
             print("[INFO] Creacion confirmada pero no ejecutada en esta fase (solo simulacion).")

@@ -59,3 +59,27 @@ def reload_config() -> dict:
     global _config_cache
     _config_cache = None
     return get_config()
+
+
+# --- Secretos (API keys, credenciales) ---
+# Viven en secrets.yaml, que esta en .gitignore y NUNCA se sube al repo.
+SECRETS_FILE = BASE_DIR / "secrets.yaml"
+_secrets_cache = None
+
+
+def get_secrets() -> dict:
+    """Carga secrets.yaml (API keys, correo). Devuelve {} si no existe."""
+    global _secrets_cache
+    if _secrets_cache is None:
+        if SECRETS_FILE.exists():
+            with open(SECRETS_FILE, "r", encoding="utf-8") as f:
+                _secrets_cache = yaml.safe_load(f) or {}
+        else:
+            _secrets_cache = {}
+    return _secrets_cache
+
+
+def reload_secrets() -> dict:
+    global _secrets_cache
+    _secrets_cache = None
+    return get_secrets()

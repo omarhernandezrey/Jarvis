@@ -144,6 +144,40 @@ def _execute_tool_read(tool: str, args: dict) -> str:
         plan = read_metadata(args.get("path", ""))
     elif tool == "list_apps":
         plan = list_apps()
+    elif tool == "weather":
+        from jarvis_local.tools.weather import get_weather
+        from jarvis_local.tools.location import my_location
+        city = args.get("city", "")
+        if not city:
+            loc = my_location()
+            city = loc["city"] if loc else ""
+        if not city:
+            return "De que ciudad desea saber el clima, senor?"
+        plan = get_weather(city)
+    elif tool == "system_status":
+        from jarvis_local.tools.system_info import system_status
+        plan = system_status()
+    elif tool == "calendar_events":
+        from jarvis_local.tools.gcalendar import upcoming_events
+        plan = upcoming_events()
+    elif tool == "wiki":
+        from jarvis_local.tools.wiki import wiki_summary
+        plan = wiki_summary(args.get("topic", ""))
+    elif tool == "news_headlines":
+        from jarvis_local.tools.news import headlines
+        plan = headlines()
+    elif tool == "calculate":
+        from jarvis_local.tools.calculator import calculate
+        plan = calculate(args.get("expression", ""))
+    elif tool == "wolfram":
+        from jarvis_local.tools.wolfram import ask_wolfram
+        plan = ask_wolfram(args.get("question", ""))
+    elif tool == "tell_joke":
+        from jarvis_local.tools.jokes import tell_joke
+        plan = tell_joke()
+    elif tool == "get_ip":
+        from jarvis_local.tools.ip_info import get_ip
+        plan = get_ip()
     if plan and plan.result:
         return plan.result
     return "Operacion completada."
@@ -172,6 +206,15 @@ def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
         plan = plan_delete(args.get("path", ""))
     elif tool == "run_command":
         plan = plan_command(args.get("command", ""))
+    elif tool == "send_email":
+        from jarvis_local.tools.email_sender import plan_email
+        plan = plan_email(args.get("to", ""), args.get("subject", ""),
+                          args.get("body", ""))
+        return str(plan)
+    elif tool == "hide_files":
+        from jarvis_local.tools.hidden_files import plan_hide
+        plan = plan_hide(args.get("path", ""), args.get("hide", True))
+        return str(plan)
     if plan:
         policy.pending_plan = plan
         return str(plan) + "\n\nEscribe /confirmar para ejecutar o /cancelar."
@@ -200,6 +243,30 @@ def _execute_tool_write(tool: str, args: dict) -> str:
         plan = plan_delete(args.get("path", ""))
     elif tool == "run_command":
         plan = execute_command(args.get("command", ""))
+    elif tool == "open_website":
+        from jarvis_local.tools.web import open_website
+        plan = open_website(args.get("site", ""))
+    elif tool == "google_search":
+        from jarvis_local.tools.web import google_search
+        plan = google_search(args.get("query", ""))
+    elif tool == "youtube_play":
+        from jarvis_local.tools.web import youtube_play
+        plan = youtube_play(args.get("query", ""))
+    elif tool == "play_music":
+        from jarvis_local.tools.desktop_actions import play_music
+        plan = play_music(args.get("song", ""))
+    elif tool == "take_note":
+        from jarvis_local.tools.notes import take_note
+        plan = take_note(args.get("text", ""))
+    elif tool == "switch_window":
+        from jarvis_local.tools.desktop_actions import switch_window
+        plan = switch_window()
+    elif tool == "screenshot":
+        from jarvis_local.tools.desktop_actions import take_screenshot
+        plan = take_screenshot(args.get("name", ""))
+    elif tool == "locate":
+        from jarvis_local.tools.location import locate
+        plan = locate(args.get("place", ""))
     if plan is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
     if plan.error:

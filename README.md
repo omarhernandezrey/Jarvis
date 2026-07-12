@@ -36,6 +36,32 @@ JARVIS Local es un asistente personal estilo "Iron Man" diseñado para hardware 
 - **WSL integrado**: *"abre la terminal de wsl"* / *"abre ubuntu"* abre Ubuntu directamente en `~/personalProjects`.
 - Filtra automáticamente desinstaladores, manuales y enlaces web del menú inicio.
 
+### 🌐 Web e información (Fase 4)
+- **Sitios web**: *"abre youtube.com"*, *"abre la página de wikipedia"* — abre cualquier sitio en tu navegador.
+- **Google**: *"busca vuelos baratos en google"*, *"googlea python 3.14"*.
+- **YouTube**: *"reproduce hotel california en youtube"* — busca y reproduce canciones o videos.
+- **Clima**: *"¿cómo está el clima en Medellín?"* — clima actual de cualquier ciudad del mundo vía Open-Meteo (sin API key); sin ciudad usa tu ubicación.
+- **Ubicaciones**: *"¿dónde queda Tokio?"* — abre el lugar en Google Maps e indica la **distancia desde tu ubicación**.
+- **Wikipedia**: *"¿quién es Gabriel García Márquez?"*, *"háblame de Shakira"* — resumen hablado de cualquier persona o tema.
+- **Noticias**: *"dame las noticias"* — titulares principales vía RSS de Google News (fuente configurable).
+- **WolframAlpha**: *"pregunta a wolfram ..."* — preguntas de datos/cálculo (requiere App ID gratis en `secrets.yaml`); sin configurar, responde el LLM local.
+
+### 🖥️ Escritorio y utilidades (Fase 4)
+- **Estado del sistema**: *"estado del sistema"* — uso de CPU, RAM, disco y batería (psutil).
+- **Calculadora**: *"calcula 135 menos 234 más 345"* — evaluación **segura** (AST, sin `eval`) con lenguaje natural: más, menos, por, entre, raíz cuadrada de, elevado a...
+- **Notas**: *"toma nota comprar café"* — guarda la nota con hora en `Documentos\JARVIS Notas` y la abre en el Bloc de notas.
+- **Capturas**: *"toma una captura de pantalla llamada factura"* — guarda PNG con nombre personalizado en `Imágenes\Capturas JARVIS`.
+- **Cambiar ventana**: *"cambia de ventana"* — Alt+Tab por voz.
+- **Música local**: *"pon música"* — reproduce (aleatorio o por nombre) desde tu carpeta Música.
+- **IP**: *"¿cuál es mi ip?"* — IP local y pública.
+- **Chistes**: *"cuéntame un chiste"* — 100% offline.
+- **Ocultar archivos**: *"oculta los archivos de <carpeta>"* / *"muestra los archivos ocultos de <carpeta>"* — con plan + confirmación, solo en carpetas permitidas.
+
+### ✉️ Correo y calendario (Fase 4, requieren configuración)
+- **Enviar correos**: *"envía un correo a omar@... asunto Reunión mensaje Nos vemos mañana"* — SMTP con contraseña de aplicación en `secrets.yaml`; **siempre pide `/confirmar`** antes de enviar. Soporta contactos por nombre.
+- **Google Calendar**: *"mis próximos eventos"* — lista tus eventos (OAuth opcional, ver `secrets.example.yaml`).
+- Las credenciales viven en `secrets.yaml` / `credentials.json`, ambos **fuera de git** (.gitignore).
+
 ### 📁 Archivos
 - Listar, buscar, crear (archivos y carpetas), copiar, mover, renombrar y ver metadatos.
 - Solo dentro de carpetas permitidas (Documentos, Descargas, Escritorio, Música, Imágenes, Videos, OneDrive) con validación contra escapes de ruta.
@@ -210,7 +236,8 @@ python -m pytest jarvis_local/test -q
 - ✅ **Fase 1**: Chat local con Ollama + configuración + historial
 - ✅ **Fase 2**: Herramientas (archivos, apps, terminal) + seguridad
 - ✅ **Fase 3**: Voz (STT/TTS), modo continuo con wake word, memorias, UI web/desktop, índice dinámico de apps, WSL
-- ⏳ **Fase 4**: Navegación web automatizada (Selenium) + búsqueda de empleo en Computrabajo
+- ✅ **Fase 4**: Web (sitios, Google, YouTube), clima, ubicaciones y distancias, Wikipedia, noticias, estado del sistema, calculadora segura, notas, capturas, música, correo, WolframAlpha, Google Calendar, ocultar archivos, chistes, IP, cambiar ventana
+- ⏳ **Fase 5**: Navegación web automatizada (Selenium) + búsqueda de empleo en Computrabajo
 
 ---
 

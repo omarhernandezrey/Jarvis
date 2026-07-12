@@ -69,8 +69,204 @@ def _extract_quoted(text: str) -> tuple[str | None, str]:
     return None, text
 
 
+# Extensiones que indican archivo local, no sitio web
+_FILE_EXTS = (".exe", ".msc", ".bat", ".cmd", ".txt", ".pdf", ".doc", ".docx",
+              ".xls", ".xlsx", ".png", ".jpg", ".mp3", ".mp4", ".zip", ".py")
+
+
+def _looks_like_domain(text: str) -> bool:
+    t = text.strip().lower()
+    if " " in t or "\\" in t:
+        return False
+    if t.endswith(_FILE_EXTS):
+        return False
+    return bool(re.match(r'^(https?://)?[\w-]+(\.[\w-]+)+(/\S*)?$', t))
+
+
+def _parse_fase4(m: str) -> IntentResult | None:
+    """Intents de Fase 4: clima, web, sistema, wikipedia, correo, etc."""
+    low = m.lower()
+
+    # --- CLIMA ---
+    if re.search(r'\b(clima|temperatura)\b', low):
+        m_city = re.search(r'\b(?:clima|temperatura)\b(?:\s+\w+)?\s+(?:en|de)\s+(.+)',
+                           low)
+        city = m_city.group(1).strip().rstrip('.!?') if m_city else ""
+        return IntentResult(kind="tool_read", tool="weather",
+                            arguments={"city": city},
+                            reason="Consultar clima")
+
+    # --- UBICACION / DISTANCIA ---
+    m_loc = re.search(
+        r'(?:donde\s+queda|donde\s+esta|ubicacion\s+de|ubica|distancia\s+(?:a|hasta|entre\s+aqui\s+y)|que\s+tan\s+lejos\s+(?:esta|queda))\s+(.+)',
+        low)
+    if m_loc:
+        place = m_loc.group(1).strip().rstrip('.!?')
+        if place and not any(w in place for w in _NOT_APP_WORDS):
+            return IntentResult(kind="tool_execute", tool="locate",
+                                arguments={"place": place},
+                                reason="Ubicar lugar en el mapa")
+
+    # --- ESTADO DEL SISTEMA ---
+    if re.search(r'\b(estado del sistema|uso de ram|uso de cpu|uso de memoria|'
+                 r'bateria|cuanta ram|cuanta memoria|rendimiento del (?:sistema|equipo|pc))\b', low):
+        return IntentResult(kind="tool_read", tool="system_status",
+                            reason="Consultar estado del sistema")
+
+    # --- EVENTOS (GOOGLE CALENDAR) ---
+    if re.search(r'\b(proximos eventos|mis eventos|que eventos tengo|'
+                 r'mi agenda|eventos del calendario|mi calendario)\b', low):
+        return IntentResult(kind="tool_read", tool="calendar_events",
+                            reason="Consultar Google Calendar")
+
+    # --- BUSCAR EN GOOGLE ---
+    m_gg = re.search(r'(?:busca|buscar|googlea|googlear)\s+(.+?)\s+en\s+google\b', low) \
+        or re.search(r'busca(?:r)?\s+en\s+google\s+(.+)', low) \
+        or re.search(r'googlea(?:r)?\s+(.+)', low)
+    if m_gg:
+        return IntentResult(kind="tool_execute", tool="google_search",
+                            arguments={"query": m_gg.group(1).strip().rstrip('.!?')},
+                            reason="Buscar en Google")
+
+    # --- YOUTUBE / MUSICA ---
+    m_yt = re.search(r'(?:reproduce|reproducir|pon|toca|tocar)\s+(.+?)\s+en\s+youtube\b', low)
+    if m_yt:
+        return IntentResult(kind="tool_execute", tool="youtube_play",
+                            arguments={"query": m_yt.group(1).strip()},
+                            reason="Reproducir en YouTube")
+    if re.search(r'\b(?:pon|toca|reproduce)\s+(?:algo de\s+)?musica\b', low):
+        m_song = re.search(r'musica\s+(?:de\s+)?(.+)', low)
+        song = m_song.group(1).strip().rstrip('.!?') if m_song else ""
+        return IntentResult(kind="tool_execute", tool="play_music",
+                            arguments={"song": song},
+                            reason="Reproducir musica local")
+    m_play = re.search(r'(?:reproduce|reproducir)\s+(?:la\s+cancion\s+|el\s+video\s+)?(.+)', low)
+    if m_play:
+        return IntentResult(kind="tool_execute", tool="youtube_play",
+                            arguments={"query": m_play.group(1).strip().rstrip('.!?')},
+                            reason="Reproducir en YouTube")
+
+    # --- NOTICIAS ---
+    if re.search(r'\b(noticias|titulares)\b', low):
+        return IntentResult(kind="tool_read", tool="news_headlines",
+                            reason="Consultar titulares")
+
+    # --- CORREO ---
+    if re.search(r'\b(?:envia|enviar|manda|mandar)\b.*\b(?:correo|email|mail)\b', low):
+        m_to = re.search(r'\b(?:a|para)\s+([\w.+-]+@[\w.-]+|\w+)', low)
+        m_subj = re.search(r'\basunto\s*[:]?\s*(.+?)(?=\s+(?:mensaje|contenido|cuerpo|que diga)\b|$)', m, re.IGNORECASE)
+        m_body = re.search(r'\b(?:mensaje|contenido|cuerpo|que diga)\s*[:]?\s*(.+)', m, re.IGNORECASE)
+        if m_to and m_subj and m_body:
+            return IntentResult(
+                kind="tool_plan", tool="send_email",
+                arguments={"to": m_to.group(1),
+                           "subject": m_subj.group(1).strip(),
+                           "body": m_body.group(1).strip()},
+                reason="Enviar correo requiere confirmacion")
+        return IntentResult(
+            kind="ambiguous",
+            clarification=('Para enviar un correo diga: "envia un correo a '
+                           '<destinatario> asunto <asunto> mensaje <contenido>".'),
+            reason="Faltan datos del correo")
+
+    # --- CALCULAR (solo si hay numeros o constantes; si no, va al LLM) ---
+    m_calc = re.search(r'\b(?:calcula(?:r)?|cuanto\s+es)\s+(.+)', low)
+    if m_calc and re.search(r'\d|\bpi\b|\braiz\b', m_calc.group(1)):
+        return IntentResult(kind="tool_read", tool="calculate",
+                            arguments={"expression": m_calc.group(1).strip()},
+                            reason="Calculo matematico local")
+
+    # --- WOLFRAMALPHA ---
+    m_wa = re.search(r'(?:pregunta(?:le)?\s+a\s+wolfram(?:alpha)?|wolfram)\s*[:]?\s*(.+)', low)
+    if m_wa:
+        return IntentResult(kind="tool_read", tool="wolfram",
+                            arguments={"question": m_wa.group(1).strip()},
+                            reason="Consultar WolframAlpha")
+
+    # --- TOMAR NOTA ---
+    m_note = re.search(r'\b(?:toma\s+nota|apunta|anota)\b\s*(?:de\s+|que\s+|:\s*)?(.+)',
+                       m, re.IGNORECASE)
+    if m_note:
+        return IntentResult(kind="tool_execute", tool="take_note",
+                            arguments={"text": m_note.group(1).strip()},
+                            reason="Guardar nota")
+
+    # --- CHISTE ---
+    if re.search(r'\b(chiste|hazme reir|algo gracioso|cuentame algo divertido)\b', low):
+        return IntentResult(kind="tool_read", tool="tell_joke",
+                            reason="Contar un chiste")
+
+    # --- DIRECCION IP ---
+    if re.search(r'\b(mi ip|direccion ip|cual es (?:mi|la) ip)\b', low):
+        return IntentResult(kind="tool_read", tool="get_ip",
+                            reason="Consultar direccion IP")
+
+    # --- CAMBIAR VENTANA ---
+    if re.search(r'\b(cambia(?:r)?\s+(?:de\s+)?ventana|siguiente ventana|alt tab)\b', low):
+        return IntentResult(kind="tool_execute", tool="switch_window",
+                            reason="Cambiar de ventana")
+
+    # --- CAPTURA DE PANTALLA ---
+    if re.search(r'\b(captura de pantalla|toma una captura|haz una captura|'
+                 r'screenshot|pantallazo)\b', low):
+        m_name = re.search(r'(?:llamada|llamado|con\s+(?:el\s+)?nombre|como)\s+(.+)',
+                           m, re.IGNORECASE)
+        name = m_name.group(1).strip().strip('"\'').rstrip('.!?') if m_name else ""
+        return IntentResult(kind="tool_execute", tool="screenshot",
+                            arguments={"name": name},
+                            reason="Captura de pantalla")
+
+    # --- OCULTAR / MOSTRAR ARCHIVOS ---
+    m_hide = re.search(r'oculta(?:r)?\s+(?:todos\s+)?(?:los\s+)?archivos\s+(?:de|en)\s+(.+)',
+                       m, re.IGNORECASE)
+    if m_hide:
+        return IntentResult(kind="tool_plan", tool="hide_files",
+                            arguments={"path": m_hide.group(1).strip(), "hide": True},
+                            reason="Ocultar archivos requiere confirmacion")
+    m_show = re.search(r'(?:muestra|mostrar|desoculta(?:r)?|haz\s+visibles)\s+(?:todos\s+)?(?:los\s+)?archivos\s+ocultos\s+(?:de|en)\s+(.+)',
+                       m, re.IGNORECASE)
+    if m_show:
+        return IntentResult(kind="tool_plan", tool="hide_files",
+                            arguments={"path": m_show.group(1).strip(), "hide": False},
+                            reason="Mostrar archivos requiere confirmacion")
+
+    # --- ABRIR SITIO WEB ---
+    m_web = re.search(r'(?:abre|abrir|ve\s+a|entra\s+a|navega\s+a)\s+(?:la\s+|el\s+)?'
+                      r'(?:pagina(?:\s+web)?|sitio(?:\s+web)?|web)\s+(?:de\s+)?(.+)',
+                      low)
+    if m_web:
+        return IntentResult(kind="tool_execute", tool="open_website",
+                            arguments={"site": m_web.group(1).strip().rstrip('.!?')},
+                            reason="Abrir sitio web")
+    m_open = re.search(r'(?:abre|abrir|ve\s+a|entra\s+a|navega\s+a)\s+(.+)', low)
+    if m_open and _looks_like_domain(m_open.group(1).strip().rstrip('.!?')):
+        return IntentResult(kind="tool_execute", tool="open_website",
+                            arguments={"site": m_open.group(1).strip().rstrip('.!?')},
+                            reason="Abrir sitio web")
+
+    return None
+
+
 def parse_intent(message: str) -> IntentResult:
     m = message.strip()
+
+    # --- FASE 4: clima, web, sistema, wikipedia, correo, etc. ---
+    fase4 = _parse_fase4(m)
+    if fase4 is not None:
+        return fase4
+
+    # --- WIKIPEDIA (despues de fase4 para no robar "hablame del clima...") ---
+    m_wiki = re.search(
+        r'(?:quien\s+(?:es|fue|era)|hablame\s+(?:de|sobre)|que\s+sabes\s+(?:de|sobre)|'
+        r'cuentame\s+(?:de|sobre|acerca\s+de))\s+(.+)',
+        m, re.IGNORECASE)
+    if m_wiki:
+        topic = m_wiki.group(1).strip().rstrip('.!?')
+        low_topic = topic.lower()
+        if topic and not any(w in low_topic for w in ("ti", "tu", "jarvis", "usted")):
+            return IntentResult(kind="tool_read", tool="wiki",
+                                arguments={"topic": topic},
+                                reason="Consultar Wikipedia")
 
     # --- ABRIR APLICACION ---
     if any(kw in m.lower() for kw in ["abre", "abrir", "lanza", "lanzar",

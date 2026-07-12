@@ -32,3 +32,8 @@ Thumbs.db
 # Archivos temporales de voz/audio
 *.wav
 *.mp3
+
+# Secretos y credenciales (NUNCA subir)
+secrets.yaml
+credentials.json
+token.json
