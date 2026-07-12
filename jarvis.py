@@ -169,6 +169,14 @@ def _execute_tool_read(tool: str, args: dict) -> str:
     elif tool == "calculate":
         from jarvis_local.tools.calculator import calculate
         plan = calculate(args.get("expression", ""))
+        # Si la calculadora local no puede (ej. ecuaciones con x),
+        # intentar con WolframAlpha si esta configurado
+        if plan.status == ActionStatus.ERROR:
+            from jarvis_local.tools.wolfram import ask_wolfram, has_app_id
+            if has_app_id():
+                wa = ask_wolfram(args.get("expression", ""))
+                if wa.status != ActionStatus.ERROR:
+                    plan = wa
     elif tool == "wolfram":
         from jarvis_local.tools.wolfram import ask_wolfram
         plan = ask_wolfram(args.get("question", ""))
