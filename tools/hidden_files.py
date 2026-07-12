@@ -23,7 +23,7 @@ def plan_hide(path: str, hide: bool = True) -> ActionPlan:
         action=action,
         params={"path": norm, "hide": hide},
         paths_affected=[norm],
-        risk=RiskLevel.WRITE,
+        risk=RiskLevel.EXECUTE,
         reason=f"{verbo} todos los archivos de {norm}",
         simulation_result=(f"[Plan pendiente] {verbo} todos los archivos de {norm}. "
                            "Escribe /confirmar para ejecutar o /cancelar."),
@@ -38,7 +38,7 @@ def execute_hide(path: str, hide: bool = True) -> ActionPlan:
     action = "ocultar_archivos" if hide else "mostrar_archivos"
     norm = os.path.normpath(os.path.expandvars(path))
     plan = ActionPlan(action=action, params={"path": norm, "hide": hide},
-                      paths_affected=[norm], risk=RiskLevel.WRITE,
+                      paths_affected=[norm], risk=RiskLevel.EXECUTE,
                       status=ActionStatus.CONFIRMED)
     allowed, _ = is_within_allowed(norm)
     if not allowed or not os.path.isdir(norm):

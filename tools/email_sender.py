@@ -42,7 +42,7 @@ def plan_email(to: str, subject: str, body: str) -> ActionPlan:
     plan = ActionPlan(
         action="enviar_correo",
         params={"to": dest, "subject": subject, "body": body},
-        risk=RiskLevel.WRITE,
+        risk=RiskLevel.EXECUTE,
         reason=f"Enviar correo a {dest}",
         simulation_result=(f"[Plan pendiente] Enviar correo\n"
                            f"  Para: {dest}\n  Asunto: {subject}\n"
@@ -58,7 +58,7 @@ def execute_send(to: str, subject: str, body: str) -> ActionPlan:
     """Envia el correo CONFIRMADO via SMTP."""
     plan = ActionPlan(action="enviar_correo",
                       params={"to": to, "subject": subject},
-                      risk=RiskLevel.WRITE, status=ActionStatus.CONFIRMED)
+                      risk=RiskLevel.EXECUTE, status=ActionStatus.CONFIRMED)
     secrets = get_secrets().get("email", {}) or {}
     address = secrets.get("address")
     password = secrets.get("app_password")
