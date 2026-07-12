@@ -27,6 +27,28 @@ def _normalize(text: str) -> str:
     return t
 
 
+# Palabras que pueden acompanar a una formula de cortesia sin cambiar su
+# sentido: "hola jarvis, buenas tardes senor" sigue siendo solo un saludo.
+_RELLENO = {
+    "jarvis", "senor", "senior", "sr", "omar", "por", "favor", "muy",
+    "buenos", "buenas", "dias", "tardes", "noches", "y", "a", "ti", "tu",
+    "usted", "todo", "bien", "pues", "che", "amigo", "que", "tal", "hay",
+    "como", "estas", "esta", "va", "vas",
+}
+
+
+def _es_solo_cortesia(m: str, patron: str) -> bool:
+    """True si el mensaje es SOLO la formula (saludo, gracias, despedida...).
+
+    Sin esto, "que tal anda mi maquina de recursos" se responde como un saludo
+    ("que tal" hace match) y nunca llega al agente. Igual "buenas, abre chrome".
+    Se quita la formula y, si queda alguna palabra con contenido, el mensaje es
+    una peticion de verdad: que siga bajando por la cascada.
+    """
+    resto = re.sub(patron, " ", m)
+    return not [w for w in resto.split() if w not in _RELLENO]
+
+
 def fast_respond(message: str) -> str | None:
     """
     Respuesta instantanea sin Ollama, o None si requiere razonamiento.
@@ -35,7 +57,8 @@ def fast_respond(message: str) -> str | None:
     m = _normalize(message)
 
     # --- SALUDOS ---
-    if re.search(r'\b(hola|hey|hi|buenas|buenos dias|buenos tardes|buenas noches|saludos|que tal|que hay)\b', m):
+    _saludo = r'\b(hola|hey|hi|buenas|buenos dias|buenos tardes|buenas noches|saludos|que tal|que hay)\b'
+    if re.search(_saludo, m) and _es_solo_cortesia(m, _saludo):
         hora = datetime.now().hour
         if hora < 12:
             return f"Buenos dias, {_sr()}. Sistemas en linea y listos. En que le puedo asistir?"
@@ -67,15 +90,18 @@ def fast_respond(message: str) -> str | None:
                 "Todo opera de forma privada en su propio equipo.")
 
     # --- GRACIAS ---
-    if re.search(r'\b(gracias|muchas gracias|te lo agradezco|genial|perfecto|excelente|muy bien|chevere|bacano)\b', m):
+    _gracias = r'\b(gracias|muchas gracias|te lo agradezco|genial|perfecto|excelente|muy bien|chevere|bacano)\b'
+    if re.search(_gracias, m) and _es_solo_cortesia(m, _gracias):
         return f"A sus ordenes, {_sr()}. Para eso estoy."
 
     # --- DESPEDIDA ---
-    if re.search(r'\b(adios|hasta luego|hasta manana|nos vemos|chao|bye|hasta pronto|me voy)\b', m):
+    _adios = r'\b(adios|hasta luego|hasta manana|nos vemos|chao|bye|hasta pronto|me voy)\b'
+    if re.search(_adios, m) and _es_solo_cortesia(m, _adios):
         return f"Hasta luego, {_sr()}. Estare disponible cuando me necesite."
 
-    # --- ESTADO ---
-    if re.search(r'\b(como estas|todo bien|como vas|estas bien)\b', m):
+    # --- ESTADO (de JARVIS, no del computador: "como estas" != "como esta la ram") ---
+    _estado = r'\b(como estas|todo bien|como vas|estas bien)\b'
+    if re.search(_estado, m) and _es_solo_cortesia(m, _estado):
         return f"Todos los sistemas operando con normalidad, {_sr()}. Listo para asistirle."
 
     return None
