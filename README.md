@@ -62,6 +62,13 @@ JARVIS Local es un asistente personal estilo "Iron Man" diseñado para hardware 
 - **Google Calendar**: *"mis próximos eventos"* — lista tus eventos (OAuth opcional, ver `secrets.example.yaml`).
 - Las credenciales viven en `secrets.yaml` / `credentials.json`, ambos **fuera de git** (.gitignore).
 
+### 💼 Empleo y navegador automatizado (Fase 5)
+- **Búsqueda de empleo**: *"busca trabajo de desarrollador en Bogotá"*, *"hay vacantes de vendedor en Cali"* — JARVIS consulta **Computrabajo** y te lee las 5 mejores ofertas con **empresa, ubicación, salario, modalidad y antigüedad**.
+- **Abrir una oferta**: *"abre la oferta 2"* — la abre en tu navegador.
+- **Ver todas**: *"muéstrame las ofertas"* — abre la búsqueda completa en el Chrome automatizado.
+- **Navegador controlado (Selenium)**: *"navega a github.com"* / *"cierra el navegador"* — JARVIS maneja su propia ventana de Chrome, que queda abierta para que sigas navegando.
+- Sin API key ni credenciales: scraping ligero con `requests` + Selenium Manager (descarga el chromedriver solo).
+
 ### 📁 Archivos
 - Listar, buscar, crear (archivos y carpetas), copiar, mover, renombrar y ver metadatos.
 - Solo dentro de carpetas permitidas (Documentos, Descargas, Escritorio, Música, Imágenes, Videos, OneDrive) con validación contra escapes de ruta.
@@ -237,7 +244,7 @@ python -m pytest jarvis_local/test -q
 - ✅ **Fase 2**: Herramientas (archivos, apps, terminal) + seguridad
 - ✅ **Fase 3**: Voz (STT/TTS), modo continuo con wake word, memorias, UI web/desktop, índice dinámico de apps, WSL
 - ✅ **Fase 4**: Web (sitios, Google, YouTube), clima, ubicaciones y distancias, Wikipedia, noticias, estado del sistema, calculadora segura, notas, capturas, música, correo, WolframAlpha, Google Calendar, ocultar archivos, chistes, IP, cambiar ventana
-- ⏳ **Fase 5**: Navegación web automatizada (Selenium) + búsqueda de empleo en Computrabajo
+- ✅ **Fase 5**: Navegación web automatizada (Selenium) + búsqueda de empleo en Computrabajo
 
 ---
 

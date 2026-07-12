@@ -92,6 +92,8 @@ Tambien entiendo lenguaje natural (texto o voz):
   "envia un correo a <destino> asunto <asunto> mensaje <texto>"
   "oculta los archivos de <carpeta>" / "muestra los archivos ocultos de <carpeta>"
   "mis proximos eventos" (Google Calendar, requiere configuracion)
+  "busca trabajo de <cargo> en <ciudad>" (Computrabajo) / "abre la oferta 2"
+  "muestrame las ofertas" / "navega a <sitio>" / "cierra el navegador"
 """
 
 

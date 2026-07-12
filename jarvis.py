@@ -186,6 +186,9 @@ def _execute_tool_read(tool: str, args: dict) -> str:
     elif tool == "get_ip":
         from jarvis_local.tools.ip_info import get_ip
         plan = get_ip()
+    elif tool == "search_jobs":
+        from jarvis_local.tools.jobs import search_jobs
+        plan = search_jobs(args.get("puesto", ""), args.get("ciudad", ""))
     if plan and plan.result:
         return plan.result
     return "Operacion completada."
@@ -275,6 +278,18 @@ def _execute_tool_write(tool: str, args: dict) -> str:
     elif tool == "locate":
         from jarvis_local.tools.location import locate
         plan = locate(args.get("place", ""))
+    elif tool == "open_job":
+        from jarvis_local.tools.jobs import open_job
+        plan = open_job(args.get("number", 1))
+    elif tool == "show_jobs":
+        from jarvis_local.tools.browser import show_jobs_in_browser
+        plan = show_jobs_in_browser(args.get("puesto", ""), args.get("ciudad", ""))
+    elif tool == "browser_navigate":
+        from jarvis_local.tools.browser import navigate
+        plan = navigate(args.get("url", ""))
+    elif tool == "close_browser":
+        from jarvis_local.tools.browser import close_browser
+        plan = close_browser()
     if plan is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
     if plan.error:

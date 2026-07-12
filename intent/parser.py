@@ -83,6 +83,68 @@ def _looks_like_domain(text: str) -> bool:
     return bool(re.match(r'^(https?://)?[\w-]+(\.[\w-]+)+(/\S*)?$', t))
 
 
+_NUM_WORDS = {"primera": 1, "uno": 1, "una": 1, "segunda": 2, "dos": 2,
+              "tercera": 3, "tres": 3, "cuarta": 4, "cuatro": 4,
+              "quinta": 5, "cinco": 5}
+
+
+def _parse_fase5(m: str) -> IntentResult | None:
+    """Intents de Fase 5: empleo en Computrabajo y navegador automatizado."""
+    low = m.lower()
+
+    # --- ABRIR OFERTA N ---
+    m_open = re.search(r'(?:abre|abrir|muestra|ver)\s+(?:la\s+)?(?:oferta|vacante|empleo)\s+(?:numero\s+)?(\w+)', low)
+    if m_open:
+        tok = m_open.group(1)
+        num = int(tok) if tok.isdigit() else _NUM_WORDS.get(tok, 0)
+        if num:
+            return IntentResult(kind="tool_execute", tool="open_job",
+                                arguments={"number": num},
+                                reason=f"Abrir oferta {num}")
+
+    # --- BUSCAR EMPLEO ---
+    m_job = re.search(
+        r'(?:busca(?:r|me)?|encuentra|consigueme|quiero|hay)\s+(?:un\s+|una\s+)?'
+        r'(?:trabajo|empleo|vacante(?:s)?|oferta(?:s)?)\s*'
+        r'(?:de\s+|como\s+|para\s+)?(.*)', low)
+    if m_job and re.search(r'\b(trabajo|empleo|vacante|oferta)', low):
+        resto = m_job.group(1).strip().rstrip('.!?')
+        ciudad = ""
+        m_ciudad = re.search(r'\s+en\s+(.+)$', resto)
+        if m_ciudad:
+            ciudad = m_ciudad.group(1).strip()
+            resto = resto[:m_ciudad.start()].strip()
+        puesto = resto.strip()
+        if not puesto:
+            return IntentResult(
+                kind="ambiguous",
+                clarification=("De que cargo busco empleo, senor? Por ejemplo: "
+                               "'busca trabajo de desarrollador en Bogota'."),
+                reason="Cargo no especificado")
+        return IntentResult(kind="tool_read", tool="search_jobs",
+                            arguments={"puesto": puesto, "ciudad": ciudad},
+                            reason=f"Buscar empleo de {puesto}")
+
+    # --- MOSTRAR OFERTAS EN EL NAVEGADOR ---
+    if re.search(r'\b(muestra(?:me)?|abre|ver)\b.*\b(ofertas|vacantes|empleos|computrabajo)\b', low):
+        return IntentResult(kind="tool_execute", tool="show_jobs",
+                            arguments={"puesto": "", "ciudad": ""},
+                            reason="Mostrar ofertas en el navegador")
+
+    # --- NAVEGADOR AUTOMATIZADO ---
+    m_nav = re.search(r'(?:navega|navegar|controla\s+el\s+navegador)\s+(?:a|hasta|hacia)?\s*(.+)', low)
+    if m_nav:
+        return IntentResult(kind="tool_execute", tool="browser_navigate",
+                            arguments={"url": m_nav.group(1).strip().rstrip('.!?')},
+                            reason="Navegar con el navegador controlado")
+
+    if re.search(r'\b(cierra|cerrar)\s+(?:el\s+)?navegador\b', low):
+        return IntentResult(kind="tool_execute", tool="close_browser",
+                            reason="Cerrar navegador automatizado")
+
+    return None
+
+
 def _parse_fase4(m: str) -> IntentResult | None:
     """Intents de Fase 4: clima, web, sistema, wikipedia, correo, etc."""
     low = m.lower()
@@ -249,6 +311,12 @@ def _parse_fase4(m: str) -> IntentResult | None:
 
 def parse_intent(message: str) -> IntentResult:
     m = message.strip()
+
+    # --- FASE 5: empleo y navegador automatizado (antes que fase4 para
+    #     que "busca trabajo ... en bogota" no se confunda con Google) ---
+    fase5 = _parse_fase5(m)
+    if fase5 is not None:
+        return fase5
 
     # --- FASE 4: clima, web, sistema, wikipedia, correo, etc. ---
     fase4 = _parse_fase4(m)
