@@ -452,6 +452,15 @@ class Jarvis:
                 logger.log_action(instruction=instruction, result=fast[:150])
                 return fast
 
+            # Peticion de varias acciones ("dime el clima y luego abre Chrome"):
+            # se parte y cada clausula baja por la cascada completa. Antes esto
+            # lo resolvia el agente por dentro, y la segunda clausula ("abre
+            # Chrome") iba directa al LLM, saltandose el parser que la resolvia
+            # perfecto: el modelo pequeno a veces no la ejecutaba.
+            encadenada = self._chat_encadenado(safe_input, instruction)
+            if encadenada is not None:
+                return encadenada
+
             # Camino rapido: el parser deterministico reconoce la frase
             # (instantaneo, sin gastar el LLM)
             intent = _parse_and_execute(safe_input, self)
@@ -520,6 +529,36 @@ class Jarvis:
             logger.log_error("chat", str(e))
             raise RuntimeError(
                 f"Error inesperado al comunicarse con Ollama: {e}") from e
+
+    def _chat_encadenado(self, safe_input: str, instruction: str) -> str | None:
+        """Resuelve una peticion de varias acciones, clausula por clausula.
+
+        Cada clausula baja por la MISMA cascada que un mensaje suelto: primero
+        el parser (instantaneo y fiable para "abre Chrome") y solo si no la
+        reconoce, el agente. Devuelve None si la peticion es de una sola accion.
+        """
+        from jarvis_local.intent.parser import dividir_acciones
+
+        clausulas = dividir_acciones(safe_input)
+        if len(clausulas) < 2:
+            return None
+
+        partes: list[str] = []
+        for clausula in clausulas:
+            respuesta = _parse_and_execute(clausula, self)
+            if respuesta is None:
+                r = self._try_agent(clausula, clausula[:100])
+                respuesta = r if r else None
+            if respuesta:
+                partes.append(respuesta)
+
+        if not partes:
+            return None  # no se resolvio nada: que lo intente el chat
+
+        texto = "\n".join(partes)
+        logger.log_action(instruction=instruction,
+                          result=f"[encadenado x{len(partes)}] {texto[:120]}")
+        return texto
 
     def _try_agent(self, safe_input: str, instruction: str) -> str | None:
         """Deja que el LLM elija herramientas (tool calling).

@@ -39,9 +39,8 @@ def _pide_aclaracion(texto: str) -> bool:
 def trace_message(jarvis, mensaje: str,
                   historial: list[tuple[str, str]] | None = None) -> Trace:
     """Corre el mensaje por la cascada real y registra la decision."""
-    from jarvis_local.agent import loop as agent_loop
     from jarvis_local.fast_response import fast_respond
-    from jarvis_local.intent.parser import parse_intent
+    from jarvis_local.intent.parser import dividir_acciones
 
     tr = Trace(entrada=mensaje)
     t0 = time.time()
@@ -62,6 +61,34 @@ def trace_message(jarvis, mensaje: str,
         tr.pidio_aclaracion = _pide_aclaracion(fast)
         tr.segundos = time.time() - t0
         return tr
+
+    # Peticion de varias acciones: cada clausula baja por la cascada completa,
+    # igual que hace Jarvis._chat_encadenado().
+    clausulas = dividir_acciones(mensaje)
+    if len(clausulas) > 1:
+        for clausula in clausulas:
+            sub = _trace_una(jarvis, clausula, historial)
+            tr.tools.extend(sub.tools)
+            tr.args.extend(sub.args)
+        tr.capa = "encadenado"
+        tr.respuesta = f"[{len(tr.tools)} acciones]"
+        tr.segundos = time.time() - t0
+        return tr
+
+    sub = _trace_una(jarvis, mensaje, historial)
+    sub.entrada = mensaje
+    sub.segundos = time.time() - t0
+    return sub
+
+
+def _trace_una(jarvis, mensaje: str,
+               historial: list[tuple[str, str]] | None = None) -> Trace:
+    """Cascada para UNA sola accion: parser -> agente -> chat."""
+    from jarvis_local.agent import loop as agent_loop
+    from jarvis_local.intent.parser import parse_intent
+
+    tr = Trace(entrada=mensaje)
+    t0 = time.time()
 
     # Capa 2: parser deterministico
     intent = parse_intent(mensaje)

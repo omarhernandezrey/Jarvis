@@ -337,7 +337,7 @@ def es_multi_accion(message: str) -> bool:
     """La frase pide DOS o mas acciones.
 
     El parser resuelve una sola intencion: si intenta estas, ejecuta la primera
-    mitad y descarta la segunda en silencio. Se las cede al agente, que encadena.
+    mitad y descarta la segunda en silencio.
 
     Se exige (a) dos verbos de accion unidos por "y", o (b) un conector
     secuencial explicito. Contar verbos a secas daria falsos positivos con las
@@ -350,21 +350,62 @@ def es_multi_accion(message: str) -> bool:
     return bool(_CONECTOR_SECUENCIAL.search(limpio)) and len(verbos) >= 1
 
 
-# Referencias a algo dicho antes ("abreme la segunda", "y en Bogota?").
-# El parser no tiene historial: no sabe la segunda QUE, ni el clima DE que.
-# Si intenta resolverlas, inventa argumentos (interpretaba "la segunda" como el
-# nombre de una aplicacion). El agente si recibe la conversacion previa.
-_ANAFORICA = re.compile(
-    r'^\s*(?:y|ahora|luego|entonces)\b|'
-    r'\b(?:la|el)\s+(?:primera?|segunda?|tercera?|cuarta?|quinta?|anterior|'
-    r'ultima?)\b|'
-    r'\b(?:eso|esa|ese|esos|esas|aquello|lo\s+mismo|ahi)\b',
+# Punto de corte entre las dos acciones: "... Y (LUEGO) abre chrome"
+_CORTE = re.compile(
+    r'\s*\b(?:y\s+(?:luego|despues|tambien|ademas|de\s+paso|acto\s+seguido)\s+|'
+    r'y\s+(?=(?:abre|abreme|cierra|busca|buscame|pon|ponme|reproduce|toma|'
+    r'manda|envia|lanza|inicia|muestra|muestrame|dime|dame|ejecuta|corre|'
+    r'borra|elimina|crea|apunta|anota|calcula|navega)\b)|'
+    r'(?:luego|despues|acto\s+seguido)\s+(?=\w))\s*',
+    re.IGNORECASE)
+
+
+def dividir_acciones(message: str) -> list[str]:
+    """Parte una peticion multi-accion en sus clausulas.
+
+    Se hace aqui, de forma determinista, porque el modelo de 3B NO encadena por
+    su cuenta: aun devolviendole el resultado de la primera herramienta, no pide
+    la segunda (medido: 0/2 en los casos encadenados de la bateria). Dividir la
+    frase y correr el agente sobre cada mitad es fiable y no depende de una
+    capacidad que el modelo local no tiene.
+    """
+    if not es_multi_accion(message):
+        return [message]
+    partes = [p.strip(" ,.;") for p in _CORTE.split(_CORTESIA.sub(" ", message))]
+    partes = [p for p in partes if p and _VERBO_ACCION.search(p)]
+    return partes if len(partes) >= 2 else [message]
+
+
+# Conectores de continuidad al inicio: son muletillas, no referencias.
+# "ahora abre whatsapp" trae su propio objeto (whatsapp) y se resuelve sola.
+_MULETILLA_INICIAL = re.compile(r'^\s*(?:y|ahora|luego|entonces|despues)\b[,\s]*',
+                                re.IGNORECASE)
+
+# Referencias que NO nombran su objeto: hay que ir a buscarlo al turno anterior.
+_DEICTICO = re.compile(
+    r'\b(?:la|el|lo)\s+(?:primera?|segunda?|tercera?|cuarta?|quinta?|'
+    r'anterior|ultima?|mismo)\b|'
+    r'\b(?:eso|esa|ese|esos|esas|aquello|ahi|alli)\b',
     re.IGNORECASE)
 
 
 def es_anaforica(message: str) -> bool:
-    """La frase se apoya en un turno anterior para tener sentido."""
-    return bool(_ANAFORICA.search(message))
+    """La frase NO se entiende sin el turno anterior.
+
+    Cuidado con pasarse: "ahora abre whatsapp" empieza con un conector, pero
+    nombra su objeto y se resuelve sola. Si se la manda al agente por
+    "anaforica", se pierde el camino rapido del parser y el modelo pequeno falla.
+    Solo son anaforicas las que apuntan a algo sin nombrarlo ("abreme la
+    segunda") o a las que les falta el verbo/objeto ("y en Bogota?").
+    """
+    if _DEICTICO.search(message):
+        return True
+    resto = _MULETILLA_INICIAL.sub("", message).strip()
+    if resto == message.strip():
+        return False  # no empezaba por conector: es una frase autonoma
+    # Empezaba por conector: solo es anaforica si lo que queda no se sostiene
+    # solo, es decir, si no trae un verbo de accion ("y en Bogota?").
+    return not _VERBO_ACCION.search(resto)
 
 
 def parse_intent(message: str) -> IntentResult:

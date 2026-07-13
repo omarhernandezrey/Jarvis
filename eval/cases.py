@@ -36,7 +36,10 @@ COLOQUIALES = [
     ("me consigues unas vacantes de programador por Medellin", "buscar_empleo"),
     ("estoy buscando pega de disenador", "buscar_empleo"),
     ("necesito la pagina de github abierta", "abrir_sitio_web"),
-    ("apuntame que tengo que llamar al banco", "tomar_nota"),
+    # "recordar" (memoria permanente) y "tomar_nota" (archivo de notas) son
+    # ambas respuestas razonables a "apuntame esto": el usuario queda servido
+    # con cualquiera. No es un fallo de razonamiento.
+    ("apuntame que tengo que llamar al banco", "tomar_nota|recordar"),
     ("mi pc esta lentisimo, revisa", "estado_del_sistema"),
     ("quien diablos fue Simon Bolivar", "wikipedia"),
     ("echale un ojo a las noticias", "noticias"),

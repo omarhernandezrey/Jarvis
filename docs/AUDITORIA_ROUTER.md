@@ -126,28 +126,72 @@ chat.
 Cada decisión → `logs/decisions.jsonl` (entrada, confianza, herramientas,
 resultado). `python -m jarvis_local.agent.decision_log` da el resumen.
 
-### 7. Multi-paso condicionado
+### 7. Encadenado por división de cláusulas
 
-Se encadenan herramientas solo si la petición lo pide. Una llamada extra al LLM
-cuesta ~15 s en CPU: pagarla en toda petición simple para "redactar" no compensa.
+Primer intento: devolverle al modelo el resultado de la primera herramienta para
+que pidiera la segunda. **Medido: 0/2.** El 3B no encadena, ni siquiera con el
+resultado delante.
+
+Solución: `dividir_acciones()` parte la petición por el conector y el agente
+resuelve cada cláusula, pasándole el resultado de la anterior como contexto.
+Determinista, y no depende de una capacidad que el modelo local no tiene.
+
+```
+"dime el clima de Cali y después abre Chrome"
+  → ["dime el clima de Cali", "abre Chrome"]
+```
+
+### 8. Menos opciones, mejores decisiones (TOP_K 6 → 4)
+
+Contraintuitivo pero medido: con 6 herramientas ofrecidas, en *"ando aburrido,
+dime algo divertido"* el retriever ponía `contar_chiste` primero (0.73) y el
+modelo elegía `wikipedia` (0.45), que solo estaba ahí de relleno. Menos opciones
+= menos formas de equivocarse.
+
+### 9. Anáfora solo cuando falta el objeto
+
+Primera versión: toda frase que empezara por conector iba al agente. Eso mandó
+*"ahora abre whatsapp"* (que nombra su objeto y se resolvía sola en el parser) al
+camino lento, y el modelo pequeño fallaba. Ahora solo son anáforicas las que
+apuntan a algo **sin nombrarlo**: *"ábreme la segunda"*, *"y en Bogotá?"*.
 
 ---
 
 ## Fase 4 — Resultados
 
-### Precisión del enrutamiento (63 casos)
+### Precisión del enrutamiento (63 casos, mismo hardware, mismo modelo)
 
 | Categoría | Antes | Después |
 |---|---|---|
 | Directos | 100% | 100% |
-| Coloquiales | 80% | ver informe final |
-| Ambiguos | 25% | ver informe final |
-| Encadenados | 0% | ver informe final |
-| Negación | 67% | ver informe final |
+| Coloquiales | 80% | **87%** |
+| **Ambiguos** | **25%** | **100%** |
+| **Negación** | **67%** | **100%** |
+| **Encadenados** | **0%** | **100%** |
 | Fuera de alcance | 100% | 100% |
-| Variantes (app/clima/sistema/empleo) | 83–100% | 100% |
-| Contextuales | 33% | ver informe final |
-| **TOTAL** | **79%** | **ver informe final** |
+| Variantes de clima | 83% | **100%** |
+| Variantes de empleo | 80% | **100%** |
+| Variantes de app / sistema | 100% | 100% |
+| Contextuales | 33% | 33%¹ |
+| **TOTAL** | **79%** | **94%** |
+
+<sub>¹ Inestable entre corridas (33–67%): el 3B a veces resuelve la anáfora y a
+veces no, con la misma entrada y temperatura 0.1.</sub>
+
+El salto no viene de un modelo mejor: es **el mismo qwen2.5:3b**. Viene de que
+ahora el modelo *llega a ver* la petición y decide sobre un catálogo limpio.
+
+### Los 4 fallos que quedan
+
+| Caso | Diagnóstico |
+|---|---|
+| *"necesito revisar mis correos"* | **Límite del modelo.** Se le ofrece la herramienta correcta y no la llama. **Falla igual en el 7B.** |
+| *"se me antoja escuchar algo de música"* | Ídem: **falla igual en el 7B.** |
+| *"ábreme la segunda"*, *"y en Bogotá?"* | Anáfora: el 3B resuelve el referente de forma inconsistente entre corridas. |
+
+Ninguno es ya un fallo de arquitectura: en los cuatro, **el sistema le entrega al
+modelo la herramienta correcta y el contexto necesario**. Lo que falla es la
+decisión del modelo. Ese es el techo real del 3B.
 
 ### ¿Es el modelo de 3B el techo? (medido, 12 casos difíciles)
 

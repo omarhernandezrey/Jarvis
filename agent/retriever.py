@@ -36,9 +36,14 @@ import numpy as np
 from jarvis_local.agent.registry import TOOLS, get_tool
 from jarvis_local.storage.semantic import cosine_similarity, embed
 
-# Cuantas herramientas ofrecerle al modelo. Medido: con 31 el prompt supera los
-# 4000 tokens y el 3B tarda 1-2 min y elige mal; con <=6 acierta y va en ~15 s.
-TOP_K = 6
+# Cuantas herramientas ofrecerle al modelo.
+# Con 31 el prompt supera los 4000 tokens: el 3B tarda 1-2 min y elige mal.
+# Con 6 seguia habiendo ruido: en "ando aburrido, dime algo divertido" el
+# retriever ponia contar_chiste primero (0.73) y el modelo elegia wikipedia
+# (0.45), que solo estaba ahi por relleno. Menos opciones, menos formas de
+# equivocarse: la recuperacion tiene recall@4 suficiente y el modelo decide
+# mejor sobre un catalogo corto.
+TOP_K = 4
 
 # Por debajo de esto, ninguna herramienta se considera plausible y la frase va
 # a conversacion. Calibrado con la bateria: las peticiones reales puntuan >0.45

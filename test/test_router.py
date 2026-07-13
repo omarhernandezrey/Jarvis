@@ -23,7 +23,12 @@ from jarvis_local.agent import retriever
 from jarvis_local.agent.loop import _clean_text, _limpiar_args, _validar, run_agent
 from jarvis_local.eval.cases import es_correcto
 from jarvis_local.fast_response import fast_respond
-from jarvis_local.intent.parser import es_multi_accion, parse_intent
+from jarvis_local.intent.parser import (
+    dividir_acciones,
+    es_anaforica,
+    es_multi_accion,
+    parse_intent,
+)
 from jarvis_local.storage.semantic import embeddings_available
 
 sin_embeddings = not embeddings_available()
@@ -68,6 +73,38 @@ def test_multi_accion_va_al_agente():
 
     r = parse_intent("dime el clima de Cali y despues abre Chrome")
     assert r.kind == "chat", "una peticion de dos acciones no debe resolverla el parser"
+
+
+def test_anafora_solo_cuando_falta_el_objeto():
+    """Regresion: marcar como anaforica toda frase que empieza por un conector
+    mandaba "ahora abre whatsapp" al agente, perdiendo el camino rapido del
+    parser (y el modelo pequeno fallaba). Solo son anaforicas las que NO
+    nombran su objeto."""
+    assert not es_anaforica("ahora abre whatsapp")   # trae su objeto: se resuelve sola
+    assert not es_anaforica("abre chrome")
+    assert es_anaforica("y en Bogota?")              # y en Bogota... QUE?
+    assert es_anaforica("abreme la segunda")         # la segunda... QUE?
+    assert es_anaforica("cierra eso")
+
+    # Las autonomas siguen yendo por el parser (instantaneo)
+    assert parse_intent("ahora abre whatsapp").tool == "open_app"
+    # Las anaforicas se ceden al agente, que si ve la conversacion previa
+    assert parse_intent("abreme la segunda").kind == "chat"
+
+
+def test_division_de_peticiones_encadenadas():
+    """El modelo de 3B no encadena solo (medido: 0/2): aunque se le devuelva el
+    resultado de la primera herramienta, no pide la segunda. Se divide la frase
+    y cada clausula se resuelve por separado."""
+    assert dividir_acciones("dime el clima de Cali y despues abre Chrome") == \
+        ["dime el clima de Cali", "abre Chrome"]
+    assert dividir_acciones(
+        "busca trabajo de python en Bogota y abre la primera oferta") == \
+        ["busca trabajo de python en Bogota", "abre la primera oferta"]
+    # Una sola accion no se toca
+    assert dividir_acciones("abre chrome") == ["abre chrome"]
+    assert dividir_acciones("hazme el favor y abre el whatsapp") == \
+        ["hazme el favor y abre el whatsapp"]
 
 
 # ---------------------------------------------------------------------------

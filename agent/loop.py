@@ -74,6 +74,23 @@ _SIN_OBJETO = re.compile(
     r'\b(?:algo|una\s+cosa)\b\s*[.!?]*\s*$', re.IGNORECASE)
 
 
+def _consulta_de_recuperacion(message: str, history: list[dict] | None) -> str:
+    """Texto con el que se BUSCAN las herramientas (no el que ve el LLM).
+
+    Una frase anaforica no tiene contenido propio: "y en Bogota?" no se parece
+    a la descripcion de ninguna herramienta, asi que el retriever no devolvia
+    nada y la peticion se perdia. Se le pega el ultimo mensaje del usuario, que
+    es donde esta el tema ("clima en Cali"), y asi la recuperacion funciona.
+    """
+    from jarvis_local.intent.parser import es_anaforica
+
+    if not history or not es_anaforica(message):
+        return message
+    ultimo = next((m["content"] for m in reversed(history)
+                   if m.get("role") == "user" and m.get("content")), "")
+    return f"{ultimo} {message}".strip() if ultimo else message
+
+
 def _es_orden_vaga(message: str) -> bool:
     """Es una ORDEN pero sin objeto: hay que preguntar, no adivinar ni callar.
 
@@ -142,10 +159,66 @@ def _limpiar_args(name: str, args: dict) -> dict:
 
 def run_agent(client, user_message: str, history: list[dict] | None = None,
               max_steps: int = MAX_STEPS) -> AgentResult:
-    """Decide y ejecuta. Texto vacio y sin herramientas = que responda el chat."""
-    from jarvis_local.intent.parser import es_multi_accion
+    """Decide y ejecuta. Texto vacio y sin herramientas = que responda el chat.
 
-    conf = confidence(user_message)
+    Si la peticion pide varias acciones, se resuelve clausula por clausula: el
+    modelo de 3B no encadena por su cuenta (medido: 0/2), asi que confiar en que
+    pida la segunda herramienta tras la primera perderia la mitad de la orden.
+    """
+    from jarvis_local.intent.parser import dividir_acciones
+
+    clausulas = dividir_acciones(user_message)
+    if len(clausulas) > 1:
+        return _run_encadenado(client, clausulas, history)
+    return _run_simple(client, user_message, history, max_steps)
+
+
+def _run_encadenado(client, clausulas: list[str],
+                    history: list[dict] | None) -> AgentResult:
+    """Ejecuta cada accion de la peticion, en orden."""
+    from jarvis_local.intent.parser import es_anaforica
+
+    usadas: list[str] = []
+    textos: list[str] = []
+    ctx = list(history or [])
+
+    for clausula in clausulas[:MAX_STEPS]:
+        # El contexto acumulado solo se le pasa a la clausula si lo NECESITA
+        # ("abre la primera oferta" -> hay que saber de que lista). Una clausula
+        # autonoma ("abre Chrome") no lo necesita, y darselo empeora las cosas:
+        # el modelo pequeno se distrae con el resultado anterior (el parte del
+        # clima) y deja de llamar a la herramienta.
+        necesita_ctx = es_anaforica(clausula)
+        r = _run_simple(client, clausula, ctx if necesita_ctx else None, MAX_STEPS)
+
+        if r.pending_confirmation:
+            # Una accion de riesgo corta la cadena: el usuario debe decidir
+            # antes de que sigamos actuando en su nombre.
+            return AgentResult(text="\n".join([*textos, r.text]),
+                               tools_used=usadas + r.tools_used,
+                               pending_confirmation=True, confidence=r.confidence)
+
+        usadas.extend(r.tools_used)
+        if r.text:
+            textos.append(r.text)
+            ctx = [*ctx, {"role": "user", "content": clausula},
+                   {"role": "assistant", "content": r.text}]
+
+    return AgentResult(text="\n".join(textos), tools_used=usadas,
+                       confidence=confidence(clausulas[0]))
+
+
+def _run_simple(client, user_message: str, history: list[dict] | None,
+                max_steps: int) -> AgentResult:
+    from jarvis_local.intent.parser import es_multi_accion  # noqa: F401
+
+    # Para RECUPERAR herramientas, una frase anaforica no se sostiene sola:
+    # "y en Bogota?" no se parece a ninguna herramienta, asi que el retriever
+    # devolvia lista vacia y la peticion moria en conversacion. Se recupera con
+    # el turno anterior pegado ("clima en Cali" + "y en Bogota?"), que si tiene
+    # el contenido semantico. El LLM sigue recibiendo el mensaje original.
+    consulta = _consulta_de_recuperacion(user_message, history)
+    conf = confidence(consulta)
 
     # Orden sin objeto ("hazlo", "abre eso", "busca") y sin conversacion previa
     # de donde deducirlo: preguntar. Se comprueba ANTES de mirar la confianza,
@@ -158,14 +231,12 @@ def run_agent(client, user_message: str, history: list[dict] | None = None,
         log_decision(user_message, conf, [], [texto], "aclaracion_orden_vaga")
         return AgentResult(text=texto, needs_clarification=True, confidence=conf)
 
-    tools = select_tools(user_message)
+    tools = select_tools(consulta)
     if not tools:
         # Nada plausible ni semanticamente: es conversacion. No se gasta una
         # llamada al LLM con el catalogo de herramientas.
         log_decision(user_message, conf, [], [], "sin_herramientas_plausibles")
         return AgentResult(text="", confidence=conf)
-
-    multi = es_multi_accion(user_message)
 
     system = AGENT_SYSTEM_PROMPT
     if history and _ANAFORA.search(user_message):
@@ -249,12 +320,12 @@ def run_agent(client, user_message: str, history: list[dict] | None = None,
         if detener:
             continue
 
-        # Peticion de una sola accion: ya esta hecha. Volver a llamar al modelo
-        # solo para que "redacte" cuesta otros ~15 s en CPU y no aporta: la
-        # salida de la herramienta ya viene redactada. Solo se sigue iterando
-        # cuando el usuario pidio varias acciones encadenadas.
-        if not multi or len(usadas) >= max_steps:
-            break
+        # Ya se ejecuto la herramienta: la peticion esta resuelta. Volver a
+        # llamar al modelo solo para que "redacte" cuesta otros ~15 s en CPU y
+        # no aporta, porque la salida de la herramienta ya viene redactada.
+        # Las peticiones de varias acciones no llegan aqui: las divide
+        # dividir_acciones() y cada clausula entra por su cuenta.
+        break
 
     log_decision(user_message, conf, usadas, resultados,
                  "ok" if usadas else "limite_de_pasos")
