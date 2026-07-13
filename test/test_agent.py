@@ -127,9 +127,9 @@ def test_agente_ejecuta_la_herramienta_elegida():
 
 
 def test_agente_sin_herramientas_devuelve_vacio():
-    """Sin candidatas no se llama al modelo (ahorra ~20s en CPU)."""
+    """Conversacion pura: no se gasta una llamada al LLM con el catalogo."""
     client = _mock_client()
-    r = run_agent(client, "hola que tal")
+    r = run_agent(client, "de que color es el cielo")
     assert r.text == "" and r.tools_used == []
     client.chat_with_tools.assert_not_called()
 

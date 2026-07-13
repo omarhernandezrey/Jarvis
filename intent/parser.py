@@ -309,8 +309,76 @@ def _parse_fase4(m: str) -> IntentResult | None:
     return None
 
 
+# Muletillas de cortesia: no aportan intencion y ensucian el analisis.
+# "hazme el favor y abre el whatsapp" tiene el verbo "hazme", pero no es una
+# accion: es una formula. Sin quitarla, se contaba como una segunda accion y la
+# frase se tomaba por multi-accion.
+_CORTESIA = re.compile(
+    r'\b(?:hazme\s+el\s+favor\s+(?:de\s+|y\s+)?|hagame\s+el\s+favor\s+(?:de\s+|y\s+)?|'
+    r'por\s+favor|podrias|podria|puedes|puede|quisiera\s+que|'
+    r'necesito\s+que|quiero\s+que|me\s+gustaria\s+que)\b',
+    re.IGNORECASE)
+
+# Verbos que introducen una accion ejecutable.
+_VERBO_ACCION = re.compile(
+    r'\b(?:abre|abreme|abrir|cierra|cerrar|busca|buscame|buscar|pon|ponme|'
+    r'reproduce|toma|tomame|manda|mandame|envia|enviame|lanza|inicia|muestra|'
+    r'muestrame|dime|dame|ejecuta|corre|borra|elimina|crea|apunta|anota|'
+    r'calcula|navega|listar|lista)\b',
+    re.IGNORECASE)
+
+# Conectores secuenciales inequivocos: "y luego", "y despues", "y tambien"...
+_CONECTOR_SECUENCIAL = re.compile(
+    r'\b(?:y\s+(?:luego|despues|tambien|ademas|de\s+paso|acto\s+seguido)|'
+    r'luego\b|despues\b|acto\s+seguido)', re.IGNORECASE)
+
+
+def es_multi_accion(message: str) -> bool:
+    """La frase pide DOS o mas acciones.
+
+    El parser resuelve una sola intencion: si intenta estas, ejecuta la primera
+    mitad y descarta la segunda en silencio. Se las cede al agente, que encadena.
+
+    Se exige (a) dos verbos de accion unidos por "y", o (b) un conector
+    secuencial explicito. Contar verbos a secas daria falsos positivos con las
+    formulas de cortesia, por eso se quitan antes.
+    """
+    limpio = _CORTESIA.sub(" ", message)
+    verbos = _VERBO_ACCION.findall(limpio)
+    if len(verbos) >= 2 and re.search(r'\by\b', limpio, re.IGNORECASE):
+        return True
+    return bool(_CONECTOR_SECUENCIAL.search(limpio)) and len(verbos) >= 1
+
+
+# Referencias a algo dicho antes ("abreme la segunda", "y en Bogota?").
+# El parser no tiene historial: no sabe la segunda QUE, ni el clima DE que.
+# Si intenta resolverlas, inventa argumentos (interpretaba "la segunda" como el
+# nombre de una aplicacion). El agente si recibe la conversacion previa.
+_ANAFORICA = re.compile(
+    r'^\s*(?:y|ahora|luego|entonces)\b|'
+    r'\b(?:la|el)\s+(?:primera?|segunda?|tercera?|cuarta?|quinta?|anterior|'
+    r'ultima?)\b|'
+    r'\b(?:eso|esa|ese|esos|esas|aquello|lo\s+mismo|ahi)\b',
+    re.IGNORECASE)
+
+
+def es_anaforica(message: str) -> bool:
+    """La frase se apoya en un turno anterior para tener sentido."""
+    return bool(_ANAFORICA.search(message))
+
+
 def parse_intent(message: str) -> IntentResult:
     m = message.strip()
+
+    # Peticion con dos acciones: el parser solo sabe resolver una y descartaria
+    # la otra sin avisar. Que la maneje el agente (encadena herramientas).
+    if es_multi_accion(m):
+        return IntentResult(kind="chat", reason="Peticion multi-accion: la resuelve el agente")
+
+    # Referencia a un turno anterior: el parser no tiene contexto y acabaria
+    # inventando el argumento. Que la resuelva el agente, que si lo tiene.
+    if es_anaforica(m):
+        return IntentResult(kind="chat", reason="Referencia al contexto: la resuelve el agente")
 
     # --- FASE 5: empleo y navegador automatizado (antes que fase4 para
     #     que "busca trabajo ... en bogota" no se confunda con Google) ---
@@ -358,8 +426,14 @@ def parse_intent(message: str) -> IntentResult:
                 pass
 
     # --- LISTAR ARCHIVOS ---
+    # El objeto ("archivos", "carpeta"...) es OBLIGATORIO y los verbos van con
+    # \b. Sin eso, el patron viejo (ver? sin delimitador y objeto opcional)
+    # capturaba la silaba "ver" dentro de "llo-ver-": "va a llover en Medellin"
+    # se enrutaba a listar_archivos con path="Medellin".
     m_list = re.search(
-        r'(?:lista|listar|muestra|mostrar|ver?)\s+(?:los\s+)?(?:archivos|ficheros|contenido|elementos|documentos)?\s*(?:de|en|del)?\s+(.*)',
+        r'\b(?:lista|listar|muestra|mostrar|ver)\b\s+(?:los\s+|las\s+|el\s+|la\s+)?'
+        r'\b(?:archivos|ficheros|contenido|elementos|documentos|carpeta|directorio)\b'
+        r'\s*(?:de|en|del)?\s*(.*)',
         m, re.IGNORECASE)
     if m_list:
         path = _resolve_path(m_list.group(1).strip())
@@ -374,9 +448,22 @@ def parse_intent(message: str) -> IntentResult:
                             reason="Ruta fuera de whitelist")
 
     # --- BUSCAR ARCHIVO ---
-    m_search = re.search(
-        r'(?:busca|buscar|encuentra|encontrar|localiza|localizar)\s+(?:el\s+)?(?:archivo|fichero|documento)?\s*["\u201c]?([^"]+?)["\u201d]?\s*(?:en|dentro de)?\s+(.*)',
-        m, re.IGNORECASE)
+    # Alta precision: solo enruta aqui si hay una senal INEQUIVOCA de que se
+    # busca un archivo, y no cualquier cosa. Antes el sustantivo era opcional,
+    # asi que "busca" a secas y "busca pega de disenador" caian en buscar_archivo.
+    # Ahora se exige el sustantivo (archivo/fichero/documento) O un nombre con
+    # extension (informe.pdf). Lo demas lo decide el LLM, no una regex.
+    m_search = (
+        re.search(
+            r'\b(?:busca|buscar|encuentra|encontrar|localiza|localizar)\b\s+(?:el\s+|la\s+)?'
+            r'\b(?:archivo|fichero|documento)\b\s*'
+            r'["\u201c]?([^"]+?)["\u201d]?\s*(?:en|dentro de)\s+(.*)',
+            m, re.IGNORECASE)
+        or re.search(
+            r'\b(?:busca|buscar|encuentra|encontrar|localiza|localizar)\b\s+'
+            r'["\u201c]?([^\s"]+\.\w{2,5})["\u201d]?\s*(?:en|dentro de)\s+(.*)',
+            m, re.IGNORECASE)
+    )
     if m_search:
         name = m_search.group(1).strip()
         path_str = m_search.group(2).strip()

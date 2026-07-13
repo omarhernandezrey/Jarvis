@@ -1,11 +1,15 @@
 """
-JARVIS Local - Preseleccion de herramientas (Fase 6)
+JARVIS Local - Preseleccion lexica de herramientas (RESPALDO)
 
-Un modelo de 3B en CPU se ahoga si le mandamos los 30 esquemas de herramientas:
-el prompt crece a miles de tokens, tarda minutos y elige mal. Aqui reducimos el
-catalogo a las pocas herramientas plausibles para la frase del usuario, usando
-palabras clave. El LLM sigue decidiendo (y puede no usar ninguna), pero elige
-entre 3-6 opciones en vez de 30: mas rapido y mucho mas preciso.
+OBSOLETO como via principal: lo reemplaza agent/retriever.py, que recupera las
+herramientas por significado (embeddings). Este modulo solo se usa si el modelo
+de embeddings no esta disponible.
+
+Por que se reemplazo: la coincidencia por palabras clave devolvia una lista
+VACIA ante lenguaje coloquial ("estoy buscando chamba de contador"), y con cero
+herramientas el agente ni se invocaba, asi que el modelo nunca llegaba a razonar
+sobre la frase. Agregar mas sinonimos no arregla el problema de fondo: siempre
+faltara una palabra. El retriever semantico si relaciona "chamba" con "empleo".
 """
 import re
 import unicodedata

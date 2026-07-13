@@ -538,6 +538,17 @@ class Jarvis:
             logger.log_error("agente", str(e))
             return None  # si el agente falla, seguimos con el chat normal
 
+        # El agente pide aclaracion: esa ES la respuesta correcta. Mandarla al
+        # chat haria que el modelo divague o invente en vez de preguntar.
+        if result.needs_clarification and result.text:
+            self.history.add_user(safe_input)
+            self.history.add_assistant(result.text)
+            self._persist_message("user", safe_input)
+            self._persist_message("assistant", result.text)
+            logger.log_action(instruction=instruction,
+                              result=f"[aclaracion] {result.text[:120]}")
+            return result.text
+
         if not result.tools_used or not result.text:
             return None
 
