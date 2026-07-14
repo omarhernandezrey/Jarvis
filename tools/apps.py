@@ -1,8 +1,13 @@
 """
 JARVIS Local - Herramientas de Aplicaciones (Fase 2)
 Abrir aplicaciones de la whitelist con subprocess controlado.
+Cerrar aplicaciones por nombre y las abiertas en la sesion.
 """
+import contextlib
+import difflib
+import os
 import subprocess
+import unicodedata
 
 from jarvis_local.safety.permissions import get_app_path, list_allowed_apps
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
@@ -14,16 +19,82 @@ ALLOWED_APP_NAMES = ["chrome", "vscode", "explorador", "powershell", "terminal",
 # Directorio inicial (ruta Linux) al abrir la terminal de WSL
 WSL_START_DIR = "/home/omarhernandez/personalProjects"
 
+# Programas abiertos por JARVIS en esta sesion, para poder cerrarlos despues.
+# clave normalizada -> {"display": nombre, "pids": set, "procnames": [exe...]}
+_OPENED: dict[str, dict] = {}
 
-def _launch_wsl(wsl_path: str) -> None:
+# Nombre hablado -> ejecutable(s) del proceso. Cubre las apps mas comunes cuyo
+# proceso no se llama como la app (word -> WINWORD.EXE).
+_CLOSE_PROC_MAP: dict[str, list[str]] = {
+    "chrome": ["chrome.exe"],
+    "vscode": ["Code.exe"],
+    "powershell": ["powershell.exe", "pwsh.exe"],
+    "terminal": ["WindowsTerminal.exe"],
+    "wsl": ["wsl.exe", "WindowsTerminal.exe"],
+    "notepad": ["notepad.exe", "Notepad.exe"],
+    "calculadora": ["CalculatorApp.exe", "Calculator.exe", "calc.exe"],
+    "cmd": ["cmd.exe"],
+    "taskmgr": ["Taskmgr.exe"],
+    "edge": ["msedge.exe"],
+    "firefox": ["firefox.exe"],
+    "configuracion": ["SystemSettings.exe"],
+    "word": ["WINWORD.EXE"],
+    "excel": ["EXCEL.EXE"],
+    "powerpoint": ["POWERPNT.EXE"],
+    "outlook": ["OUTLOOK.EXE"],
+    "whatsapp": ["WhatsApp.exe"],
+    "spotify": ["Spotify.exe"],
+    "telegram": ["Telegram.exe"],
+    "notion": ["Notion.exe"],
+    "discord": ["Discord.exe"],
+    "slack": ["slack.exe"],
+    "teams": ["ms-teams.exe", "Teams.exe"],
+    "vlc": ["vlc.exe"],
+    "paint": ["mspaint.exe"],
+}
+
+# Procesos del sistema que JAMAS se cierran, ni por coincidencia de nombre.
+_PROTECTED_PROCS = {
+    "explorer.exe", "svchost.exe", "csrss.exe", "winlogon.exe", "wininit.exe",
+    "services.exe", "lsass.exe", "smss.exe", "dwm.exe", "system", "registry",
+    "fontdrvhost.exe", "sihost.exe", "ctfmon.exe", "conhost.exe",
+}
+
+# Palabras de relleno en nombres de apps: no sirven para identificar el proceso
+_FILLER_WORDS = {"microsoft", "google", "mozilla", "apple", "windows", "app",
+                 "de", "la", "el", "corporation", "inc"}
+
+
+def _norm(text: str) -> str:
+    """minusculas y sin acentos, para comparar nombres hablados."""
+    t = unicodedata.normalize("NFD", text.lower().strip())
+    return "".join(c for c in t if unicodedata.category(c) != "Mn")
+
+
+def _register_opened(name: str, display: str, pid: int | None = None,
+                     procnames: list[str] | None = None) -> None:
+    """Anota un programa abierto por JARVIS para poder cerrarlo despues."""
+    key = _norm(name)
+    entry = _OPENED.setdefault(key, {"display": display, "pids": set(),
+                                     "procnames": []})
+    entry["display"] = display
+    if pid:
+        entry["pids"].add(pid)
+    existentes = {p.lower() for p in entry["procnames"]}
+    for pn in procnames or []:
+        if pn and pn.lower() not in existentes:
+            entry["procnames"].append(pn)
+            existentes.add(pn.lower())
+
+
+def _launch_wsl(wsl_path: str) -> subprocess.Popen:
     """Abre WSL en WSL_START_DIR, en Windows Terminal si esta disponible."""
     wt_path = get_app_path("terminal")
     args = [wsl_path, "--cd", WSL_START_DIR]
     if wt_path:
-        subprocess.Popen([wt_path] + args, shell=False)
-    else:
-        subprocess.Popen(args, shell=False,
-                         creationflags=subprocess.CREATE_NEW_CONSOLE)
+        return subprocess.Popen([wt_path] + args, shell=False)
+    return subprocess.Popen(args, shell=False,
+                            creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
 def open_app(name: str) -> ActionPlan:
@@ -51,10 +122,15 @@ def open_app(name: str) -> ActionPlan:
     try:
         if name_lower == "configuracion":
             subprocess.Popen(["start", "ms-settings:"], shell=True)
+            _register_opened(name_lower, name, procnames=["SystemSettings.exe"])
         elif name_lower == "wsl":
-            _launch_wsl(path)
+            proc = _launch_wsl(path)
+            _register_opened(name_lower, name, pid=proc.pid,
+                             procnames=[os.path.basename(path)])
         else:
-            subprocess.Popen([path], shell=False)
+            proc = subprocess.Popen([path], shell=False)
+            _register_opened(name_lower, name, pid=proc.pid,
+                             procnames=[os.path.basename(path)])
         plan.result = f"{name} abierto correctamente."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -86,6 +162,7 @@ def _open_installed_app(name: str) -> ActionPlan:
     )
     try:
         launch_app(best["appid"])
+        _register_opened(best["norm"], best["name"])
         plan.result = f"{best['name']} abierto correctamente."
         if len(matches) > 1:
             otros = ", ".join(m["name"] for m in matches[1:4])
@@ -129,12 +206,179 @@ def execute_open_app(name: str) -> ActionPlan:
     )
     try:
         if name_lower == "wsl":
-            _launch_wsl(path)
+            proc = _launch_wsl(path)
         else:
-            subprocess.Popen([path], shell=False)
+            proc = subprocess.Popen([path], shell=False)
+        _register_opened(name_lower, name, pid=proc.pid,
+                         procnames=[os.path.basename(path)])
         plan.result = f"{name} abierto correctamente"
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
+    return plan
+
+
+def _find_target_procs(candidates: set[str], procnames: list[str],
+                       pids: set[int]) -> list:
+    """Procesos en ejecucion que corresponden a la app buscada.
+
+    Coincide por PID registrado, por nombre de ejecutable conocido o por
+    parecido del nombre del proceso con lo que dijo el usuario. Nunca incluye
+    procesos del sistema ni el propio JARVIS.
+    """
+    import psutil
+
+    propios = {os.getpid()}
+    with contextlib.suppress(psutil.Error):
+        propios.update(p.pid for p in psutil.Process().parents())
+
+    wanted = {p.lower() for p in procnames}
+    utiles = {c for c in candidates if c and c not in _FILLER_WORDS}
+    matches = []
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            nm = (proc.info["name"] or "").lower()
+            if not nm or proc.info["pid"] in propios or nm in _PROTECTED_PROCS:
+                continue
+            base = nm[:-4] if nm.endswith(".exe") else nm
+            por_nombre = any(base == c or (len(c) >= 4 and c in base)
+                             for c in utiles)
+            if proc.info["pid"] in pids or nm in wanted or por_nombre:
+                matches.append(proc)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return matches
+
+
+def _terminate_procs(procs: list) -> int:
+    """Cierre educado (terminate) y, si un proceso se resiste, kill."""
+    import psutil
+
+    todos = []
+    for p in procs:
+        with contextlib.suppress(psutil.Error):
+            todos.extend(p.children(recursive=True))
+        todos.append(p)
+    unicos = list({p.pid: p for p in todos}.values())
+    for p in unicos:
+        with contextlib.suppress(psutil.Error):
+            p.terminate()
+    _, vivos = psutil.wait_procs(unicos, timeout=3)
+    for p in vivos:
+        with contextlib.suppress(psutil.Error):
+            p.kill()
+    return len(unicos)
+
+
+def close_app(name: str) -> ActionPlan:
+    """Cierra una aplicacion abierta por su nombre hablado."""
+    query = _norm(name)
+    if not query:
+        plan = policy.block("No se indico que aplicacion cerrar")
+        plan.result = "Que aplicacion desea cerrar, senor?"
+        return plan
+    if "explorador" in query or "explorer" in query:
+        plan = policy.block(
+            "Cerrar el Explorador de archivos cerraria el escritorio de Windows")
+        plan.result = ("No puedo cerrar el Explorador de archivos: cerraria "
+                       "el escritorio de Windows, senor.")
+        return plan
+
+    procnames = list(_CLOSE_PROC_MAP.get(query, []))
+    if not procnames:
+        # tolerar errores al hablar/dictar: "world" -> "word"
+        parecidos = difflib.get_close_matches(query, _CLOSE_PROC_MAP, n=1,
+                                              cutoff=0.8)
+        if parecidos:
+            query = parecidos[0]
+            procnames = list(_CLOSE_PROC_MAP[query])
+
+    path = get_app_path(query)
+    if path:
+        procnames.append(os.path.basename(path))
+
+    tracked = _OPENED.get(query)
+    pids = set(tracked["pids"]) if tracked else set()
+    if tracked:
+        procnames.extend(tracked["procnames"])
+    display = tracked["display"] if tracked else name
+
+    candidates = {query}
+    if not procnames and not pids:
+        # app fuera del mapa: buscar su nombre real en el indice de instaladas
+        try:
+            from jarvis_local.tools.app_index import find_app
+            matches = find_app(name)
+            if matches:
+                display = matches[0]["name"]
+                candidates.add(matches[0]["norm"])
+                candidates.update(matches[0]["norm"].split())
+        except Exception:
+            pass
+    candidates.update(query.split())
+
+    plan = ActionPlan(
+        action="cerrar_app",
+        params={"app": display},
+        risk=RiskLevel.EXECUTE,
+        reason=f"Cerrar {display}",
+    )
+    try:
+        procs = _find_target_procs(candidates, procnames, pids)
+        if not procs:
+            _OPENED.pop(query, None)
+            plan.params["closed_count"] = 0
+            plan.result = f"{display} no parece estar abierto, senor."
+            plan.status = ActionStatus.EXECUTED
+            return plan
+        cerrados = _terminate_procs(procs)
+        _OPENED.pop(query, None)
+        plan.params["closed_count"] = cerrados
+        detalle = f" ({cerrados} procesos)" if cerrados > 1 else ""
+        plan.result = f"{display} cerrado correctamente{detalle}."
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"No pude cerrar {display}: {e}"
+    return plan
+
+
+def close_all_apps() -> ActionPlan:
+    """Cierra todos los programas que JARVIS abrio en esta sesion."""
+    plan = ActionPlan(
+        action="cerrar_todas_apps",
+        risk=RiskLevel.EXECUTE,
+        reason="Cerrar todos los programas abiertos en la sesion",
+    )
+    if not _OPENED:
+        plan.result = "No he abierto ningun programa en esta sesion, senor."
+        plan.status = ActionStatus.EXECUTED
+        return plan
+
+    cerrados, ya_cerrados, errores = [], [], []
+    for key in list(_OPENED):
+        display = _OPENED[key]["display"]
+        sub = close_app(key)
+        if sub.status == ActionStatus.EXECUTED:
+            if sub.params.get("closed_count", 0) > 0:
+                cerrados.append(display)
+            else:
+                ya_cerrados.append(display)
+        else:
+            errores.append(display)
+
+    partes = []
+    if cerrados:
+        partes.append(f"Cerre {', '.join(cerrados)}.")
+    if ya_cerrados:
+        partes.append(f"Ya estaban cerrados: {', '.join(ya_cerrados)}.")
+    if errores:
+        partes.append(f"No pude cerrar: {', '.join(errores)}.")
+    plan.result = " ".join(partes) or "No habia nada que cerrar, senor."
+    plan.status = ActionStatus.ERROR if errores and not cerrados \
+        else ActionStatus.EXECUTED
+    if errores and not cerrados:
+        plan.error = f"Fallo el cierre de: {', '.join(errores)}"
     return plan

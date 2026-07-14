@@ -170,6 +170,8 @@ _ALIAS = {
     "calendar_events": "proximos_eventos",
     "browser_navigate": "navegar_con_selenium",
     "close_browser": "cerrar_navegador",
+    "close_app": "cerrar_aplicacion",
+    "close_all_apps": "cerrar_todas_aplicaciones",
     "list_apps": "abrir_aplicacion",
 }
 

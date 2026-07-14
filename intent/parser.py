@@ -56,6 +56,21 @@ def _extract_app_candidate(text: str) -> str | None:
     return cand
 
 
+def _extract_close_candidate(text: str) -> str | None:
+    """Extrae el posible nombre de app despues del verbo de cierre."""
+    m = re.search(
+        r'(?:cierra|cierrame|cerrar|termina|terminar|finaliza|finalizar)\s+'
+        r'(?:la\s+|el\s+)?(?:aplicacion\s+|app\s+|programa\s+)?(.+)',
+        text, re.IGNORECASE)
+    if not m:
+        return None
+    cand = m.group(1).strip().strip('"\'').rstrip('.!?').strip()
+    if not cand or any(w in cand.lower() for w in _NOT_APP_WORDS) \
+            or "jarvis" in cand.lower():
+        return None
+    return cand
+
+
 def _resolve_path(path_str: str) -> str:
     """Expande variables de entorno y normaliza ruta."""
     return os.path.normpath(os.path.expandvars(path_str.strip(" \"'")))
@@ -444,6 +459,28 @@ def parse_intent(message: str) -> IntentResult:
             return IntentResult(kind="tool_read", tool="wiki",
                                 arguments={"topic": topic},
                                 reason="Consultar Wikipedia")
+
+    # --- CERRAR APLICACION ---
+    # (despues de fase5, para que "cierra el navegador" siga siendo
+    #  close_browser, el Chrome automatizado de Selenium)
+    if re.search(r'\b(?:cierra|cierrame|cerrar)\b', m, re.IGNORECASE):
+        low = m.lower()
+        # "cierra todos los programas", "cierra todas las apps", "cierra todo"
+        if re.search(r'\b(?:cierra|cierrame|cerrar)\b.*\btod(?:o|os|as)\b', low) \
+                and (re.search(r'\b(?:programas?|aplicaciones|apps?|ventanas)\b', low)
+                     or re.search(r'\b(?:cierra|cierrame|cerrar)\s+todo\b', low)):
+            return IntentResult(kind="tool_execute", tool="close_all_apps",
+                                reason="Cerrar todos los programas abiertos")
+        app = _match_app_name(m)
+        if app:
+            return IntentResult(kind="tool_execute", tool="close_app",
+                                arguments={"app": app},
+                                reason=f"Cerrar {app}")
+        cand = _extract_close_candidate(m)
+        if cand:
+            return IntentResult(kind="tool_execute", tool="close_app",
+                                arguments={"app": cand},
+                                reason=f"Cerrar {cand}")
 
     # --- ABRIR APLICACION ---
     if any(kw in m.lower() for kw in ["abre", "abrir", "lanza", "lanzar",

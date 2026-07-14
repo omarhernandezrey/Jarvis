@@ -54,6 +54,16 @@ def _open_app(app: str):
     return open_app(app)
 
 
+def _close_app(app: str):
+    from jarvis_local.tools.apps import close_app
+    return close_app(app)
+
+
+def _close_all_apps():
+    from jarvis_local.tools.apps import close_all_apps
+    return close_all_apps()
+
+
 def _list_files(path: str = ""):
     import os
 
@@ -242,6 +252,18 @@ TOOLS: list[Tool] = [
          "Usar cuando el usuario pida abrir, lanzar o iniciar un programa.",
          _obj({"app": _str("Nombre de la aplicacion, ej: 'whatsapp', 'chrome', 'word'")}),
          _open_app),
+
+    Tool("cerrar_aplicacion",
+         "Cierra una aplicacion o programa abierto por su nombre (Word, Chrome, "
+         "WhatsApp, Spotify, calculadora...). Usar cuando el usuario pida "
+         "cerrar, terminar o salir de un programa.",
+         _obj({"app": _str("Nombre de la aplicacion a cerrar, ej: 'word', 'chrome'")}),
+         _close_app),
+
+    Tool("cerrar_todas_aplicaciones",
+         "Cierra de una sola vez todos los programas que JARVIS abrio en esta "
+         "sesion. Usar cuando el usuario pida cerrar todo o todos los programas.",
+         _obj({}, []), _close_all_apps),
 
     Tool("estado_del_sistema",
          "Informa el uso de CPU, memoria RAM, disco y el estado de la bateria "

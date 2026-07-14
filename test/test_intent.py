@@ -36,6 +36,42 @@ def test_open_app_vscode():
     assert "vscode" in r.arguments["app"]
 
 
+def test_close_app_alias():
+    r = parse_intent("cierra chrome")
+    assert r.kind == "tool_execute"
+    assert r.tool == "close_app"
+    assert r.arguments["app"] == "chrome"
+
+
+def test_close_app_installed():
+    r = parse_intent("cierra word")
+    assert r.kind == "tool_execute"
+    assert r.tool == "close_app"
+    assert r.arguments["app"] == "word"
+
+
+def test_close_app_con_articulo():
+    r = parse_intent("cierra la calculadora")
+    assert r.kind == "tool_execute"
+    assert r.tool == "close_app"
+    assert r.arguments["app"] == "calculadora"
+
+
+def test_close_all_apps():
+    for frase in ("cierra todos los programas",
+                  "cierra todas las aplicaciones",
+                  "cierra todo"):
+        r = parse_intent(frase)
+        assert r.kind == "tool_execute", frase
+        assert r.tool == "close_all_apps", frase
+
+
+def test_close_browser_sigue_igual():
+    # "cierra el navegador" es el Chrome automatizado de Selenium, no una app
+    r = parse_intent("cierra el navegador")
+    assert r.tool == "close_browser"
+
+
 def test_create_directory_plan():
     r = parse_intent("crea una carpeta llamada pruebas en C:\\Users\\herna\\Desktop")
     assert r.kind == "tool_execute"

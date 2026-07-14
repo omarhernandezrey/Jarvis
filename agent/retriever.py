@@ -75,6 +75,14 @@ _EJEMPLOS: dict[str, list[str]] = {
         "necesito spotify abierto", "inicia visual studio code",
         "prendeme la calculadora",
     ],
+    "cerrar_aplicacion": [
+        "cierra word", "cierra el chrome", "cierrame whatsapp",
+        "termina spotify", "cierra la calculadora", "sal de excel",
+    ],
+    "cerrar_todas_aplicaciones": [
+        "cierra todos los programas", "cierra todas las aplicaciones",
+        "cierra todo lo que abriste", "cierralo todo",
+    ],
     "estado_del_sistema": [
         "como anda mi maquina", "cuanta ram estoy usando", "mi pc esta lento",
         "como va la bateria", "que tiene ocupado el procesador",

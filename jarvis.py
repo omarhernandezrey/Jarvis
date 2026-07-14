@@ -302,6 +302,12 @@ def _execute_tool_write(tool: str, args: dict) -> str:
     elif tool == "close_browser":
         from jarvis_local.tools.browser import close_browser
         plan = close_browser()
+    elif tool == "close_app":
+        from jarvis_local.tools.apps import close_app
+        plan = close_app(args.get("app", ""))
+    elif tool == "close_all_apps":
+        from jarvis_local.tools.apps import close_all_apps
+        plan = close_all_apps()
     if plan is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
     if plan.error:
