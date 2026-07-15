@@ -64,6 +64,93 @@ def _close_all_apps():
     return close_all_apps()
 
 
+def _set_reminder(texto: str, minutos: int = 0, hora: str = ""):
+    from jarvis_local.tools.reminders import set_reminder
+    return set_reminder(texto, minutos, hora)
+
+
+def _list_reminders():
+    from jarvis_local.tools.reminders import list_reminders
+    return list_reminders()
+
+
+def _cancel_reminder(cual: str = "todos"):
+    from jarvis_local.tools.reminders import cancel_reminder
+    return cancel_reminder(cual)
+
+
+def _send_whatsapp(para: str, mensaje: str):
+    from jarvis_local.tools.whatsapp import send_whatsapp
+    return send_whatsapp(para, mensaje)
+
+
+def _window_control(accion: str):
+    from jarvis_local.tools.desktop_actions import minimize_all, snap_window
+    accion = (accion or "").lower()
+    if accion in ("minimizar_todo", "escritorio", "todo"):
+        return minimize_all()
+    return snap_window(accion)
+
+
+def _daily_briefing():
+    from jarvis_local.tools.briefing import daily_briefing
+    return daily_briefing()
+
+
+def _read_clipboard():
+    from jarvis_local.tools.reader import read_clipboard
+    return read_clipboard()
+
+
+def _read_file(ruta: str):
+    from jarvis_local.tools.reader import read_file_aloud
+    return read_file_aloud(ruta)
+
+
+def _power_control(accion: str):
+    from jarvis_local.tools import power
+    accion = (accion or "").lower()
+    if accion in ("bloquear", "bloqueo"):
+        return power.lock_pc()
+    if accion == "apagar":
+        return power.shutdown_pc()
+    if accion == "reiniciar":
+        return power.restart_pc()
+    if accion in ("suspender", "dormir", "hibernar"):
+        return power.suspend_pc()
+    if accion in ("cancelar", "cancelar_apagado"):
+        return power.cancel_shutdown()
+    return f"No entiendo la accion de energia '{accion}'."
+
+
+def _volume_control(accion: str, nivel: int = 50):
+    from jarvis_local.tools import media_controls as mc
+    accion = (accion or "").lower()
+    if accion in ("subir", "sube", "aumentar"):
+        return mc.volume_up()
+    if accion in ("bajar", "baja", "reducir"):
+        return mc.volume_down()
+    if accion in ("silenciar", "mute", "silencio"):
+        return mc.volume_mute(True)
+    if accion in ("activar", "desmutear", "sonido"):
+        return mc.volume_mute(False)
+    if accion in ("nivel", "fijar", "poner"):
+        return mc.set_volume(int(nivel))
+    return f"No entiendo la accion de volumen '{accion}'."
+
+
+def _media_control(accion: str):
+    from jarvis_local.tools import media_controls as mc
+    accion = (accion or "").lower()
+    if accion in ("pausar", "pausa", "reanudar", "reproducir"):
+        return mc.media_play_pause()
+    if accion in ("siguiente", "proxima"):
+        return mc.media_next()
+    if accion in ("anterior", "previa"):
+        return mc.media_previous()
+    return f"No entiendo la accion multimedia '{accion}'."
+
+
 def _list_files(path: str = ""):
     import os
 
@@ -264,6 +351,76 @@ TOOLS: list[Tool] = [
          "Cierra de una sola vez todos los programas que JARVIS abrio en esta "
          "sesion. Usar cuando el usuario pida cerrar todo o todos los programas.",
          _obj({}, []), _close_all_apps),
+
+    Tool("controlar_volumen",
+         "Controla el volumen del computador: subir, bajar, silenciar, activar "
+         "el sonido o fijarlo a un nivel exacto (0-100).",
+         _obj({"accion": _str("Una de: subir, bajar, silenciar, activar, nivel"),
+               "nivel": _int("Nivel 0-100, solo si accion=nivel")}, ["accion"]),
+         _volume_control),
+
+    Tool("controlar_musica",
+         "Controla la reproduccion multimedia en curso (Spotify, YouTube, "
+         "etc.): pausar/reanudar, siguiente cancion o cancion anterior.",
+         _obj({"accion": _str("Una de: pausar, siguiente, anterior")}),
+         _media_control),
+
+    Tool("crear_recordatorio",
+         "Programa un recordatorio con alarma que sonara y hablara a la hora "
+         "indicada. Usar cuando el usuario diga 'recuerdame en X minutos...' "
+         "o 'avisame a las 3...'.",
+         _obj({"texto": _str("Que hay que recordar"),
+               "minutos": _int("Dentro de cuantos minutos avisar (0 si se usa hora)"),
+               "hora": _str("Hora exacta en formato 24h HH:MM, ej '15:30'. Vacio si se usan minutos")},
+              ["texto"]),
+         _set_reminder),
+
+    Tool("listar_recordatorios",
+         "Lista los recordatorios y alarmas pendientes del usuario.",
+         _obj({}, []), _list_reminders),
+
+    Tool("cancelar_recordatorio",
+         "Cancela recordatorios pendientes: por numero, por texto o todos.",
+         _obj({"cual": _str("Numero del recordatorio, parte del texto, o 'todos'")}, []),
+         _cancel_reminder),
+
+    Tool("enviar_whatsapp",
+         "Abre WhatsApp con un mensaje ya escrito para un contacto o numero. "
+         "NO lo envia: el usuario solo pulsa enviar. Usar cuando pidan mandar "
+         "un whatsapp o mensaje a alguien.",
+         _obj({"para": _str("Nombre del contacto o numero de telefono"),
+               "mensaje": _str("El texto del mensaje")}),
+         _send_whatsapp),
+
+    Tool("organizar_ventanas",
+         "Organiza las ventanas del escritorio: minimizar todas, o poner la "
+         "ventana activa a la izquierda, derecha, maximizarla o minimizarla.",
+         _obj({"accion": _str("Una de: minimizar_todo, izquierda, derecha, "
+                              "maximizar, minimizar")}),
+         _window_control),
+
+    Tool("resumen_del_dia",
+         "Da un resumen completo del dia: fecha, clima actual, agenda del "
+         "calendario y titulares de noticias, todo en una sola respuesta.",
+         _obj({}, []), _daily_briefing),
+
+    Tool("leer_portapapeles",
+         "Lee en voz alta el texto que el usuario tiene copiado en el "
+         "portapapeles.",
+         _obj({}, []), _read_clipboard),
+
+    Tool("leer_archivo",
+         "Lee en voz alta el contenido de un archivo de texto (txt, md, csv, "
+         "json) de las carpetas permitidas.",
+         _obj({"ruta": _str("Ruta o nombre del archivo, ej 'notas.txt'")}),
+         _read_file),
+
+    Tool("energia_del_equipo",
+         "Bloquear la sesion, apagar, reiniciar o suspender el computador, o "
+         "cancelar un apagado programado. Apagar y reiniciar dan 60 segundos "
+         "cancelables. NO usar para cerrar programas ni para apagar el sonido.",
+         _obj({"accion": _str("Una de: bloquear, apagar, reiniciar, suspender, cancelar")}),
+         _power_control),
 
     Tool("estado_del_sistema",
          "Informa el uso de CPU, memoria RAM, disco y el estado de la bateria "

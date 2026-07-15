@@ -101,6 +101,13 @@ Tambien entiendo lenguaje natural (texto o voz):
   "mis proximos eventos" (Google Calendar, requiere configuracion)
   "busca trabajo de <cargo> en <ciudad>" (Computrabajo) / "abre la oferta 2"
   "muestrame las ofertas" / "navega a <sitio>" / "cierra el navegador"
+  "cierra word" / "cierra todos los programas"
+  "sube el volumen" / "volumen al 50" / "silencio" / "pausa la musica"
+  "recuerdame en 20 minutos <algo>" / "mis recordatorios" / "cancela la alarma"
+  "enviale un whatsapp a <contacto> diciendo <mensaje>" / "mis contactos"
+  "bloquea el pc" / "apaga el computador" / "cancela el apagado"
+  "leeme el portapapeles" / "leeme el archivo <notas.txt>"
+  "dame el resumen del dia" / "minimiza todo" / "pon la ventana a la izquierda"
 """
 
 

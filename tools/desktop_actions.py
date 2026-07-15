@@ -18,7 +18,71 @@ _MUSIC_EXTS = (".mp3", ".wav", ".flac", ".m4a", ".wma", ".ogg", ".aac")
 # Codigos de tecla virtuales de Windows
 _VK_MENU = 0x12   # Alt
 _VK_TAB = 0x09
+_VK_LWIN = 0x5B
+_VK_M = 0x4D
+_VK_LEFT = 0x25
+_VK_UP = 0x26
+_VK_RIGHT = 0x27
+_VK_DOWN = 0x28
 _KEYEVENTF_KEYUP = 0x0002
+
+
+def _combo(*vks: int) -> None:
+    """Pulsa una combinacion de teclas (modificadores primero)."""
+    user32 = ctypes.windll.user32
+    for vk in vks:
+        user32.keybd_event(vk, 0, 0, 0)
+    time.sleep(0.05)
+    for vk in reversed(vks):
+        user32.keybd_event(vk, 0, _KEYEVENTF_KEYUP, 0)
+
+
+def minimize_all() -> ActionPlan:
+    """Minimiza todas las ventanas (Win+M)."""
+    plan = ActionPlan(action="minimizar_todo", risk=RiskLevel.EXECUTE,
+                      reason="Minimizar todas las ventanas")
+    try:
+        _combo(_VK_LWIN, _VK_M)
+        plan.result = "Todas las ventanas minimizadas, senor."
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"No pude minimizar las ventanas: {e}"
+    return plan
+
+
+_SNAP_KEYS = {
+    "izquierda": (_VK_LEFT, "a la izquierda"),
+    "derecha": (_VK_RIGHT, "a la derecha"),
+    "maximizar": (_VK_UP, "maximizada"),
+    "minimizar": (_VK_DOWN, "minimizada"),
+}
+
+
+def snap_window(direction: str) -> ActionPlan:
+    """Acomoda la ventana activa: izquierda, derecha, maximizar, minimizar
+    (Win+flechas, el snap nativo de Windows)."""
+    d = (direction or "").lower().strip()
+    plan = ActionPlan(action="acomodar_ventana", params={"direccion": d},
+                      risk=RiskLevel.EXECUTE,
+                      reason="Acomodar la ventana activa")
+    if d not in _SNAP_KEYS:
+        plan.status = ActionStatus.ERROR
+        plan.error = f"direccion invalida: {d}"
+        plan.result = ("Puedo poner la ventana a la izquierda, a la derecha, "
+                       "maximizarla o minimizarla, senor.")
+        return plan
+    try:
+        vk, descripcion = _SNAP_KEYS[d]
+        _combo(_VK_LWIN, vk)
+        plan.result = f"Ventana {descripcion}, senor."
+        plan.status = ActionStatus.EXECUTED
+    except Exception as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"No pude acomodar la ventana: {e}"
+    return plan
 
 
 def switch_window() -> ActionPlan:
@@ -77,9 +141,9 @@ def find_music(song: str = "") -> list[str]:
     song_low = song.lower().strip()
     for root, _dirs, files in os.walk(MUSIC_DIR):
         for f in files:
-            if f.lower().endswith(_MUSIC_EXTS):
-                if not song_low or song_low in f.lower():
-                    found.append(os.path.join(root, f))
+            if f.lower().endswith(_MUSIC_EXTS) and \
+                    (not song_low or song_low in f.lower()):
+                found.append(os.path.join(root, f))
     return found
 
 

@@ -189,6 +189,21 @@ def _execute_tool_read(tool: str, args: dict) -> str:
     elif tool == "search_jobs":
         from jarvis_local.tools.jobs import search_jobs
         plan = search_jobs(args.get("puesto", ""), args.get("ciudad", ""))
+    elif tool == "list_reminders":
+        from jarvis_local.tools.reminders import list_reminders
+        plan = list_reminders()
+    elif tool == "list_contacts":
+        from jarvis_local.tools.whatsapp import list_contacts
+        plan = list_contacts()
+    elif tool == "read_clipboard":
+        from jarvis_local.tools.reader import read_clipboard
+        plan = read_clipboard()
+    elif tool == "read_file":
+        from jarvis_local.tools.reader import read_file_aloud
+        plan = read_file_aloud(args.get("path", ""))
+    elif tool == "daily_briefing":
+        from jarvis_local.tools.briefing import daily_briefing
+        plan = daily_briefing()
     if plan and plan.result:
         return plan.result
     return "Operacion completada."
@@ -308,6 +323,61 @@ def _execute_tool_write(tool: str, args: dict) -> str:
     elif tool == "close_all_apps":
         from jarvis_local.tools.apps import close_all_apps
         plan = close_all_apps()
+    elif tool == "volume_set":
+        from jarvis_local.tools.media_controls import set_volume
+        plan = set_volume(args.get("level", 50))
+    elif tool == "volume_up":
+        from jarvis_local.tools.media_controls import volume_up
+        plan = volume_up()
+    elif tool == "volume_down":
+        from jarvis_local.tools.media_controls import volume_down
+        plan = volume_down()
+    elif tool == "volume_mute":
+        from jarvis_local.tools.media_controls import volume_mute
+        plan = volume_mute(args.get("mute", True))
+    elif tool == "media_play_pause":
+        from jarvis_local.tools.media_controls import media_play_pause
+        plan = media_play_pause()
+    elif tool == "media_next":
+        from jarvis_local.tools.media_controls import media_next
+        plan = media_next()
+    elif tool == "media_previous":
+        from jarvis_local.tools.media_controls import media_previous
+        plan = media_previous()
+    elif tool == "set_reminder":
+        from jarvis_local.tools.reminders import set_reminder
+        plan = set_reminder(args.get("text", ""), args.get("minutes", 0),
+                            args.get("at", ""))
+    elif tool == "cancel_reminder":
+        from jarvis_local.tools.reminders import cancel_reminder
+        plan = cancel_reminder(args.get("which", "todos"))
+    elif tool == "send_whatsapp":
+        from jarvis_local.tools.whatsapp import send_whatsapp
+        plan = send_whatsapp(args.get("to", ""), args.get("message", ""))
+    elif tool == "add_contact":
+        from jarvis_local.tools.whatsapp import add_contact
+        plan = add_contact(args.get("name", ""), args.get("phone", ""))
+    elif tool == "lock_pc":
+        from jarvis_local.tools.power import lock_pc
+        plan = lock_pc()
+    elif tool == "shutdown_pc":
+        from jarvis_local.tools.power import shutdown_pc
+        plan = shutdown_pc(args.get("seconds", 60))
+    elif tool == "restart_pc":
+        from jarvis_local.tools.power import restart_pc
+        plan = restart_pc(args.get("seconds", 60))
+    elif tool == "cancel_shutdown":
+        from jarvis_local.tools.power import cancel_shutdown
+        plan = cancel_shutdown()
+    elif tool == "suspend_pc":
+        from jarvis_local.tools.power import suspend_pc
+        plan = suspend_pc()
+    elif tool == "minimize_all":
+        from jarvis_local.tools.desktop_actions import minimize_all
+        plan = minimize_all()
+    elif tool == "snap_window":
+        from jarvis_local.tools.desktop_actions import snap_window
+        plan = snap_window(args.get("direction", ""))
     if plan is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
     if plan.error:

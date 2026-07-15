@@ -160,6 +160,241 @@ def _parse_fase5(m: str) -> IntentResult | None:
     return None
 
 
+_NUM_PALABRAS = {
+    "un": 1, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+    "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10, "quince": 15,
+    "veinte": 20, "veinticinco": 25, "treinta": 30, "cuarenta": 40,
+    "cincuenta": 50, "sesenta": 60,
+}
+
+_TRIGGER_RECORDATORIO = re.compile(
+    r'\b(?:recuerdame|avisame|alarmas?|recordatorios?|temporizador(?:es)?)\b',
+    re.IGNORECASE)
+
+
+def _parse_reminder(m: str) -> IntentResult | None:
+    """Recordatorios con alarma: crear, listar y cancelar."""
+    low = m.lower()
+    if not _TRIGGER_RECORDATORIO.search(low):
+        return None
+
+    # --- CANCELAR ---
+    if re.search(r'\b(?:cancela|borra|elimina|quita)\b', low):
+        m_num = re.search(r'\b(?:numero\s+)?(\d+)\b', low)
+        if m_num:
+            which = m_num.group(1)
+        elif re.search(r'\btod(?:o|os|as)\b', low):
+            which = "todos"
+        else:
+            m_txt = re.search(r'\b(?:del?|de la)\s+(.+)$', low)
+            which = m_txt.group(1).strip().rstrip('.!?') if m_txt else "todos"
+        return IntentResult(kind="tool_execute", tool="cancel_reminder",
+                            arguments={"which": which},
+                            reason="Cancelar recordatorio")
+
+    # --- LISTAR ---
+    if re.search(r'\b(?:que|cuales|mis|lista|listar|muestra(?:me)?|tengo|'
+                 r'pendientes)\b', low) and "recordatorio" in low \
+            and not re.search(r'\ben\s+\w+\s+(?:segundos?|minutos?|horas?)\b', low):
+        return IntentResult(kind="tool_read", tool="list_reminders",
+                            reason="Listar recordatorios")
+
+    # --- CREAR: "en N minutos/horas/segundos" ---
+    resto = low
+    minutos = None
+    at = None
+    m_en = re.search(
+        r'\ben\s+(\d+(?:[.,]\d+)?|\w+)\s+(segundos?|minutos?|horas?)'
+        r'(\s+y\s+media)?\b', low)
+    m_frac = re.search(r'\ben\s+(media\s+hora|hora\s+y\s+media|'
+                       r'un\s+cuarto\s+de\s+hora)\b', low)
+    m_at = re.search(
+        r'\ba\s+las?\s+(\d{1,2})(?::(\d{2}))?\s*'
+        r'(?:de\s+la\s+(manana|tarde|noche)|([ap])\.?\s*m\.?)?', low)
+    if m_frac:
+        # "media hora" antes que el patron numerico: "en media hora" tambien
+        # coincide con "en <palabra> horas?" y alli "media" no es cantidad
+        frac = m_frac.group(1)
+        minutos = 30 if frac.startswith("media") else \
+            90 if frac.startswith("hora") else 15
+        resto = low[:m_frac.start()] + " " + low[m_frac.end():]
+    elif m_en:
+        crudo = m_en.group(1).replace(",", ".")
+        try:
+            qty = float(crudo)
+        except ValueError:
+            qty = _NUM_PALABRAS.get(crudo, 0)
+        unidad = m_en.group(2)
+        if qty > 0:
+            if unidad.startswith("segundo"):
+                minutos = qty / 60.0
+            elif unidad.startswith("hora"):
+                minutos = qty * 60.0 + (30 if m_en.group(3) else 0)
+            else:
+                minutos = qty + (0.5 if m_en.group(3) else 0)
+            resto = low[:m_en.start()] + " " + low[m_en.end():]
+    elif m_at:
+        hh = int(m_at.group(1))
+        mm = int(m_at.group(2) or 0)
+        periodo = m_at.group(3) or ""
+        ampm = m_at.group(4) or ""
+        if hh <= 12 and (periodo in ("tarde", "noche") or ampm == "p"):
+            hh = (hh % 12) + 12
+        elif hh == 12 and (periodo == "manana" or ampm == "a"):
+            hh = 0
+        if hh <= 23 and mm <= 59:
+            at = f"{hh}:{mm:02d}"
+            resto = low[:m_at.start()] + " " + low[m_at.end():]
+
+    if minutos is None and at is None:
+        # "recuerdame que soy alergico" (sin tiempo) es memoria, no alarma:
+        # que lo resuelva el agente. Pero "ponme una alarma" sin tiempo se
+        # pregunta, porque la intencion es inequivoca.
+        if re.search(r'\b(?:alarma|temporizador)\b', low):
+            return IntentResult(
+                kind="ambiguous",
+                clarification=("Para cuando pongo la alarma, senor? Por "
+                               "ejemplo: 'en 20 minutos' o 'a las 3:30 pm'."),
+                reason="Alarma sin tiempo")
+        return None
+
+    # El texto del recordatorio: lo que queda al quitar el tiempo y el verbo
+    texto = re.sub(
+        r'\b(?:recuerdame|avisame|ponme|pon|crea(?:me)?|programa(?:me)?)\b', " ", resto)
+    texto = re.sub(r'\b(?:un|una)\s+(?:alarma|recordatorio|temporizador)\b',
+                   " ", texto)
+    texto = re.sub(r'^\s*(?:que|de\s+que|de|para\s+que|para|y)\b', " ",
+                   texto.strip())
+    texto = texto.strip(" ,.;:!?")
+    args = {"text": texto or "alarma"}
+    if minutos is not None:
+        args["minutes"] = round(minutos, 3)
+    else:
+        args["at"] = at
+    return IntentResult(kind="tool_execute", tool="set_reminder",
+                        arguments=args, reason="Crear recordatorio con alarma")
+
+
+def _parse_media(low: str) -> IntentResult | None:
+    """Volumen y control multimedia. Corre ANTES de fase4: 'quita el
+    silencio' caeria en el patron de BORRAR ('quita...') si no."""
+    # --- VOLUMEN A NIVEL EXACTO ---
+    m_vol = re.search(r'\bvolumen\b[^0-9%]*?(\d{1,3})\s*(?:por\s*ciento|%)?', low)
+    if m_vol:
+        return IntentResult(kind="tool_execute", tool="volume_set",
+                            arguments={"level": int(m_vol.group(1))},
+                            reason=f"Fijar volumen al {m_vol.group(1)}%")
+
+    # --- SUBIR / BAJAR VOLUMEN ---
+    if re.search(r'\b(?:sube(?:le|me)?|aumenta|incrementa)\b.*\bvolumen\b', low) \
+            or re.search(r'\bmas\s+volumen\b', low):
+        return IntentResult(kind="tool_execute", tool="volume_up",
+                            reason="Subir volumen")
+    if re.search(r'\b(?:baja(?:le|me)?|disminuye|reduce)\b.*\bvolumen\b', low) \
+            or re.search(r'\bmenos\s+volumen\b', low):
+        return IntentResult(kind="tool_execute", tool="volume_down",
+                            reason="Bajar volumen")
+
+    # --- SILENCIAR / ACTIVAR SONIDO ---
+    if re.search(r'\b(?:activa|reactiva|devuelve(?:me)?|vuelve)\b.*\bsonido\b', low) \
+            or re.search(r'\b(?:quita|desactiva)\b.*\bsilencio\b', low) \
+            or re.search(r'\bdesmutea\b', low):
+        return IntentResult(kind="tool_execute", tool="volume_mute",
+                            arguments={"mute": False},
+                            reason="Activar sonido")
+    if re.search(r'\bsilencia(?:r|te|me)?\b', low) or re.search(r'\bmutea\b', low) \
+            or re.search(r'\b(?:quita|apaga|corta)\b.*\bsonido\b', low) \
+            or re.fullmatch(r'\s*silencio[.!]?\s*', low):
+        return IntentResult(kind="tool_execute", tool="volume_mute",
+                            arguments={"mute": True},
+                            reason="Silenciar sonido")
+
+    # --- PAUSA / REANUDAR ---
+    if re.search(r'\b(?:pausa(?:r)?|deten|para)\b.*\b(?:musica|cancion|reproduccion|video)\b', low) \
+            or re.search(r'\b(?:reanuda|continua)\b.*\b(?:musica|cancion|reproduccion|video)\b', low) \
+            or re.fullmatch(r'\s*pausa[.!]?\s*', low):
+        return IntentResult(kind="tool_execute", tool="media_play_pause",
+                            reason="Pausar o reanudar la reproduccion")
+
+    # --- SIGUIENTE / ANTERIOR CANCION ---
+    if re.search(r'\b(?:siguiente|proxima|otra|cambia\s+de)\s+(?:cancion|tema|pista)\b', low):
+        return IntentResult(kind="tool_execute", tool="media_next",
+                            reason="Siguiente cancion")
+    if re.search(r'\b(?:cancion|tema|pista)\s+anterior\b', low) \
+            or re.search(r'\banterior\s+(?:cancion|tema|pista)\b', low) \
+            or re.search(r'\b(?:devuelve|regresa)\s+la\s+(?:cancion|pista)\b', low):
+        return IntentResult(kind="tool_execute", tool="media_previous",
+                            reason="Cancion anterior")
+
+    return None
+
+
+_OBJETO_PC = r'(?:computador(?:a)?|pc|equipo|compu|maquina|ordenador|sistema|pantalla|sesion)'
+
+
+def _parse_power(low: str) -> IntentResult | None:
+    """Energia del equipo. Corre DESPUES de media: 'apaga el sonido' es
+    volumen, no apagado. 'apaga jarvis' tampoco es de aqui (cierra JARVIS)."""
+    if re.search(r'\bcancela(?:r)?\b.*\b(?:apagado|reinicio)\b', low) \
+            or re.search(r'\bno\s+(?:apagues|reinicies)\b', low):
+        return IntentResult(kind="tool_execute", tool="cancel_shutdown",
+                            reason="Cancelar apagado programado")
+    if re.search(r'\bbloquea(?:me|r)?\b.*\b' + _OBJETO_PC + r'\b', low):
+        return IntentResult(kind="tool_execute", tool="lock_pc",
+                            reason="Bloquear la sesion")
+    if re.search(r'\b(?:suspende(?:r)?|duerme|hiberna(?:r)?)\b.*\b' + _OBJETO_PC + r'\b', low):
+        return IntentResult(kind="tool_execute", tool="suspend_pc",
+                            reason="Suspender el equipo")
+    if re.search(r'\bapaga(?:r|me)?\b.*\b' + _OBJETO_PC + r'\b', low):
+        return IntentResult(kind="tool_execute", tool="shutdown_pc",
+                            reason="Apagar el equipo (cancelable 60 s)")
+    if re.search(r'\breinicia(?:r|me)?\b.*\b' + _OBJETO_PC + r'\b', low):
+        return IntentResult(kind="tool_execute", tool="restart_pc",
+                            reason="Reiniciar el equipo (cancelable 60 s)")
+    return None
+
+
+def _parse_whatsapp(m: str) -> IntentResult | None:
+    """Enviar WhatsApp y gestionar contactos."""
+    low = m.lower()
+
+    # --- AGREGAR CONTACTO ---
+    m_add = re.search(
+        r'\b(?:agrega(?:me)?|guarda(?:me)?|anade|crea)\b.*?\bcontacto\s+(.+?)\s+'
+        r'con\s+(?:el\s+)?numero\s+([\d\s+.-]{7,})', low)
+    if m_add:
+        return IntentResult(kind="tool_execute", tool="add_contact",
+                            arguments={"name": m_add.group(1).strip(),
+                                       "phone": m_add.group(2).strip()},
+                            reason="Guardar contacto de WhatsApp")
+
+    # --- LISTAR CONTACTOS ---
+    if re.search(r'\b(?:mis|lista(?:r)?|muestra(?:me)?|que|cuales)\b.*\bcontactos\b', low):
+        return IntentResult(kind="tool_read", tool="list_contacts",
+                            reason="Listar contactos de WhatsApp")
+
+    # --- ENVIAR WHATSAPP ---
+    if not re.search(r'\b(?:whatsapp|wasap|guasap)\b', low):
+        return None
+    m_send = re.search(
+        r'\b(?:envia(?:le)?|manda(?:le)?|escribe(?:le)?|pon(?:le)?)\b.*?'
+        r'\b(?:whatsapp|wasap|guasap)\b\s+(?:a|al|para)\s+(.+?)\s+'
+        r'(?:diciendo(?:\s+que)?|que\s+diga|con\s+el\s+(?:mensaje|texto))\s*[:]?\s*(.+)',
+        low)
+    if m_send:
+        return IntentResult(kind="tool_execute", tool="send_whatsapp",
+                            arguments={"to": m_send.group(1).strip(),
+                                       "message": m_send.group(2).strip().rstrip('.!?')},
+                            reason="Abrir WhatsApp con el mensaje preparado")
+    if re.search(r'\b(?:envia(?:le)?|manda(?:le)?|escribe(?:le)?)\b.*\b(?:whatsapp|wasap|guasap)\b', low):
+        return IntentResult(
+            kind="ambiguous",
+            clarification=('Para enviar un WhatsApp diga: "enviale un whatsapp '
+                           'a <contacto o numero> diciendo <mensaje>".'),
+            reason="Faltan datos del WhatsApp")
+    return None
+
+
 def _parse_fase4(m: str) -> IntentResult | None:
     """Intents de Fase 4: clima, web, sistema, wikipedia, correo, etc."""
     low = m.lower()
@@ -441,6 +676,82 @@ def parse_intent(message: str) -> IntentResult:
     fase5 = _parse_fase5(m)
     if fase5 is not None:
         return fase5
+
+    # --- RECORDATORIOS (antes de fase4: "borra el recordatorio 2"
+    #     caeria en el patron de BORRAR archivos) ---
+    recordatorio = _parse_reminder(m)
+    if recordatorio is not None:
+        return recordatorio
+
+    # --- VOLUMEN Y MULTIMEDIA (antes de fase4: "quita el silencio"
+    #     caeria en el patron de BORRAR) ---
+    media = _parse_media(m.lower())
+    if media is not None:
+        return media
+
+    # --- ENERGIA DEL EQUIPO (despues de media: "apaga el sonido"
+    #     es volumen; antes de fase4) ---
+    power = _parse_power(m.lower())
+    if power is not None:
+        return power
+
+    # --- VENTANAS: minimizar todo y acomodar la activa ---
+    low_win = m.lower()
+    if re.search(r'\bminimiza(?:r|me)?\b.*\b(?:todo|todas)\b', low_win) \
+            or re.search(r'\bmuestra(?:me)?\s+el\s+escritorio\b', low_win):
+        return IntentResult(kind="tool_execute", tool="minimize_all",
+                            reason="Minimizar todas las ventanas")
+    m_snap = re.search(
+        r'\b(?:pon|manda|mueve|acomoda)\b.*\bventana\b.*\ba\s+la\s+(izquierda|derecha)\b',
+        low_win)
+    if m_snap:
+        return IntentResult(kind="tool_execute", tool="snap_window",
+                            arguments={"direction": m_snap.group(1)},
+                            reason="Acomodar la ventana activa")
+    if re.search(r'\bmaximiza(?:r|me)?\b.*\bventana\b', low_win) \
+            or re.fullmatch(r'\s*maximiza(?:la)?[.!]?\s*', low_win):
+        return IntentResult(kind="tool_execute", tool="snap_window",
+                            arguments={"direction": "maximizar"},
+                            reason="Maximizar la ventana activa")
+    if re.search(r'\bminimiza(?:r|me)?\b.*\bventana\b', low_win) \
+            or re.fullmatch(r'\s*minimiza(?:la)?[.!]?\s*', low_win):
+        return IntentResult(kind="tool_execute", tool="snap_window",
+                            arguments={"direction": "minimizar"},
+                            reason="Minimizar la ventana activa")
+
+    # --- WHATSAPP Y CONTACTOS ---
+    whatsapp = _parse_whatsapp(m)
+    if whatsapp is not None:
+        return whatsapp
+
+    # --- LEER EN VOZ ALTA ---
+    low_read = m.lower()
+    if re.search(r'\b(?:lee(?:me)?|leer)\b.*\bportapapeles\b', low_read) \
+            or re.search(r'\b(?:lee(?:me)?|leer)\b\s+lo\s+que\s+copie', low_read) \
+            or re.search(r'\bque\s+(?:hay|tengo)\s+en\s+el\s+portapapeles\b', low_read):
+        return IntentResult(kind="tool_read", tool="read_clipboard",
+                            reason="Leer el portapapeles")
+    m_read = re.search(
+        r'\b(?:lee(?:me)?|leer)\b\s+(?:el\s+|la\s+)?'
+        r'(?:archivo|fichero|documento|nota)?\s*'
+        r'["“]?([^"”]+?)["”]?\s*(?:en\s+voz\s+alta)?\s*$',
+        m, re.IGNORECASE)
+    if m_read:
+        cand = m_read.group(1).strip().rstrip('.!?')
+        # solo si parece un archivo (extension o ruta): "lee las noticias" no
+        if re.search(r'\.\w{2,5}$', cand) or "\\" in cand or "/" in cand:
+            return IntentResult(kind="tool_read", tool="read_file",
+                                arguments={"path": cand},
+                                reason="Leer archivo en voz alta")
+
+    # --- RESUMEN DEL DIA (antes de fase4: contiene "noticias"/"clima") ---
+    if re.search(r'\b(?:resumen|resumeme|informe)\b.*\b(?:dia|manana|jornada)\b',
+                 m.lower()) \
+            or re.search(r'\b(?:como\s+(?:esta|viene|pinta))\s+(?:el|mi)\s+dia\b',
+                         m.lower()) \
+            or re.search(r'\bponme\s+al\s+dia\b', m.lower()):
+        return IntentResult(kind="tool_read", tool="daily_briefing",
+                            reason="Resumen del dia")
 
     # --- FASE 4: clima, web, sistema, wikipedia, correo, etc. ---
     fase4 = _parse_fase4(m)

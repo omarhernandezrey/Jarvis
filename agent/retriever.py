@@ -83,6 +83,52 @@ _EJEMPLOS: dict[str, list[str]] = {
         "cierra todos los programas", "cierra todas las aplicaciones",
         "cierra todo lo que abriste", "cierralo todo",
     ],
+    "enviar_whatsapp": [
+        "enviale un whatsapp a juan diciendo que ya voy",
+        "mandale un mensaje a mi mama por whatsapp",
+        "escribele al 3001234567 que llego tarde",
+    ],
+    "organizar_ventanas": [
+        "minimiza todas las ventanas", "muestra el escritorio",
+        "pon la ventana a la izquierda", "maximiza esa ventana",
+    ],
+    "resumen_del_dia": [
+        "dame el resumen del dia", "ponme al dia", "como pinta mi dia",
+        "el informe de la manana", "que hay para hoy",
+    ],
+    "leer_portapapeles": [
+        "leeme el portapapeles", "que tengo en el portapapeles",
+        "lee lo que acabo de copiar",
+    ],
+    "leer_archivo": [
+        "leeme el archivo notas.txt", "lee el documento en voz alta",
+        "leeme lo que dice ese archivo",
+    ],
+    "energia_del_equipo": [
+        "apaga el computador", "reinicia el pc", "bloquea la sesion",
+        "suspende el equipo", "cancela el apagado", "ya no lo apagues",
+    ],
+    "crear_recordatorio": [
+        "recuerdame en 20 minutos sacar la comida",
+        "avisame a las 3 que tengo reunion", "ponme una alarma en una hora",
+        "que no se me olvide llamar al banco a las 5",
+    ],
+    "listar_recordatorios": [
+        "que recordatorios tengo", "mis alarmas pendientes",
+        "muestrame los recordatorios",
+    ],
+    "cancelar_recordatorio": [
+        "cancela el recordatorio", "quita la alarma de las 3",
+        "borra todos los recordatorios",
+    ],
+    "controlar_volumen": [
+        "sube el volumen", "bajale al volumen", "pon el volumen al 50",
+        "silencia el computador", "quita el silencio", "mas duro que no se oye",
+    ],
+    "controlar_musica": [
+        "pausa la musica", "siguiente cancion", "devuelve la cancion",
+        "reanuda la reproduccion", "cambia de tema",
+    ],
     "estado_del_sistema": [
         "como anda mi maquina", "cuanta ram estoy usando", "mi pc esta lento",
         "como va la bateria", "que tiene ocupado el procesador",
