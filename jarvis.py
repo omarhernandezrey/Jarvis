@@ -381,7 +381,12 @@ def _execute_tool_write(tool: str, args: dict) -> str:
     if plan is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
     if plan.error:
-        return f"Error: {plan.error}"
+        # Los mensajes de excepcion de librerias externas (requests, etc.)
+        # suelen incluir la URL completa de la peticion, con API keys de
+        # query string incluidas (ej. WolframAlpha) -- se redactan antes de
+        # hablarle al usuario, no solo al loguear.
+        safe_error, _ = redact_secrets(plan.error)
+        return f"Error: {safe_error}"
     return plan.result or "Operacion completada."
 
 

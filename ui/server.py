@@ -5,6 +5,7 @@ Uso: python -m jarvis_local.ui.server
 """
 import json
 import os
+import secrets
 import sys
 import threading
 import time
@@ -17,6 +18,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 PORT = 8080
 _jarvis_instance = None
 _chat_history: list[dict] = []
+
+# Token de sesion generado al arrancar el servidor. El servidor solo escucha
+# en 127.0.0.1, pero eso no basta: sin este token, cualquier pagina web
+# abierta en el mismo navegador puede hacer fetch() a este puerto y disparar
+# acciones reales (apagar el equipo, ejecutar comandos, enviar WhatsApp) sin
+# que el usuario haya tocado JARVIS. El token solo lo conoce quien cargo la
+# pagina desde este mismo servidor (SOP impide que un origen distinto lo lea).
+_AUTH_TOKEN = secrets.token_urlsafe(24)
 
 
 def _get_jarvis():
@@ -427,6 +436,7 @@ HTML = r"""<!DOCTYPE html>
 
 <script>
 const API = '/api';
+const API_TOKEN = '%JARVIS_TOKEN%';
 let isProcessing = false;
 let voiceActive = false;
 
@@ -544,7 +554,7 @@ async function processMessage(text) {
   try {
     const r = await fetch(API + '/chat', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-Jarvis-Token': API_TOKEN},
       body: JSON.stringify({message: text})
     });
     const data = await r.json();
@@ -582,7 +592,7 @@ async function toggleVoice() {
     toast('Escuchando... Hable ahora.');
 
     try {
-      const r = await fetch(API + '/voice', {method: 'POST'});
+      const r = await fetch(API + '/voice', {method: 'POST', headers: {'X-Jarvis-Token': API_TOKEN}});
       const data = await r.json();
       btn.classList.remove('recording');
       label.textContent = 'HABLAR';
@@ -629,10 +639,16 @@ class JarvisHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Silenciar logs HTTP
 
+    def _authorized(self) -> bool:
+        return secrets.compare_digest(
+            self.headers.get("X-Jarvis-Token", ""), _AUTH_TOKEN)
+
     def _send_json(self, data, code=200):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # Sin CORS: esta pagina solo se sirve a si misma. Permitir origenes
+        # cruzados aqui es lo que dejaba que cualquier pestana maliciosa
+        # abierta en el navegador leyera las respuestas de este servidor.
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
@@ -645,10 +661,13 @@ class JarvisHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/" or path == "/index.html":
-            self._send_html(HTML)
+            self._send_html(HTML.replace("%JARVIS_TOKEN%", _AUTH_TOKEN))
         elif path == "/api/status":
             self._send_json(_get_status())
         elif path == "/api/history":
+            if not self._authorized():
+                self._send_json({"error": "No autorizado"}, 401)
+                return
             self._send_json({"history": _chat_history[-50:]})
         else:
             self.send_response(404)
@@ -656,6 +675,12 @@ class JarvisHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        # Todo POST ejecuta una accion real (chat, voz, o un comando directo
+        # via /api/command que puede apagar el equipo). Sin este chequeo,
+        # cualquier pagina abierta en el navegador podia dispararlas.
+        if not self._authorized():
+            self._send_json({"error": "No autorizado"}, 401)
+            return
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length else b"{}"
         try:
@@ -711,10 +736,9 @@ class JarvisHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_OPTIONS(self):
+        # Sin cabeceras Access-Control-Allow-*: no se admite ningun origen
+        # cruzado. La pagina solo se usa desde si misma (mismo origen).
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
 

@@ -101,11 +101,8 @@ BLOCKED_COMMAND_PATTERNS = [
     r"\.bat",
     r"\.cmd",
     r"Invoke-Expression",
-    r"iex\b",
-    r"Remove-Item\s+-Force",
-    r"Remove-Item\s+-Recurse.*System",
+    r"\biex\b",
     r"\bdel\b\s+/",
-    r"\bdel\b\s+.",
     r"\brmdir\b",
     r"\brd\b\s+/",
     r"\bformat\b",
@@ -121,9 +118,21 @@ BLOCKED_COMMAND_PATTERNS = [
     r"\btakeown\b",
 ]
 
+# Palabras/cmdlets bloqueados como token completo (\b<kw>\b), sin importar
+# en que orden aparezcan sus argumentos. Esto es deliberado: el bloqueo
+# anterior exigia que -Force/-Recurse aparecieran INMEDIATAMENTE despues
+# de "Remove-Item", lo que la sintaxis natural de PowerShell
+# ("Remove-Item -Recurse -Force C:\ruta" o "Remove-Item C:\ruta -Force")
+# evade con facilidad. Bloquear el cmdlet completo cierra ese bypass:
+# el borrado real de archivos debe pasar por la herramienta dedicada
+# (borrar_archivo), que si exige /confirmar.
 BLOCKED_CMD_KEYWORDS = [
     "del", "rmdir", "rd", "format", "diskpart", "reg",
     "schtasks", "taskkill", "shutdown", "rm",
+    "remove-item", "ri", "erase",
+    "restart-computer", "stop-computer",
+    "stop-process", "set-itemproperty", "new-itemproperty",
+    "remove-itemproperty", "set-acl",
 ]
 
 

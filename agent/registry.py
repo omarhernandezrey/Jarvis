@@ -35,8 +35,14 @@ class Tool:
 
 
 def _obj(props: dict, required: list[str] | None = None) -> dict:
-    return {"type": "object", "properties": props,
-            "required": required or list(props.keys())}
+    # `required=None` (el default, no pasado) => todas las props son
+    # obligatorias. `required=[]` (pasado explicitamente) => ninguna lo es.
+    # Antes `required or list(props.keys())` trataba `[]` como falsy y lo
+    # confundia con "no pasado", forzando como obligatorios parametros
+    # documentados como opcionales (ciudad, cancion, ruta...).
+    if required is None:
+        required = list(props.keys())
+    return {"type": "object", "properties": props, "required": required}
 
 
 def _str(desc: str) -> dict:

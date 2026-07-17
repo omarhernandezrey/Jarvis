@@ -9,6 +9,8 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from jarvis_local.safety.secrets import redact_secrets
+
 MAX_MESSAGES = 50
 MAX_CONTENT_LENGTH = 2000
 
@@ -56,6 +58,13 @@ class HistoryStore:
     @staticmethod
     def sanitize(role: str, content: str) -> str:
         c = str(content)[:MAX_CONTENT_LENGTH]
+        # redact_secrets() detecta secretos por FORMA (sk-..., AIza...,
+        # contrasenas de app de Gmail, etc.), no por palabras clave cercanas,
+        # asi que cubre casos que el filtro de keywords de abajo se perdia
+        # (una API key pegada sin la palabra "token" al lado). El filtro de
+        # keywords se conserva como red de respaldo mas agresiva (omite el
+        # mensaje completo) para valores que no tienen una forma reconocida.
+        c, _ = redact_secrets(c)
         if role == "user" and any(kw in c.lower() for kw in [
             "ejecuta ", "ejecutar ", "run ", "shutdown", "del ", "rm ", "format",
             "password", "contraseña", "token", "api_key"

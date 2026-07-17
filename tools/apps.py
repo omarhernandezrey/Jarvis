@@ -220,12 +220,19 @@ def execute_open_app(name: str) -> ActionPlan:
 
 
 def _find_target_procs(candidates: set[str], procnames: list[str],
-                       pids: set[int]) -> list:
+                       pids: set[int]) -> tuple[list, list]:
     """Procesos en ejecucion que corresponden a la app buscada.
 
     Coincide por PID registrado, por nombre de ejecutable conocido o por
     parecido del nombre del proceso con lo que dijo el usuario. Nunca incluye
     procesos del sistema ni el propio JARVIS.
+
+    Devuelve (confiables, ambiguos): los primeros vienen de un PID rastreado
+    por JARVIS o de una coincidencia exacta de nombre de proceso, y se pueden
+    cerrar sin mas; los segundos solo coinciden por subcadena (p.ej. "team"
+    dentro de "teamviewer") y NO deben cerrarse sin que el usuario confirme
+    explicitamente cual queria decir, para no matar procesos ajenos con
+    trabajo sin guardar.
     """
     import psutil
 
@@ -235,20 +242,22 @@ def _find_target_procs(candidates: set[str], procnames: list[str],
 
     wanted = {p.lower() for p in procnames}
     utiles = {c for c in candidates if c and c not in _FILLER_WORDS}
-    matches = []
+    confiables, ambiguos = [], []
     for proc in psutil.process_iter(["pid", "name"]):
         try:
             nm = (proc.info["name"] or "").lower()
             if not nm or proc.info["pid"] in propios or nm in _PROTECTED_PROCS:
                 continue
             base = nm[:-4] if nm.endswith(".exe") else nm
-            por_nombre = any(base == c or (len(c) >= 4 and c in base)
-                             for c in utiles)
-            if proc.info["pid"] in pids or nm in wanted or por_nombre:
-                matches.append(proc)
+            exacto = base in utiles
+            subcadena = any(len(c) >= 4 and c in base for c in utiles)
+            if proc.info["pid"] in pids or nm in wanted or exacto:
+                confiables.append(proc)
+            elif subcadena:
+                ambiguos.append(proc)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-    return matches
+    return confiables, ambiguos
 
 
 def _terminate_procs(procs: list) -> int:
@@ -325,12 +334,24 @@ def close_app(name: str) -> ActionPlan:
         reason=f"Cerrar {display}",
     )
     try:
-        procs = _find_target_procs(candidates, procnames, pids)
-        if not procs:
+        procs, ambiguos = _find_target_procs(candidates, procnames, pids)
+        if not procs and not ambiguos:
             _OPENED.pop(query, None)
             plan.params["closed_count"] = 0
             plan.result = f"{display} no parece estar abierto, senor."
             plan.status = ActionStatus.EXECUTED
+            return plan
+        if not procs and ambiguos:
+            # Solo hay coincidencias por parecido de nombre (p.ej. "team"
+            # dentro de "teamviewer.exe"): no es la app que el usuario dijo
+            # con certeza, asi que no se cierra nada sin confirmacion.
+            nombres = ", ".join(sorted({p.info["name"] for p in ambiguos}))
+            plan.status = ActionStatus.BLOCKED
+            plan.result = (
+                f"No encontre exactamente '{display}' abierto, pero si "
+                f"proceso(s) parecidos ({nombres}). No los voy a cerrar por "
+                "si acaso: diga el nombre completo si quiere cerrarlos."
+            )
             return plan
         cerrados = _terminate_procs(procs)
         _OPENED.pop(query, None)

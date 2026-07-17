@@ -7,6 +7,21 @@ from datetime import datetime
 from pathlib import Path
 
 from jarvis_local.config import BASE_DIR, get_config
+from jarvis_local.safety.secrets import redact_secrets
+
+
+def _clean(text: str | None) -> str | None:
+    """Redacta secretos antes de que un texto llegue al log en disco.
+
+    Es el unico punto por el que pasan TODOS los logs de acciones del
+    repo (llamadores en jarvis.py, safety/policy.py, tools/*, etc.), asi
+    que redactar aqui cubre salidas de herramientas y del modelo, no solo
+    el input del usuario (que ya se redacta antes, en jarvis.py.chat()).
+    """
+    if not text:
+        return text
+    redacted, _ = redact_secrets(text)
+    return redacted
 
 
 class ActionLogger:
@@ -20,9 +35,9 @@ class ActionLogger:
     def log_action(self, instruction: str, result: str, error: str = None):
         entry = {
             "timestamp": datetime.now().isoformat(),
-            "instruction": instruction,
-            "result": result,
-            "error": error,
+            "instruction": _clean(instruction),
+            "result": _clean(result),
+            "error": _clean(error),
         }
         self._append_json(self.actions_path, entry)
 
@@ -30,8 +45,8 @@ class ActionLogger:
         entry = {
             "timestamp": datetime.now().isoformat(),
             "source": source,
-            "error": error,
-            "details": details,
+            "error": _clean(error),
+            "details": _clean(details),
         }
         self._append_json(self.errors_path, entry)
 

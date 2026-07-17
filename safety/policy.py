@@ -166,7 +166,7 @@ class SafetyPolicy:
                 plan.result = "El plan de borrado requiere confirmacion manual."
                 return plan
         try:
-            plan.result = executor_fn(plan)
+            plan.result, _ = redact_secrets(str(executor_fn(plan)))
             plan.status = ActionStatus.EXECUTED
         except Exception as e:
             plan.status = ActionStatus.ERROR
@@ -177,12 +177,17 @@ class SafetyPolicy:
 
     def block(self, reason: str) -> ActionPlan:
         """Crea un plan bloqueado por razones de seguridad."""
+        redacted_reason, _ = redact_secrets(reason)
         plan = ActionPlan(
             action="blocked",
             risk=RiskLevel.CRITICAL,
-            reason=reason,
+            reason=redacted_reason,
             status=ActionStatus.BLOCKED,
-            simulation_result=f"BLOQUEADO: {reason}",
+            simulation_result=f"BLOQUEADO: {redacted_reason}",
+            # Sin esto, los llamadores que hacen `plan.result or "Operacion
+            # completada."` (agent/registry.py, jarvis.py) reportaban una
+            # accion bloqueada como si hubiera tenido exito.
+            result=f"Bloqueado por seguridad: {redacted_reason}",
         )
         self._log_plan(plan)
         return plan
@@ -202,10 +207,16 @@ class SafetyPolicy:
         result = plan.simulation_result or plan.result or ""
         if extra:
             result = f"[{extra}] {result}"
+        # El resultado de una herramienta (salida de comandos, contenido de
+        # archivos, mensajes de error de APIs externas) puede contener
+        # secretos que el usuario nunca escribio -- se redactan aqui porque
+        # este es el unico punto por el que pasan todos los logs de acciones.
+        result, _ = redact_secrets(result)
+        error, _ = redact_secrets(plan.error or "")
         logger.log_action(
             instruction=plan.action,
             result=result,
-            error=plan.error,
+            error=error,
         )
 
 
