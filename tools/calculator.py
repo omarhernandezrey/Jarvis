@@ -25,14 +25,20 @@ _FUNCS = {
 
 _CONSTS = {"pi": math.pi, "e": math.e}
 
-# Palabras en espanol -> operadores
-_WORDS = [
+# Palabras en espanol -> operadores. Ordenado por cantidad de palabras de
+# la frase, DESCENDENTE (la mas larga primero): normalize_expression()
+# usa el primer match que encuentra recorriendo esta lista en orden, asi
+# que si "por" (1 palabra) va antes que "por ciento de" (3 palabras), esta
+# ultima nunca se alcanza a evaluar -- "50 por ciento de 200" se leia
+# "50 * ciento de 200" (invalido) en vez de "50 /100*200" (=100). Ordenar
+# por longitud evita que un futuro agregado reintroduzca el mismo bug.
+_WORDS = sorted([
     ("elevado a la", "**"), ("elevado a", "**"), ("a la potencia", "**"),
     ("mas", "+"), ("menos", "-"), ("por", "*"), ("multiplicado por", "*"),
     ("dividido entre", "/"), ("dividido por", "/"), ("entre", "/"),
     ("sobre", "/"), ("modulo", "%"), ("x", "*"),
     ("por ciento de", "/100*"), ("raiz cuadrada de", "raiz"),
-]
+], key=lambda par: -len(par[0].split()))
 
 
 def normalize_expression(text: str) -> str:
