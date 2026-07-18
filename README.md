@@ -173,8 +173,9 @@ python -m jarvis_local.cli
 ### Linux (Ubuntu/Debian)
 
 ```bash
-# 1. Paquetes del sistema: portapapeles, captura de pantalla, multimedia y microfono
-sudo apt install -y xclip grim playerctl libportaudio2 python3-venv
+# 1. Paquetes del sistema: portapapeles, multimedia, microfono, interfaz de
+#    escritorio (Tkinter) y captura de pantalla (via el portal de GNOME)
+sudo apt install -y xclip playerctl libportaudio2 python3-venv python3-tk python3-gi gir1.2-glib-2.0
 
 # 2. Ollama
 curl -fsSL https://ollama.com/install.sh | sh
@@ -185,14 +186,16 @@ ollama pull bge-m3            # memoria semantica (1.2 GB, opcional)
 mkdir -p ~/workspace && cd ~/workspace
 git clone https://github.com/omarhernandezrey/Jarvis.git jarvis_local
 
-# 4. Entorno virtual y dependencias
+# 4. Entorno virtual (con acceso a los paquetes de sistema: Tkinter y
+#    PyGObject no se pueden instalar con pip, vienen del SO) y dependencias
 cd jarvis_local
-python3 -m venv .venv
+python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -r requirements.txt
 
 # 5. Arrancar (desde la carpeta padre, jarvis_local es un paquete Python)
 cd ~/workspace
-jarvis_local/.venv/bin/python -m jarvis_local.cli
+jarvis_local/.venv/bin/python -m jarvis_local.cli          # consola
+jarvis_local/.venv/bin/python -m jarvis_local.ui.desktop    # interfaz de escritorio
 ```
 
 > La primera carga del modelo tarda 2–5 min en CPU modesta. JARVIS lo precalienta en segundo plano, así que puedes usar los comandos rápidos de inmediato.
@@ -268,7 +271,7 @@ Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `log
 | **STT** | faster-whisper (int8) |
 | **TTS** | edge-tts neural · respaldo offline (SAPI5 en Windows, espeak-ng en Linux) |
 | **Automatización** | Selenium · psutil · Pillow |
-| **Linux nativo** | PipeWire (`wpctl`) para volumen, `playerctl` para multimedia, `xclip` para portapapeles, `.desktop`/Snap/Flatpak para el índice de apps |
+| **Linux nativo** | PipeWire (`wpctl`) para volumen, `playerctl` para multimedia, `xclip` para portapapeles, `.desktop`/Snap/Flatpak para el índice de apps, portal de escritorio (`org.freedesktop.portal.Screenshot`) para capturas |
 
 ## 🗺️ Evolución
 

@@ -13,8 +13,10 @@ import ctypes
 import os
 import random
 import re
+import shutil
 import subprocess
 import time
+import urllib.parse
 from datetime import datetime
 
 from jarvis_local.config import IS_WINDOWS, user_dir
@@ -140,6 +142,60 @@ def _sanitize_filename(name: str) -> str:
     return clean or "captura"
 
 
+def _screenshot_via_portal(dest_path: str, timeout_s: int = 10) -> None:
+    """Pide una captura al compositor via xdg-desktop-portal.
+
+    Es la unica forma que funciono en GNOME/Mutter bajo Wayland sin mostrar
+    un dialogo: `grim` esta hecho para compositores wlroots (Sway) y aqui
+    responde "compositor doesn't support wlr-screencopy-unstable-v1", y
+    `gnome-screenshot` (Ubuntu 26.04) intenta un fallback a X11 que revienta
+    porque no hay X11 real detras, solo Xwayland. El portal si funciona
+    porque es el mecanismo que GNOME expone a proposito para esto.
+    """
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Gio, GLib
+
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    unique = bus.get_unique_name().lstrip(":").replace(".", "_")
+    token = f"jarvis_{os.getpid()}_{int(time.time() * 1000)}"
+    handle_path = f"/org/freedesktop/portal/desktop/request/{unique}/{token}"
+
+    loop = GLib.MainLoop()
+    result: dict = {}
+
+    def _on_response(_conn, _sender, _path, _iface, _signal, params, *_a):
+        result["code"], result["results"] = params.unpack()
+        loop.quit()
+
+    def _on_timeout():
+        loop.quit()
+        return False
+
+    sub_id = bus.signal_subscribe(
+        "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request",
+        "Response", handle_path, None, Gio.DBusSignalFlags.NONE, _on_response)
+    try:
+        builder = GLib.VariantBuilder(GLib.VariantType("a{sv}"))
+        builder.add_value(GLib.Variant("{sv}", ("handle_token", GLib.Variant("s", token))))
+        builder.add_value(GLib.Variant("{sv}", ("interactive", GLib.Variant("b", False))))
+        params = GLib.Variant.new_tuple(GLib.Variant("s", ""), builder.end())
+        bus.call_sync(
+            "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Screenshot", "Screenshot", params, None,
+            Gio.DBusCallFlags.NONE, timeout_s * 1000, None)
+        GLib.timeout_add_seconds(timeout_s, _on_timeout)
+        loop.run()
+    finally:
+        bus.signal_unsubscribe(sub_id)
+
+    if not result or result.get("code") != 0:
+        raise OSError("el portal de captura no respondio o la rechazo")
+    uri = result["results"]["uri"]
+    src = urllib.parse.unquote(uri.removeprefix("file://"))
+    shutil.move(src, dest_path)
+
+
 def take_screenshot(name: str = "") -> ActionPlan:
     """Captura la pantalla y la guarda con nombre personalizado en Imagenes."""
     plan = ActionPlan(action="captura_pantalla", params={"nombre": name},
@@ -155,11 +211,7 @@ def take_screenshot(name: str = "") -> ActionPlan:
             img = ImageGrab.grab()
             img.save(path, "PNG")
         else:
-            # grim es nativo de Wayland; PIL.ImageGrab no tiene soporte real
-            # ahi. Se instala junto con el resto de dependencias del sistema.
-            out = subprocess.run(["grim", path], capture_output=True, text=True)
-            if out.returncode != 0:
-                raise OSError(out.stderr.strip() or "grim fallo")
+            _screenshot_via_portal(path)
         plan.paths_affected = [path]
         carpeta = "Imagenes\\Capturas JARVIS" if IS_WINDOWS else "Imagenes/Capturas JARVIS"
         plan.result = f"Captura guardada como {base}.png en {carpeta}, senor."
