@@ -1,5 +1,4 @@
 """Tests de control de ventanas (minimizar todo, acomodar la activa)"""
-import ctypes
 import os
 import subprocess
 import sys
@@ -7,11 +6,16 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import pytest
+from jarvis_local.config import IS_WINDOWS
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus
-from jarvis_local.tools.desktop_actions import minimize_all, snap_window
+from jarvis_local.tools.desktop_actions import minimize_all, snap_window, switch_window
 
-# --- Enrutamiento del parser ---
+solo_windows = pytest.mark.skipif(not IS_WINDOWS, reason="manipula ventanas via ctypes.windll")
+solo_linux = pytest.mark.skipif(IS_WINDOWS, reason="verifica el degradado de Wayland")
+
+# --- Enrutamiento del parser (identico en ambos SO) ---
 
 
 def test_intent_minimizar_todo():
@@ -41,7 +45,7 @@ def test_intent_cerrar_no_robado():
     assert r.tool == "close_app"
 
 
-# --- Herramientas ---
+# --- Herramientas: validacion de argumentos (identica en ambos SO) ---
 
 
 def test_snap_direccion_invalida():
@@ -49,8 +53,12 @@ def test_snap_direccion_invalida():
     assert plan.status == ActionStatus.ERROR
 
 
+# --- Herramientas: Windows (manipulacion real de ventanas via ctypes) ---
+
+
 def _hwnd_de_pid(pid: int) -> int:
     """Primera ventana visible de un proceso."""
+    import ctypes
     user32 = ctypes.windll.user32
     encontrado = []
 
@@ -67,9 +75,11 @@ def _hwnd_de_pid(pid: int) -> int:
     return encontrado[0] if encontrado else 0
 
 
+@solo_windows
 def test_snap_minimiza_de_verdad():
     """Abre un Notepad, lo enfoca, lo minimiza con Win+Down y VERIFICA con
     IsIconic que quedo minimizado. Si Windows niega el foco, no concluye."""
+    import ctypes
     user32 = ctypes.windll.user32
     proc = subprocess.Popen([r"C:\Windows\System32\notepad.exe"])
     try:
@@ -92,10 +102,12 @@ def test_snap_minimiza_de_verdad():
         proc.terminate()
 
 
+@solo_windows
 def test_minimize_all_ejecuta():
     # Solo verifica que la funcion corre sin error; el efecto real sobre
     # todo el escritorio se comprueba en la verificacion manual E2E para
     # no minimizar las ventanas del usuario en cada corrida de la suite.
+    import ctypes
     original = ctypes.windll.user32.keybd_event
     llamadas = []
     ctypes.windll.user32.keybd_event = lambda *a: llamadas.append(a)
@@ -107,8 +119,39 @@ def test_minimize_all_ejecuta():
         ctypes.windll.user32.keybd_event = original
 
 
+# --- Herramientas: Linux (degradado explicito, sin intentar nada a medias) ---
+
+
+@solo_linux
+def test_minimize_all_no_soportado_en_linux():
+    plan = minimize_all()
+    assert plan.status == ActionStatus.ERROR
+    assert "wayland" in plan.result.lower()
+
+
+@solo_linux
+def test_snap_no_soportado_en_linux():
+    plan = snap_window("izquierda")
+    assert plan.status == ActionStatus.ERROR
+    assert "wayland" in plan.result.lower()
+
+
+@solo_linux
+def test_switch_window_no_soportado_en_linux():
+    plan = switch_window()
+    assert plan.status == ActionStatus.ERROR
+    assert "wayland" in plan.result.lower()
+
+
+def _skip_marcado(fn) -> bool:
+    for mark in getattr(fn, "pytestmark", []):
+        if mark.name == "skipif" and mark.args and mark.args[0]:
+            return True
+    return False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
-        if name.startswith("test_"):
+        if name.startswith("test_") and not _skip_marcado(fn):
             fn()
     print("OK: Todos los tests de ventanas pasaron.")

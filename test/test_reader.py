@@ -1,10 +1,12 @@
 """Tests de lectura en voz alta (portapapeles y archivos)"""
-import ctypes
 import os
+import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus
 from jarvis_local.tools.reader import (
@@ -13,11 +15,12 @@ from jarvis_local.tools.reader import (
     read_file_aloud,
 )
 
-DOCS = os.path.expandvars(r"%USERPROFILE%\Documents")
+DOCS = user_dir("documents")
 
 
-def _set_clipboard(text: str) -> bool:
+def _set_clipboard_windows(text: str) -> bool:
     """Pone texto en el portapapeles real (Win32, con tipos de 64 bits)."""
+    import ctypes
     CF_UNICODETEXT = 13
     GMEM_MOVEABLE = 0x0002
     user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
@@ -42,6 +45,22 @@ def _set_clipboard(text: str) -> bool:
         return True
     finally:
         user32.CloseClipboard()
+
+
+def _set_clipboard_linux(text: str) -> bool:
+    # xclip se demoniza tras leer stdin para seguir sirviendo la seleccion:
+    # con capture_output=True el proceso en segundo plano hereda los pipes de
+    # stdout/stderr abiertos y subprocess.run() se queda esperando para
+    # siempre a que se cierren. stdout/stderr van a DEVNULL en su lugar.
+    proc = subprocess.run(["xclip", "-selection", "clipboard"], input=text,
+                          text=True, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL)
+    time.sleep(0.15)  # dar tiempo a que xclip tome posesion de la seleccion
+    return proc.returncode == 0
+
+
+def _set_clipboard(text: str) -> bool:
+    return _set_clipboard_windows(text) if IS_WINDOWS else _set_clipboard_linux(text)
 
 
 # --- Enrutamiento del parser ---
@@ -132,7 +151,8 @@ def test_leer_archivo_largo_se_recorta():
 
 
 def test_ruta_fuera_de_whitelist_bloqueada():
-    plan = read_file_aloud(r"C:\Windows\System32\drivers\etc\hosts")
+    fuera = r"C:\Windows\System32\drivers\etc\hosts" if IS_WINDOWS else "/etc/hosts"
+    plan = read_file_aloud(fuera)
     assert plan.status == ActionStatus.BLOCKED
 
 

@@ -1,7 +1,7 @@
 [project]
 name = "jarvis-local"
 version = "6.0.0"
-description = "Asistente de IA por voz, 100% local y en espanol, para Windows"
+description = "Asistente de IA por voz, 100% local y en espanol, para Windows y Linux"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

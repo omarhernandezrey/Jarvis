@@ -10,6 +10,7 @@ que exige /confirmar: el modelo NUNCA ejecuta acciones destructivas por si solo.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from jarvis_local.config import user_dir
 from jarvis_local.safety.policy import ActionPlan, ActionStatus
 
 
@@ -158,17 +159,13 @@ def _media_control(accion: str):
 
 
 def _list_files(path: str = ""):
-    import os
-
     from jarvis_local.tools.files import list_files
-    return list_files(path or os.path.expandvars(r"%USERPROFILE%\Documents"))
+    return list_files(path or user_dir("documents"))
 
 
 def _search_files(name: str, path: str = ""):
-    import os
-
     from jarvis_local.tools.files import search_files
-    return search_files(name, path or os.path.expandvars(r"%USERPROFILE%\Documents"))
+    return search_files(name, path or user_dir("documents"))
 
 
 def _create_directory(path: str):

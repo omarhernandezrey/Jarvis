@@ -1,20 +1,25 @@
 """
 JARVIS Local - Control de volumen y multimedia
 
-Volumen por WASAPI (comtypes/IAudioEndpointVolume): permite fijar un nivel
-exacto ("volumen al 50") y LEER el estado real, asi las pruebas verifican que
-el cambio ocurrio de verdad. Si COM falla, cae a las teclas multimedia
-virtuales (ctypes), que siempre existen en Windows.
+Windows: volumen por WASAPI (comtypes/IAudioEndpointVolume): permite fijar un
+nivel exacto ("volumen al 50") y LEER el estado real, asi las pruebas
+verifican que el cambio ocurrio de verdad. Si COM falla, cae a las teclas
+multimedia virtuales (ctypes), que siempre existen en Windows.
 
-Play/pausa y cambio de cancion van por teclas multimedia: es el mismo canal
-que un teclado fisico y lo entienden Spotify, YouTube, VLC, etc.
+Linux: volumen por `wpctl` (PipeWire nativo, lee y fija el nivel real igual
+que WASAPI). Play/pausa y cambio de cancion van por `playerctl`, que habla el
+protocolo MPRIS que entienden Spotify, YouTube en el navegador, VLC, etc.
 """
-import ctypes
+import subprocess
 import time
-from ctypes import HRESULT, POINTER, c_float, c_uint, c_void_p
-from ctypes.wintypes import BOOL, DWORD
 
+from jarvis_local.config import IS_WINDOWS
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+
+if IS_WINDOWS:
+    import ctypes
+    from ctypes import HRESULT, POINTER, c_float, c_uint, c_void_p
+    from ctypes.wintypes import BOOL, DWORD
 
 # Codigos de tecla virtuales de Windows (Winuser.h)
 _VK_VOLUME_MUTE = 0xAD
@@ -28,6 +33,8 @@ _KEYEVENTF_KEYUP = 0x0002
 # Cuanto sube/baja "sube el volumen" (puntos de 0-100)
 _VOLUME_STEP_PCT = 10
 
+_SINK = "@DEFAULT_AUDIO_SINK@"
+
 
 def _press(vk: int, times: int = 1) -> None:
     user32 = ctypes.windll.user32
@@ -37,7 +44,7 @@ def _press(vk: int, times: int = 1) -> None:
         time.sleep(0.01)
 
 
-# --- WASAPI: IAudioEndpointVolume via comtypes ---
+# --- WASAPI: IAudioEndpointVolume via comtypes (Windows) ---
 
 def _get_endpoint_volume():
     """Interfaz de volumen maestro del dispositivo de salida por defecto.
@@ -130,8 +137,33 @@ def _get_endpoint_volume():
         return None
 
 
+# --- PipeWire: wpctl (Linux) ---
+
+def _wpctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["wpctl", *args], capture_output=True, text=True)
+
+
+def _get_volume_linux() -> tuple[int | None, bool]:
+    """(volumen 0-100, muteado) leyendo `wpctl get-volume`, o (None, False)
+    si PipeWire/wpctl no esta disponible."""
+    try:
+        out = _wpctl("get-volume", _SINK)
+        if out.returncode != 0:
+            return None, False
+        # Salida tipica: "Volume: 0.65" o "Volume: 0.65 [MUTED]"
+        partes = out.stdout.strip().split()
+        nivel = round(float(partes[1]) * 100)
+        muteado = "[MUTED]" in out.stdout
+        return nivel, muteado
+    except (OSError, ValueError, IndexError):
+        return None, False
+
+
 def get_volume() -> int | None:
-    """Volumen maestro actual (0-100), o None si COM no esta disponible."""
+    """Volumen maestro actual (0-100), o None si no se pudo leer."""
+    if not IS_WINDOWS:
+        nivel, _ = _get_volume_linux()
+        return nivel
     ep = _get_endpoint_volume()
     if ep is None:
         return None
@@ -142,6 +174,9 @@ def get_volume() -> int | None:
 
 
 def is_muted() -> bool | None:
+    if not IS_WINDOWS:
+        nivel, muteado = _get_volume_linux()
+        return muteado if nivel is not None else None
     ep = _get_endpoint_volume()
     if ep is None:
         return None
@@ -160,13 +195,20 @@ def set_volume(level: int) -> ActionPlan:
     level = max(0, min(int(level), 100))
     plan = _plan("fijar_volumen", f"Fijar el volumen al {level}%")
     plan.params = {"nivel": level}
-    ep = _get_endpoint_volume()
     try:
-        if ep is None:
-            raise OSError("control de volumen COM no disponible")
-        ep.SetMasterVolumeLevelScalar(level / 100.0, None)
-        if level > 0 and ep.GetMute():
-            ep.SetMute(False, None)
+        if not IS_WINDOWS:
+            out = _wpctl("set-volume", _SINK, f"{level}%")
+            if out.returncode != 0:
+                raise OSError(out.stderr.strip() or "wpctl set-volume fallo")
+            if level > 0:
+                _wpctl("set-mute", _SINK, "0")
+        else:
+            ep = _get_endpoint_volume()
+            if ep is None:
+                raise OSError("control de volumen COM no disponible")
+            ep.SetMasterVolumeLevelScalar(level / 100.0, None)
+            if level > 0 and ep.GetMute():
+                ep.SetMute(False, None)
         plan.result = f"Volumen al {level} por ciento, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -180,18 +222,32 @@ def _change_volume(delta: int, action: str, reason: str, vk_fallback: int,
                    ok_msg: str) -> ActionPlan:
     plan = _plan(action, reason)
     try:
-        ep = _get_endpoint_volume()
-        if ep is not None:
-            actual = round(ep.GetMasterVolumeLevelScalar() * 100)
-            nuevo = max(0, min(actual + delta, 100))
-            ep.SetMasterVolumeLevelScalar(nuevo / 100.0, None)
-            if delta > 0 and ep.GetMute():
-                ep.SetMute(False, None)
-            plan.params = {"antes": actual, "ahora": nuevo}
-            plan.result = f"{ok_msg} Quedo al {nuevo} por ciento, senor."
+        if not IS_WINDOWS:
+            signo = "+" if delta > 0 else "-"
+            # -l 1.0: sin este limite, wpctl deja subir el volumen por
+            # encima del 100% (hasta 150% por defecto) en vez de topar como
+            # hace WASAPI en Windows.
+            out = _wpctl("set-volume", "-l", "1.0", _SINK, f"{abs(delta)}%{signo}")
+            if out.returncode != 0:
+                raise OSError(out.stderr.strip() or "wpctl set-volume fallo")
+            if delta > 0:
+                _wpctl("set-mute", _SINK, "0")
+            nuevo, _ = _get_volume_linux()
+            plan.result = (f"{ok_msg} Quedo al {nuevo} por ciento, senor."
+                           if nuevo is not None else f"{ok_msg} Senor.")
         else:
-            _press(vk_fallback, abs(delta) // 2 or 1)
-            plan.result = f"{ok_msg} Senor."
+            ep = _get_endpoint_volume()
+            if ep is not None:
+                actual = round(ep.GetMasterVolumeLevelScalar() * 100)
+                nuevo = max(0, min(actual + delta, 100))
+                ep.SetMasterVolumeLevelScalar(nuevo / 100.0, None)
+                if delta > 0 and ep.GetMute():
+                    ep.SetMute(False, None)
+                plan.params = {"antes": actual, "ahora": nuevo}
+                plan.result = f"{ok_msg} Quedo al {nuevo} por ciento, senor."
+            else:
+                _press(vk_fallback, abs(delta) // 2 or 1)
+                plan.result = f"{ok_msg} Senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
         plan.status = ActionStatus.ERROR
@@ -217,12 +273,17 @@ def volume_mute(mute: bool = True) -> ActionPlan:
     accion = "silenciar" if mute else "activar_sonido"
     plan = _plan(accion, "Silenciar el sonido" if mute else "Activar el sonido")
     try:
-        ep = _get_endpoint_volume()
-        if ep is not None:
-            ep.SetMute(mute, None)
+        if not IS_WINDOWS:
+            out = _wpctl("set-mute", _SINK, "1" if mute else "0")
+            if out.returncode != 0:
+                raise OSError(out.stderr.strip() or "wpctl set-mute fallo")
         else:
-            # con teclas solo hay alternar: pulsar solo si el estado difiere
-            _press(_VK_VOLUME_MUTE)
+            ep = _get_endpoint_volume()
+            if ep is not None:
+                ep.SetMute(mute, None)
+            else:
+                # con teclas solo hay alternar: pulsar solo si el estado difiere
+                _press(_VK_VOLUME_MUTE)
         plan.result = "Silenciado, senor." if mute else "Sonido activado, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -232,10 +293,17 @@ def volume_mute(mute: bool = True) -> ActionPlan:
     return plan
 
 
+def _media_key_or_playerctl(vk: int, playerctl_cmd: str) -> None:
+    if IS_WINDOWS:
+        _press(vk)
+    else:
+        subprocess.run(["playerctl", playerctl_cmd], capture_output=True, text=True)
+
+
 def media_play_pause() -> ActionPlan:
     plan = _plan("pausar_reproducir", "Pausar o reanudar la reproduccion")
     try:
-        _press(_VK_MEDIA_PLAY_PAUSE)
+        _media_key_or_playerctl(_VK_MEDIA_PLAY_PAUSE, "play-pause")
         plan.result = "Hecho, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -248,7 +316,7 @@ def media_play_pause() -> ActionPlan:
 def media_next() -> ActionPlan:
     plan = _plan("siguiente_cancion", "Pasar a la siguiente cancion")
     try:
-        _press(_VK_MEDIA_NEXT)
+        _media_key_or_playerctl(_VK_MEDIA_NEXT, "next")
         plan.result = "Siguiente cancion, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -261,7 +329,7 @@ def media_next() -> ActionPlan:
 def media_previous() -> ActionPlan:
     plan = _plan("cancion_anterior", "Volver a la cancion anterior")
     try:
-        _press(_VK_MEDIA_PREV)
+        _media_key_or_playerctl(_VK_MEDIA_PREV, "previous")
         plan.result = "Cancion anterior, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:

@@ -6,12 +6,17 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import jarvis_local.tools.power as power
+import pytest
+from jarvis_local.config import IS_WINDOWS
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus
 
+solo_windows = pytest.mark.skipif(not IS_WINDOWS, reason="usa shutdown.exe/ctypes de Windows")
+solo_linux = pytest.mark.skipif(IS_WINDOWS, reason="usa shutdown/loginctl/systemctl de Linux")
+
 
 def _con_shutdown_falso(fn):
-    """Captura las llamadas a shutdown.exe sin ejecutarlas."""
+    """Captura las llamadas a shutdown.exe sin ejecutarlas (Windows)."""
     original = power._run_shutdown
     llamadas = []
 
@@ -26,7 +31,23 @@ def _con_shutdown_falso(fn):
         power._run_shutdown = original
 
 
-# --- Enrutamiento del parser ---
+def _con_shutdown_falso_linux(fn):
+    """Captura las llamadas a `sudo shutdown` sin ejecutarlas (Linux)."""
+    original = power._run_shutdown_linux
+    llamadas = []
+
+    def fake(args):
+        llamadas.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    power._run_shutdown_linux = fake
+    try:
+        fn(llamadas)
+    finally:
+        power._run_shutdown_linux = original
+
+
+# --- Enrutamiento del parser (identico en ambos SO) ---
 
 
 def test_intent_apagar():
@@ -69,9 +90,10 @@ def test_intent_apaga_jarvis_no_es_apagado():
     assert r.tool not in ("shutdown_pc", "restart_pc")
 
 
-# --- Herramientas (con shutdown.exe capturado) ---
+# --- Herramientas: Windows (con shutdown.exe capturado) ---
 
 
+@solo_windows
 def test_apagar_programa_con_60s():
     def caso(llamadas):
         plan = power.shutdown_pc()
@@ -81,6 +103,7 @@ def test_apagar_programa_con_60s():
     _con_shutdown_falso(caso)
 
 
+@solo_windows
 def test_reiniciar_programa_con_60s():
     def caso(llamadas):
         plan = power.restart_pc()
@@ -89,6 +112,7 @@ def test_reiniciar_programa_con_60s():
     _con_shutdown_falso(caso)
 
 
+@solo_windows
 def test_apagar_nunca_menos_de_10s():
     def caso(llamadas):
         power.shutdown_pc(seconds=0)
@@ -96,6 +120,7 @@ def test_apagar_nunca_menos_de_10s():
     _con_shutdown_falso(caso)
 
 
+@solo_windows
 def test_cancelar_sin_apagado_pendiente():
     def caso(llamadas):
         def fake_1116(args):
@@ -108,6 +133,7 @@ def test_cancelar_sin_apagado_pendiente():
     _con_shutdown_falso(caso)
 
 
+@solo_windows
 def test_bloquear_con_mock():
     original = power._lock_workstation
     power._lock_workstation = lambda: True
@@ -119,8 +145,73 @@ def test_bloquear_con_mock():
         power._lock_workstation = original
 
 
+# --- Herramientas: Linux (con `sudo shutdown`/loginctl/systemctl capturados) ---
+
+
+@solo_linux
+def test_apagar_programa_con_1min():
+    def caso(llamadas):
+        plan = power.shutdown_pc()
+        assert plan.status == ActionStatus.EXECUTED
+        assert llamadas == [["-h", "+1"]]
+        assert "cancela el apagado" in plan.result.lower()
+    _con_shutdown_falso_linux(caso)
+
+
+@solo_linux
+def test_reiniciar_programa_con_1min():
+    def caso(llamadas):
+        plan = power.restart_pc()
+        assert plan.status == ActionStatus.EXECUTED
+        assert llamadas == [["-r", "+1"]]
+    _con_shutdown_falso_linux(caso)
+
+
+@solo_linux
+def test_apagar_segundos_redondea_a_minutos():
+    def caso(llamadas):
+        power.shutdown_pc(seconds=90)  # 90s -> 2 min (ceil)
+        assert llamadas == [["-h", "+2"]]
+    _con_shutdown_falso_linux(caso)
+
+
+@solo_linux
+def test_cancelar_sin_apagado_pendiente_linux():
+    def caso(llamadas):
+        def fake_sin_pendiente(args):
+            llamadas.append(args)
+            return subprocess.CompletedProcess(
+                args, 1, stdout="", stderr="shutdown: No scheduled shutdown to cancel.")
+        power._run_shutdown_linux = fake_sin_pendiente
+        plan = power.cancel_shutdown()
+        assert plan.status == ActionStatus.EXECUTED
+        assert "no hay ningun apagado" in plan.result.lower()
+    _con_shutdown_falso_linux(caso)
+
+
+@solo_linux
+def test_bloquear_con_mock_linux():
+    original = power._lock_session_linux
+    power._lock_session_linux = lambda: True
+    try:
+        plan = power.lock_pc()
+        assert plan.status == ActionStatus.EXECUTED
+        assert "bloqueada" in plan.result.lower()
+    finally:
+        power._lock_session_linux = original
+
+
+def _skip_marcado(fn) -> bool:
+    """Respeta @solo_windows/@solo_linux tambien al correr este archivo
+    directo (sin pytest) -- si no, llamaria de verdad a shutdown/loginctl."""
+    for mark in getattr(fn, "pytestmark", []):
+        if mark.name == "skipif" and mark.args and mark.args[0]:
+            return True
+    return False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
-        if name.startswith("test_"):
+        if name.startswith("test_") and not _skip_marcado(fn):
             fn()
     print("OK: Todos los tests de power pasaron.")

@@ -4,8 +4,15 @@ Preparacion y ejecucion de comandos PowerShell/CMD.
 """
 import subprocess
 
+from jarvis_local.config import IS_WINDOWS
 from jarvis_local.safety.permissions import is_command_blocked
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
+
+
+def _shell_argv(command: str) -> list[str]:
+    if IS_WINDOWS:
+        return ["powershell", "-NoProfile", "-Command", command]
+    return ["bash", "-c", command]
 
 
 def plan_command(command: str) -> ActionPlan:
@@ -19,8 +26,9 @@ def plan_command(command: str) -> ActionPlan:
         risk=RiskLevel.EXECUTE,
         reason="Ejecutar comando",
     )
+    shell_name = "PowerShell" if IS_WINDOWS else "bash"
     plan.simulation_result = (
-        f"[SIMULACION] Se ejecutaria en PowerShell:\n"
+        f"[SIMULACION] Se ejecutaria en {shell_name}:\n"
         f"  > {command}\n"
         f"Estado: PENDIENTE DE CONFIRMACION"
     )
@@ -42,7 +50,7 @@ def execute_command(command: str) -> ActionPlan:
     )
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", command],
+            _shell_argv(command),
             capture_output=True, text=True, timeout=30, shell=False,
         )
         out = (result.stdout or "").strip()

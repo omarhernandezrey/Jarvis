@@ -6,6 +6,7 @@ Sin regex fragiles. Sin Ollama. Solo keywords y extraccion de argumentos.
 import os
 import re
 
+from jarvis_local.config import user_dir
 from jarvis_local.intent.schemas import IntentResult
 from jarvis_local.safety.permissions import is_command_blocked, is_within_allowed
 
@@ -827,7 +828,7 @@ def parse_intent(message: str) -> IntentResult:
     if m_list:
         path = _resolve_path(m_list.group(1).strip())
         if not path or path in (".", ""):
-            path = os.path.expandvars(r"%USERPROFILE%\Documents")
+            path = user_dir("documents")
         allowed, _ = is_within_allowed(path)
         if allowed:
             return IntentResult(kind="tool_read", tool="list_files", arguments={"path": path},
@@ -857,7 +858,7 @@ def parse_intent(message: str) -> IntentResult:
         name = m_search.group(1).strip()
         path_str = m_search.group(2).strip()
         if not path_str:
-            path_str = os.path.expandvars(r"%USERPROFILE%\Documents")
+            path_str = user_dir("documents")
         path = _resolve_path(path_str)
         allowed, _ = is_within_allowed(path)
         if allowed:
@@ -869,14 +870,29 @@ def parse_intent(message: str) -> IntentResult:
                             reason="Ruta fuera de whitelist")
 
     # --- CREAR CARPETA ---
-    m_cd = re.search(
-        r'(?:crea|crear|genera|generar)\s+(?:una\s+)?(?:carpeta|directorio)\s+(?:llamada|llamado|con\s+nombre)?\s*["\u201c]?([^"]+?)["\u201d]?\s*(?:en|dentro de)?\s*(.*)',
+    # Una sola regex con todo opcional ("nombre" no-greedy, delimitador
+    # "en/dentro de" opcional) dejaba el nombre en 1 solo caracter: el motor
+    # de regex para en el primer intento que funciona, y como el delimitador
+    # es opcional, con nombre="_" y "resto" quedandose con todo lo demas ya
+    # es una combinacion valida. La forma robusta de evitarlo es NO meter
+    # todo en una sola expresion: primero se pela el verbo+objeto, luego el
+    # prefijo opcional "llamada/con nombre", y solo entonces se separa
+    # nombre de ubicacion con un delimitador obligatorio.
+    m_verbo_cd = re.search(
+        r'(?:crea|crear|genera|generar)\s+(?:una\s+)?(?:carpeta|directorio)\s+(.+)',
         m, re.IGNORECASE)
-    if m_cd:
-        name = m_cd.group(1).strip().rstrip(".!?")
-        path_str = m_cd.group(2).strip() if m_cd.group(2) else ""
+    if m_verbo_cd:
+        resto = m_verbo_cd.group(1).strip()
+        resto = re.sub(r'^(?:llamada|llamado|con\s+nombre)\s+', '', resto,
+                       flags=re.IGNORECASE).strip('"\u201c\u201d ')
+        m_ubicacion = re.search(r'^(.+?)\s+(?:en|dentro de)\s+(.+)$', resto, re.IGNORECASE)
+        if m_ubicacion:
+            name, path_str = m_ubicacion.group(1).strip(), m_ubicacion.group(2).strip()
+        else:
+            name, path_str = resto, ""
+        name = name.rstrip(".!?")
         if not path_str:
-            path_str = os.path.expandvars(r"%USERPROFILE%\Documents")
+            path_str = user_dir("documents")
         path = _resolve_path(path_str)
         allowed, _ = is_within_allowed(path)
         if allowed:
@@ -889,23 +905,42 @@ def parse_intent(message: str) -> IntentResult:
                             reason="Ruta fuera de whitelist")
 
     # --- CREAR ARCHIVO ---
-    m_cf = re.search(
-        r'(?:crea|crear|genera|generar)\s+(?:un\s+)?(?:archivo|fichero|documento)\s+(?:llamado|llamada|con\s+nombre)?\s*["\u201c]?([^"]+?)["\u201d]?\s*(?:en|dentro de|con\s+contenido)?\s*(.*)',
+    # Mismo arreglo de fondo que en CREAR CARPETA, y mismo motivo para
+    # resolverlo en etapas en vez de una sola regex: aqui hay ademas un
+    # tercer campo opcional ("con contenido ..."), asi que meterlo todo en
+    # una unica expresion con piezas opcionales es todavia mas propenso a
+    # que el motor de regex encuentre una combinacion valida pero absurda
+    # (el propio nombre "llamado" colandose como si fuera el nombre real).
+    m_verbo_cf = re.search(
+        r'(?:crea|crear|genera|generar)\s+(?:un\s+)?(?:archivo|fichero|documento)\s+(.+)',
         m, re.IGNORECASE)
-    if m_cf:
-        name = m_cf.group(1).strip().rstrip(".!?")
-        rest = m_cf.group(2).strip() if m_cf.group(2) else ""
+    if m_verbo_cf:
+        resto = m_verbo_cf.group(1).strip()
+        resto = re.sub(r'^(?:llamado|llamada|con\s+nombre)\s+', '', resto,
+                       flags=re.IGNORECASE).strip('"\u201c\u201d ')
         content = ""
-        path_str = os.path.expandvars(r"%USERPROFILE%\Documents")
-        if "contenido" in rest.lower():
-            parts = rest.split("contenido", 1)
-            path_part = parts[0].strip()
-            content = parts[1].strip(" :\"'") if len(parts) > 1 else ""
-            if path_part:
-                path_str = _resolve_path(path_part)
-        elif rest:
-            path_str = _resolve_path(rest)
-        path = path_str
+        path_str = ""
+        m_ambos = re.search(
+            r'^(.+?)\s+(?:en|dentro de)\s+(.+?)\s+con\s+contenido\s+(.+)$',
+            resto, re.IGNORECASE)
+        m_solo_contenido = re.search(r'^(.+?)\s+con\s+contenido\s+(.+)$', resto, re.IGNORECASE)
+        m_solo_ubicacion = re.search(r'^(.+?)\s+(?:en|dentro de)\s+(.+)$', resto, re.IGNORECASE)
+        if m_ambos:
+            name = m_ambos.group(1).strip()
+            path_str = m_ambos.group(2).strip()
+            content = m_ambos.group(3).strip(" :\"'")
+        elif m_solo_contenido:
+            name = m_solo_contenido.group(1).strip()
+            content = m_solo_contenido.group(2).strip(" :\"'")
+        elif m_solo_ubicacion:
+            name = m_solo_ubicacion.group(1).strip()
+            path_str = m_solo_ubicacion.group(2).strip()
+        else:
+            name = resto
+        name = name.rstrip(".!?")
+        if not path_str:
+            path_str = user_dir("documents")
+        path = _resolve_path(path_str)
         allowed, _ = is_within_allowed(path)
         if allowed:
             full_path = os.path.join(path, name)

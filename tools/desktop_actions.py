@@ -1,19 +1,35 @@
 """
 JARVIS Local - Acciones de escritorio (Fase 4)
 Cambiar ventana (Alt+Tab), capturas de pantalla y reproducir musica local.
+
+En Linux con GNOME/Wayland no hay una forma confiable de manipular ventanas
+de OTRAS apps desde afuera sin una extension de GNOME instalada (Wayland no
+expone esa API por diseno, a diferencia de Windows): minimizar-todo, encajar
+la ventana activa y cambiar de ventana por comando quedan sin soporte ahi, y
+lo dicen con un mensaje claro en vez de fallar a medias o no hacer nada.
+Captura de pantalla y musica local si funcionan igual en los dos SO.
 """
 import ctypes
 import os
 import random
 import re
+import subprocess
 import time
 from datetime import datetime
 
+from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
-SCREENSHOTS_DIR = os.path.expandvars(r"%USERPROFILE%\Pictures\Capturas JARVIS")
-MUSIC_DIR = os.path.expandvars(r"%USERPROFILE%\Music")
+SCREENSHOTS_DIR = (os.path.expandvars(r"%USERPROFILE%\Pictures\Capturas JARVIS")
+                   if IS_WINDOWS else
+                   os.path.join(user_dir("pictures"), "Capturas JARVIS"))
+MUSIC_DIR = user_dir("music")
 _MUSIC_EXTS = (".mp3", ".wav", ".flac", ".m4a", ".wma", ".ogg", ".aac")
+
+_WAYLAND_UNSUPPORTED = (
+    "No puedo manejar otras ventanas en este escritorio Linux, senor: "
+    "Wayland no lo permite sin una extension de GNOME instalada."
+)
 
 # Codigos de tecla virtuales de Windows
 _VK_MENU = 0x12   # Alt
@@ -28,7 +44,7 @@ _KEYEVENTF_KEYUP = 0x0002
 
 
 def _combo(*vks: int) -> None:
-    """Pulsa una combinacion de teclas (modificadores primero)."""
+    """Pulsa una combinacion de teclas (modificadores primero). Windows."""
     user32 = ctypes.windll.user32
     for vk in vks:
         user32.keybd_event(vk, 0, 0, 0)
@@ -37,8 +53,18 @@ def _combo(*vks: int) -> None:
         user32.keybd_event(vk, 0, _KEYEVENTF_KEYUP, 0)
 
 
+def _no_soportado(action: str, reason: str) -> ActionPlan:
+    plan = ActionPlan(action=action, risk=RiskLevel.EXECUTE, reason=reason)
+    plan.status = ActionStatus.ERROR
+    plan.error = "no soportado en Wayland"
+    plan.result = _WAYLAND_UNSUPPORTED
+    return plan
+
+
 def minimize_all() -> ActionPlan:
-    """Minimiza todas las ventanas (Win+M)."""
+    """Minimiza todas las ventanas (Win+M). Solo Windows."""
+    if not IS_WINDOWS:
+        return _no_soportado("minimizar_todo", "Minimizar todas las ventanas")
     plan = ActionPlan(action="minimizar_todo", risk=RiskLevel.EXECUTE,
                       reason="Minimizar todas las ventanas")
     try:
@@ -73,6 +99,8 @@ def snap_window(direction: str) -> ActionPlan:
         plan.result = ("Puedo poner la ventana a la izquierda, a la derecha, "
                        "maximizarla o minimizarla, senor.")
         return plan
+    if not IS_WINDOWS:
+        return _no_soportado("acomodar_ventana", "Acomodar la ventana activa")
     try:
         vk, descripcion = _SNAP_KEYS[d]
         _combo(_VK_LWIN, vk)
@@ -86,7 +114,9 @@ def snap_window(direction: str) -> ActionPlan:
 
 
 def switch_window() -> ActionPlan:
-    """Cambia a la ventana anterior (Alt+Tab)."""
+    """Cambia a la ventana anterior (Alt+Tab). Solo Windows."""
+    if not IS_WINDOWS:
+        return _no_soportado("cambiar_ventana", "Cambiar de ventana (Alt+Tab)")
     plan = ActionPlan(action="cambiar_ventana", risk=RiskLevel.EXECUTE,
                       reason="Cambiar de ventana (Alt+Tab)")
     try:
@@ -116,15 +146,23 @@ def take_screenshot(name: str = "") -> ActionPlan:
                       risk=RiskLevel.EXECUTE,
                       reason="Guardar captura de pantalla en Imagenes")
     try:
-        from PIL import ImageGrab
         os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
         base = _sanitize_filename(name) if name else \
             f"captura_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         path = os.path.join(SCREENSHOTS_DIR, f"{base}.png")
-        img = ImageGrab.grab()
-        img.save(path, "PNG")
+        if IS_WINDOWS:
+            from PIL import ImageGrab
+            img = ImageGrab.grab()
+            img.save(path, "PNG")
+        else:
+            # grim es nativo de Wayland; PIL.ImageGrab no tiene soporte real
+            # ahi. Se instala junto con el resto de dependencias del sistema.
+            out = subprocess.run(["grim", path], capture_output=True, text=True)
+            if out.returncode != 0:
+                raise OSError(out.stderr.strip() or "grim fallo")
         plan.paths_affected = [path]
-        plan.result = f"Captura guardada como {base}.png en Imagenes\\Capturas JARVIS, senor."
+        carpeta = "Imagenes\\Capturas JARVIS" if IS_WINDOWS else "Imagenes/Capturas JARVIS"
+        plan.result = f"Captura guardada como {base}.png en {carpeta}, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
         plan.status = ActionStatus.ERROR
@@ -164,7 +202,10 @@ def play_music(song: str = "") -> ActionPlan:
                                "Puedo reproducir desde YouTube: diga 'reproduce <cancion> en youtube'.")
             return plan
         elegida = random.choice(matches) if not song else matches[0]
-        os.startfile(elegida)
+        if IS_WINDOWS:
+            os.startfile(elegida)
+        else:
+            subprocess.Popen(["xdg-open", elegida], shell=False)
         plan.paths_affected = [elegida]
         plan.result = f"Reproduciendo {os.path.basename(elegida)}, senor."
         plan.status = ActionStatus.EXECUTED

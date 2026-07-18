@@ -3,11 +3,14 @@ JARVIS Local - Lectura en voz alta
 
 "leeme el portapapeles" o "leeme el archivo notas.txt": devuelve el texto
 como resultado, y el canal normal de JARVIS (consola + TTS si esta activo)
-lo lee. El portapapeles se lee con la API nativa de Windows (ctypes).
+lo lee. El portapapeles se lee con la API nativa de Windows (ctypes) o, en
+Linux, con `xclip`.
 """
 import ctypes
 import os
+import subprocess
 
+from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.safety.permissions import is_within_allowed
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
@@ -32,8 +35,22 @@ def _win32_clipboard():
     return user32, kernel32
 
 
+def _get_clipboard_text_linux() -> str | None:
+    """Texto del portapapeles via xclip. None si no se pudo leer."""
+    try:
+        out = subprocess.run(["xclip", "-selection", "clipboard", "-o"],
+                             capture_output=True, text=True)
+        # xclip devuelve codigo != 0 cuando el portapapeles esta vacio de
+        # texto (p.ej. tiene una imagen): no es un fallo real, es "".
+        return out.stdout if out.returncode == 0 else ""
+    except OSError:
+        return None
+
+
 def _get_clipboard_text() -> str | None:
-    """Texto del portapapeles via Win32. None si no se pudo abrir."""
+    """Texto del portapapeles. None si no se pudo abrir."""
+    if not IS_WINDOWS:
+        return _get_clipboard_text_linux()
     user32, kernel32 = _win32_clipboard()
     if not user32.OpenClipboard(0):
         return None
@@ -86,7 +103,7 @@ def read_clipboard() -> ActionPlan:
 
 def _buscar_en_documentos(nombre: str) -> str | None:
     """Si dieron solo un nombre, buscarlo en Documentos (primer match)."""
-    base = os.path.expandvars(r"%USERPROFILE%\Documents")
+    base = user_dir("documents")
     objetivo = nombre.lower()
     for root, _dirs, files in os.walk(base):
         for f in files:

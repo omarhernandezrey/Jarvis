@@ -9,6 +9,7 @@ import os
 import subprocess
 import unicodedata
 
+from jarvis_local.config import IS_WINDOWS
 from jarvis_local.safety.permissions import get_app_path, list_allowed_apps
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
 
@@ -24,32 +25,34 @@ WSL_START_DIR = "/home/omarhernandez/personalProjects"
 _OPENED: dict[str, dict] = {}
 
 # Nombre hablado -> ejecutable(s) del proceso. Cubre las apps mas comunes cuyo
-# proceso no se llama como la app (word -> WINWORD.EXE).
+# proceso no se llama como la app (word -> WINWORD.EXE). Los nombres de
+# Windows y Linux conviven en la misma lista sin problema: cada uno solo
+# matchea procesos reales de su propio SO.
 _CLOSE_PROC_MAP: dict[str, list[str]] = {
-    "chrome": ["chrome.exe"],
-    "vscode": ["Code.exe"],
-    "powershell": ["powershell.exe", "pwsh.exe"],
-    "terminal": ["WindowsTerminal.exe"],
-    "wsl": ["wsl.exe", "WindowsTerminal.exe"],
-    "notepad": ["notepad.exe", "Notepad.exe"],
-    "calculadora": ["CalculatorApp.exe", "Calculator.exe", "calc.exe"],
-    "cmd": ["cmd.exe"],
-    "taskmgr": ["Taskmgr.exe"],
-    "edge": ["msedge.exe"],
-    "firefox": ["firefox.exe"],
-    "configuracion": ["SystemSettings.exe"],
+    "chrome": ["chrome.exe", "chrome"],
+    "vscode": ["Code.exe", "code"],
+    "powershell": ["powershell.exe", "pwsh.exe", "ptyxis"],
+    "terminal": ["WindowsTerminal.exe", "ptyxis", "gnome-terminal-server"],
+    "wsl": ["wsl.exe", "WindowsTerminal.exe", "ptyxis"],
+    "notepad": ["notepad.exe", "Notepad.exe", "gnome-text-editor", "gedit"],
+    "calculadora": ["CalculatorApp.exe", "Calculator.exe", "calc.exe", "gnome-calculator"],
+    "cmd": ["cmd.exe", "ptyxis"],
+    "taskmgr": ["Taskmgr.exe", "gnome-system-monitor"],
+    "edge": ["msedge.exe", "microsoft-edge"],
+    "firefox": ["firefox.exe", "firefox"],
+    "configuracion": ["SystemSettings.exe", "gnome-control-center"],
     "word": ["WINWORD.EXE"],
     "excel": ["EXCEL.EXE"],
     "powerpoint": ["POWERPNT.EXE"],
     "outlook": ["OUTLOOK.EXE"],
     "whatsapp": ["WhatsApp.exe"],
-    "spotify": ["Spotify.exe"],
-    "telegram": ["Telegram.exe"],
-    "notion": ["Notion.exe"],
-    "discord": ["Discord.exe"],
-    "slack": ["slack.exe"],
-    "teams": ["ms-teams.exe", "Teams.exe"],
-    "vlc": ["vlc.exe"],
+    "spotify": ["Spotify.exe", "spotify"],
+    "telegram": ["Telegram.exe", "telegram-desktop"],
+    "notion": ["Notion.exe", "notion-app"],
+    "discord": ["Discord.exe", "discord"],
+    "slack": ["slack.exe", "slack"],
+    "teams": ["ms-teams.exe", "Teams.exe", "teams-for-linux"],
+    "vlc": ["vlc.exe", "vlc"],
     "paint": ["mspaint.exe"],
 }
 
@@ -120,10 +123,10 @@ def open_app(name: str) -> ActionPlan:
         reason=f"Abrir {name}",
     )
     try:
-        if name_lower == "configuracion":
+        if IS_WINDOWS and name_lower == "configuracion":
             subprocess.Popen(["start", "ms-settings:"], shell=True)
             _register_opened(name_lower, name, procnames=["SystemSettings.exe"])
-        elif name_lower == "wsl":
+        elif IS_WINDOWS and name_lower == "wsl":
             proc = _launch_wsl(path)
             _register_opened(name_lower, name, pid=proc.pid,
                              procnames=[os.path.basename(path)])
@@ -205,7 +208,7 @@ def execute_open_app(name: str) -> ActionPlan:
         status=ActionStatus.CONFIRMED,
     )
     try:
-        if name_lower == "wsl":
+        if IS_WINDOWS and name_lower == "wsl":
             proc = _launch_wsl(path)
         else:
             proc = subprocess.Popen([path], shell=False)

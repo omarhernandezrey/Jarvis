@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.safety.permissions import is_within_allowed
 from jarvis_local.safety.policy import ActionStatus
 from jarvis_local.tools.files import (
@@ -22,7 +23,7 @@ from jarvis_local.tools.files import (
     search_files,
 )
 
-TEST_DIR = Path(os.path.expandvars(r"%USERPROFILE%\Documents"))
+TEST_DIR = Path(user_dir("documents"))
 TEST_NAME = "_jarvis_test_fase2_"
 
 
@@ -108,12 +109,14 @@ def test_plan_delete_blocked():
 
 
 def test_list_blocked_outside():
-    plan = list_files(r"C:\Windows")
+    fuera = r"C:\Windows" if IS_WINDOWS else "/etc"
+    plan = list_files(fuera)
     assert plan.status == ActionStatus.BLOCKED
 
 
 def test_create_blocked_outside():
-    plan = create_file(r"C:\Windows\test.txt")
+    fuera = r"C:\Windows\test.txt" if IS_WINDOWS else "/etc/_jarvis_test.txt"
+    plan = create_file(fuera)
     assert plan.status == ActionStatus.BLOCKED
 
 

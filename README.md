@@ -1,12 +1,13 @@
 # 🤖 JARVIS Local
 
-**Asistente de IA por voz, 100% local y en español, para Windows 10/11.**
+**Asistente de IA por voz, 100% local y en español, para Windows y Linux.**
 Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones reales en tu PC — sin enviar tus datos a la nube.
 
 [![Tests](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml/badge.svg)](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-333%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-455%20passing-brightgreen)
 ![Offline](https://img.shields.io/badge/LLM-100%25%20local-orange)
+![OS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux-informational)
 
 ---
 
@@ -27,6 +28,7 @@ Y **recuerda por significado**: le dices *"soy alérgico a los mariscos"*, y sem
 | 🛡️ **Seguro** | Whitelists, niveles de riesgo y plan→confirmación. El modelo **nunca** borra ni envía nada por su cuenta. |
 | ⚡ **Rápido donde importa** | Cascada de 4 capas: lo trivial responde en 0 s; solo lo complejo llega al LLM. |
 | 💪 **Modesto** | Diseñado para un i5-6200U sin GPU. Si corre ahí, corre en cualquier lado. |
+| 🐧 **Multiplataforma** | Mismo código en Windows 10/11 y Linux (probado en Ubuntu/GNOME): terminal, apps, volumen, energía y portapapeles usan la API nativa de cada SO. |
 
 ---
 
@@ -80,17 +82,19 @@ Cada mensaje baja por esta cascada y se detiene en la primera capa que lo resuel
 - **Modo manos libres** (`/voz continuo`): di **"Jarvis"** y luego tu orden.
 - **Habla mientras piensa**: pronuncia la primera frase mientras el modelo sigue escribiendo. La espera hasta la primera palabra bajó de **93 s a 38 s**.
 - Dictado puntual (`/voz`), calibración de micrófono y diagnóstico de audio.
-- TTS: voz neural masculina latina (edge-tts) con respaldo offline (SAPI5).
+- TTS: voz neural masculina latina (edge-tts) con respaldo offline (SAPI5 en Windows, espeak-ng en Linux).
 </details>
 
 <details open>
 <summary><b>📱 Aplicaciones y sistema</b></summary>
 
-- Abre **cualquiera de las ~160 apps instaladas** por nombre, con búsqueda difusa: *"abre whatsapp"*, *"lanza android studio"*, *"abre notion"*.
-- **WSL**: *"abre la terminal de wsl"* → Ubuntu directamente en `~/personalProjects`.
+- Abre **cualquiera de las apps instaladas** por nombre, con búsqueda difusa: *"abre whatsapp"*, *"lanza android studio"*, *"abre notion"* — en Windows via `Get-StartApps`, en Linux escaneando `.desktop` (incluye Snap y Flatpak).
+- **WSL** (solo Windows): *"abre la terminal de wsl"* → Ubuntu directamente en `~/personalProjects`.
 - Estado del sistema: CPU, RAM, disco, batería.
-- Comandos de PowerShell (con patrones destructivos bloqueados).
+- Comandos de terminal: PowerShell en Windows, bash en Linux — con patrones destructivos bloqueados en ambos.
 - Capturas de pantalla con nombre, Alt+Tab por voz, música local.
+
+> **Nota honesta sobre Linux/Wayland**: minimizar todas las ventanas, "encajar" la ventana activa y Alt+Tab por comando dependen de la API de ventanas de Windows, que Wayland no expone por diseño sin una extensión de GNOME instalada. En Linux, JARVIS lo dice claramente en vez de fingir que lo hizo — todo lo demás (apps, volumen, energía, portapapeles, capturas) funciona igual que en Windows.
 </details>
 
 <details open>
@@ -135,7 +139,7 @@ Un agente que puede ejecutar acciones en tu PC necesita límites reales, no buen
 |---|---|
 | **Plan → confirmación** | Borrar, enviar correos u ocultar archivos **siempre** requiere `/confirmar`. El modelo *nunca* ejecuta acciones irreversibles por su cuenta. |
 | **Whitelist de carpetas** | Solo opera en tus carpetas de usuario, con validación contra escapes de ruta. |
-| **Comandos bloqueados** | `Invoke-Expression`, `Remove-Item -Force`, scripts `.ps1/.bat` — rechazados siempre. |
+| **Comandos bloqueados** | Windows: `Invoke-Expression`, `Remove-Item -Force`, scripts `.ps1/.bat`. Linux: `sudo`, `dd`, `mkfs`, bombas fork, pipe a un shell (`curl \| sh`). Rechazados siempre, sin importar el orden de los argumentos. |
 | **Redacción de secretos** | API keys, tokens y contraseñas se censuran *antes* de llegar al modelo o a los logs. |
 | **Memorias como contexto** | Lo recordado entra marcado como datos, nunca como instrucciones (defensa contra inyección de prompt). |
 | **Credenciales fuera de git** | `secrets.yaml`, `credentials.json` y `token.json` están en `.gitignore`, y el **CI falla** si alguien intenta versionarlos. |
@@ -145,7 +149,9 @@ Un agente que puede ejecutar acciones en tu PC necesita límites reales, no buen
 
 ## 📦 Instalación
 
-**Requisitos**: Windows 10/11 · Python 3.11+ · [Ollama](https://ollama.com/download/windows) · micrófono (opcional)
+**Requisitos**: Windows 10/11 o Linux (probado en Ubuntu/GNOME) · Python 3.11+ · [Ollama](https://ollama.com/download) · micrófono (opcional)
+
+### Windows
 
 ```powershell
 # 1. Clonar (la carpeta DEBE llamarse jarvis_local: es el nombre del paquete)
@@ -162,6 +168,31 @@ ollama pull bge-m3            # memoria semántica (1.2 GB, opcional)
 # 4. Arrancar (desde la carpeta padre)
 $env:PYTHONIOENCODING = "utf-8"
 python -m jarvis_local.cli
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# 1. Paquetes del sistema: portapapeles, captura de pantalla, multimedia y microfono
+sudo apt install -y xclip grim playerctl libportaudio2 python3-venv
+
+# 2. Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:3b        # el cerebro (1.9 GB)
+ollama pull bge-m3            # memoria semantica (1.2 GB, opcional)
+
+# 3. Clonar (la carpeta DEBE llamarse jarvis_local: es el nombre del paquete)
+mkdir -p ~/workspace && cd ~/workspace
+git clone https://github.com/omarhernandezrey/Jarvis.git jarvis_local
+
+# 4. Entorno virtual y dependencias
+cd jarvis_local
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# 5. Arrancar (desde la carpeta padre, jarvis_local es un paquete Python)
+cd ~/workspace
+jarvis_local/.venv/bin/python -m jarvis_local.cli
 ```
 
 > La primera carga del modelo tarda 2–5 min en CPU modesta. JARVIS lo precalienta en segundo plano, así que puedes usar los comandos rápidos de inmediato.
@@ -214,15 +245,17 @@ jarvis_local/
 ├── storage/             Historial, memorias y 🆕 índice semántico
 ├── memory_context/      Memorias activas y 🆕 recuerdo automático
 ├── ui/                  Interfaz web y de escritorio
-└── test/                333 tests
+└── test/                455 tests
 ```
 
 ## 🧪 Tests y calidad
 
-```powershell
-python -m pytest jarvis_local/test -q     # 333 tests
+```bash
+python -m pytest jarvis_local/test -q     # 455 tests (Windows y Linux)
 ruff check jarvis_local                   # lint
 ```
+
+Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `loginctl`/Wayland en Linux) se saltan solos en el SO que no les corresponde — no hace falta nada especial para correr la suite en cualquiera de los dos.
 
 **CI en GitHub Actions**: tests en Python 3.11/3.12/3.13, lint (ruff), auditoría de seguridad (bandit + pip-audit) y verificación de que ninguna credencial esté versionada.
 
@@ -233,8 +266,9 @@ ruff check jarvis_local                   # lint
 | **LLM** | Ollama + qwen2.5:3b (1.9 GB, CPU) con tool calling nativo |
 | **Embeddings** | bge-m3 (multilingüe — elegido midiendo: 4x mejor separación que nomic en español) |
 | **STT** | faster-whisper (int8) |
-| **TTS** | edge-tts neural · respaldo SAPI5 offline |
+| **TTS** | edge-tts neural · respaldo offline (SAPI5 en Windows, espeak-ng en Linux) |
 | **Automatización** | Selenium · psutil · Pillow |
+| **Linux nativo** | PipeWire (`wpctl`) para volumen, `playerctl` para multimedia, `xclip` para portapapeles, `.desktop`/Snap/Flatpak para el índice de apps |
 
 ## 🗺️ Evolución
 
@@ -243,6 +277,7 @@ ruff check jarvis_local                   # lint
 - ✅ **Fase 4**: Web, clima, ubicaciones, Wikipedia, correo, WolframAlpha, Calendar
 - ✅ **Fase 5**: Selenium + búsqueda de empleo multi-portal
 - ✅ **Fase 6**: **Agente con tool calling**, memoria semántica, voz por streaming, CI
+- ✅ **Fase 7**: **Soporte Linux** (Ubuntu/GNOME): terminal, energía, volumen, portapapeles y apps con su API nativa; degradado explícito de la gestión de ventanas en Wayland
 - ⏳ **Siguiente**: visión (que JARVIS *vea* tu pantalla), proactividad, instalador
 
 ---

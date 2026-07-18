@@ -6,9 +6,11 @@ import os
 import subprocess
 from datetime import datetime
 
+from jarvis_local.config import user_dir
+from jarvis_local.safety.permissions import get_app_path
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
-NOTES_DIR = os.path.expandvars(r"%USERPROFILE%\Documents\JARVIS Notas")
+NOTES_DIR = os.path.join(user_dir("documents"), "JARVIS Notas")
 
 
 def take_note(text: str, open_notepad: bool = True) -> ActionPlan:
@@ -25,7 +27,9 @@ def take_note(text: str, open_notepad: bool = True) -> ActionPlan:
             f.write(linea)
         plan.paths_affected = [path]
         if open_notepad:
-            subprocess.Popen([r"C:\Windows\System32\notepad.exe", path], shell=False)
+            editor = get_app_path("notepad")
+            if editor:
+                subprocess.Popen([editor, path], shell=False)
         plan.result = (f"Nota guardada en {os.path.basename(path)}, senor."
                        + (" La abro en el Bloc de notas." if open_notepad else ""))
         plan.status = ActionStatus.EXECUTED

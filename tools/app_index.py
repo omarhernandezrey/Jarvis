@@ -1,15 +1,19 @@
 """
 JARVIS Local - Indice dinamico de aplicaciones instaladas (Fase 3)
-Escanea las apps del menu inicio (Get-StartApps) y permite abrir
-cualquiera por su nombre con busqueda difusa. El indice se cachea
-en disco para que la busqueda sea instantanea.
+Escanea las apps instaladas (Get-StartApps en Windows, archivos .desktop en
+Linux) y permite abrir cualquiera por su nombre con busqueda difusa. El
+indice se cachea en disco para que la busqueda sea instantanea.
 """
+import configparser
 import difflib
+import glob
 import json
 import os
 import subprocess
 import time
 import unicodedata
+
+from jarvis_local.config import IS_WINDOWS
 
 INDEX_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "apps_index.json")
 INDEX_MAX_AGE_SECONDS = 7 * 24 * 3600  # re-escanear cada 7 dias
@@ -21,6 +25,21 @@ _EXCLUDE_NAME_MARKERS = [
     "screenshot history", "reference documentation",
 ]
 _EXCLUDE_APPID_SUFFIXES = (".url", ".chm", ".txt", ".html", ".md")
+
+# Directorios estandar donde Linux/GNOME registra los .desktop de las apps
+# instaladas (orden: sistema, sistema local, del usuario).
+_LINUX_DESKTOP_DIRS = [
+    "/usr/share/applications",
+    "/usr/local/share/applications",
+    os.path.expanduser("~/.local/share/applications"),
+    # snapd registra aqui el .desktop de cada app instalada por snap (Chrome,
+    # WhatsApp, Obsidian, etc. suelen venir asi en Ubuntu) -- sin este
+    # directorio el indice se pierde cualquier app instalada por snap.
+    "/var/lib/snapd/desktop/applications",
+    # flatpak, por si el equipo tambien las usa.
+    "/var/lib/flatpak/exports/share/applications",
+    os.path.expanduser("~/.local/share/flatpak/exports/share/applications"),
+]
 
 _cache: list | None = None
 
@@ -43,7 +62,7 @@ def _is_launchable(name: str, appid: str) -> bool:
     return True
 
 
-def scan_installed_apps() -> list:
+def _scan_installed_apps_windows() -> list:
     """Ejecuta Get-StartApps y devuelve [{name, appid, norm}, ...]."""
     cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
            "Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress"]
@@ -65,6 +84,44 @@ def scan_installed_apps() -> list:
         seen.add(key)
         apps.append({"name": name, "appid": appid, "norm": key})
     return apps
+
+
+def _scan_installed_apps_linux() -> list:
+    """Lee los .desktop de las apps instaladas. El "appid" es el nombre de
+    archivo .desktop (lo que espera `gtk-launch`)."""
+    apps = []
+    seen = set()
+    for base_dir in _LINUX_DESKTOP_DIRS:
+        for path in glob.glob(os.path.join(base_dir, "*.desktop")):
+            appid = os.path.basename(path)
+            parser = configparser.ConfigParser(interpolation=None, strict=False)
+            try:
+                parser.read(path, encoding="utf-8")
+            except (OSError, UnicodeDecodeError, configparser.Error):
+                continue
+            if "Desktop Entry" not in parser:
+                continue
+            entry = parser["Desktop Entry"]
+            if entry.get("Type", "Application") != "Application":
+                continue
+            if entry.getboolean("NoDisplay", fallback=False):
+                continue
+            if entry.getboolean("Hidden", fallback=False):
+                continue
+            name = (entry.get("Name") or "").strip()
+            if not name or not _is_launchable(name, appid):
+                continue
+            key = _normalize(name)
+            if key in seen:
+                continue
+            seen.add(key)
+            apps.append({"name": name, "appid": appid, "norm": key})
+    return apps
+
+
+def scan_installed_apps() -> list:
+    """Devuelve [{name, appid, norm}, ...] de las apps instaladas."""
+    return _scan_installed_apps_windows() if IS_WINDOWS else _scan_installed_apps_linux()
 
 
 def refresh_index(force: bool = False) -> list:
@@ -131,6 +188,9 @@ def find_app(query: str) -> list:
 
 
 def launch_app(appid: str) -> None:
-    """Lanza una app por su AppID (AUMID) via shell:AppsFolder."""
-    subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{appid}"],
-                     shell=False)
+    """Lanza una app por su AppID (AUMID en Windows, .desktop en Linux)."""
+    if IS_WINDOWS:
+        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{appid}"],
+                         shell=False)
+    else:
+        subprocess.Popen(["gtk-launch", appid], shell=False)

@@ -2,12 +2,48 @@
 JARVIS Local - Configuracion
 Carga configuraciones desde config.yaml.
 """
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.yaml"
+
+IS_WINDOWS = sys.platform == "win32"
+
+# Nombre de la carpeta en Windows (%USERPROFILE%\<nombre>), clave que le pasa
+# xdg-user-dir en Linux, y nombre de respaldo si xdg-user-dir no responde
+# (ej. maquina sin entorno grafico). En Linux estas carpetas suelen estar en
+# el idioma del sistema (~/Documentos, no ~/Documents), por eso no se puede
+# hardcodear un solo nombre para los dos SO.
+_USER_DIRS = {
+    "documents": ("Documents", "DOCUMENTS", "Documentos"),
+    "downloads": ("Downloads", "DOWNLOAD", "Descargas"),
+    "desktop": ("Desktop", "DESKTOP", "Escritorio"),
+    "music": ("Music", "MUSIC", "Musica"),
+    "pictures": ("Pictures", "PICTURES", "Imagenes"),
+    "videos": ("Videos", "VIDEOS", "Videos"),
+}
+
+
+def user_dir(kind: str) -> str:
+    """Ruta a Documentos/Descargas/Escritorio/Musica/Imagenes/Videos del
+    usuario, resuelta para el SO y el idioma real de esta maquina."""
+    win_name, xdg_key, fallback = _USER_DIRS[kind]
+    if IS_WINDOWS:
+        return os.path.expandvars(f"%USERPROFILE%\\{win_name}")
+    try:
+        out = subprocess.run(["xdg-user-dir", xdg_key], capture_output=True,
+                             text=True, timeout=5)
+        resolved = out.stdout.strip()
+        if resolved:
+            return resolved
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return os.path.expanduser(f"~/{fallback}")
 
 DEFAULT_CONFIG = {
     "ollama": {

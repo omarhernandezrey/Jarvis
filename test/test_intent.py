@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from unittest.mock import patch
 
+from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus
 
@@ -125,7 +126,8 @@ def test_ambiguous_open():
 
 
 def test_blocked_path():
-    r = parse_intent("lista los archivos de C:\\Windows")
+    fuera = "C:\\Windows" if IS_WINDOWS else "/etc"
+    r = parse_intent(f"lista los archivos de {fuera}")
     assert r.kind == "ambiguous"
 
 
@@ -163,7 +165,7 @@ def test_create_directory_does_not_execute():
     from jarvis_local.jarvis import _mc_test, _parse_and_execute
     j, mc = _mc_test()
     j.history.clear()
-    desktop = _os.path.expandvars(r"%USERPROFILE%\Desktop")
+    desktop = user_dir("desktop")
     test_path = _os.path.join(desktop, "_test_jarvis_dir")
     try:
         # La ruta va fuera del f-string: un backslash dentro de una f-string
@@ -183,7 +185,7 @@ def test_delete_does_not_execute():
     from jarvis_local.jarvis import _mc_test, _parse_and_execute
     j, mc = _mc_test()
     j.history.clear()
-    test_file = _os.path.join(_os.path.expandvars(r"%USERPROFILE%\Documents"), "_test_delete_never.txt")
+    test_file = _os.path.join(user_dir("documents"), "_test_delete_never.txt")
     try:
         with open(test_file, "w") as f:
             f.write("test")
@@ -225,7 +227,7 @@ def test_cancel_never_executes():
 
     from jarvis_local.safety.policy import policy
     from jarvis_local.tools.files import create_file
-    test_path = os.path.join(os.path.expandvars(r"%USERPROFILE%\Desktop"), "_cancel_test.txt")
+    test_path = os.path.join(user_dir("desktop"), "_cancel_test.txt")
     # Crear archivo ejecuta directo, verificar al menos que existe
     plan = create_file(test_path, "test cancel")
     assert plan.status in (ActionStatus.EXECUTED, ActionStatus.ERROR)
@@ -239,7 +241,7 @@ def test_tool_read_still_works():
     import os
 
     from jarvis_local.jarvis import _execute_tool_read
-    path = os.path.expandvars(r"%USERPROFILE%\Documents")
+    path = user_dir("documents")
     r = _execute_tool_read("list_files", {"path": path})
     assert r is not None
     assert isinstance(r, str)

@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.safety.permissions import (
     get_app_path,
     is_command_blocked,
@@ -16,23 +17,30 @@ from jarvis_local.tools.apps import ALLOWED_APP_NAMES
 
 
 def test_documents_allowed():
-    path = os.path.expandvars(r"%USERPROFILE%\Documents")
+    path = user_dir("documents")
     allowed, resolved = is_within_allowed(path)
     assert allowed, f"Documents debe estar permitido: {path}"
 
 
 def test_windows_blocked():
-    allowed, resolved = is_within_allowed(r"C:\Windows")
-    assert not allowed, "C:\\Windows debe estar bloqueado"
+    # "C:\Windows" solo es una ruta absoluta fuera de la whitelist EN Windows
+    # (en Linux no es una ruta absoluta en absoluto: se probaria otra cosa).
+    fuera = r"C:\Windows" if IS_WINDOWS else "/etc"
+    allowed, resolved = is_within_allowed(fuera)
+    assert not allowed, f"{fuera} debe estar bloqueado"
 
 
 def test_system32_blocked():
-    allowed, resolved = is_within_allowed(r"C:\Windows\System32")
-    assert not allowed, "C:\\Windows\\System32 debe estar bloqueado"
+    fuera = r"C:\Windows\System32" if IS_WINDOWS else "/usr/bin"
+    allowed, resolved = is_within_allowed(fuera)
+    assert not allowed, f"{fuera} debe estar bloqueado"
 
 
 def test_parent_traversal_blocked():
-    path = os.path.expandvars(r"%USERPROFILE%\Documents\..\..\Windows")
+    if IS_WINDOWS:
+        path = os.path.expandvars(r"%USERPROFILE%\Documents\..\..\Windows")
+    else:
+        path = os.path.join(user_dir("documents"), "..", "..", "etc")
     allowed, resolved = is_within_allowed(path)
     assert not allowed, f"Path traversal debe bloquearse: {path}"
 
