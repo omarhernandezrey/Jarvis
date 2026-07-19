@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -18,6 +18,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 PORT = 8080
 _jarvis_instance = None
 _chat_history: list[dict] = []
+_jarvis_lock = threading.Lock()
+# Con HTTPServer (una conexion a la vez) el LLM pensando bloqueaba TODO,
+# incluido el sondeo de /api/status cada 10s -- la UI se sentia colgada.
+# ThreadingHTTPServer arregla eso, pero j.chat()/_parse_and_execute() mutan
+# el historial/memoria compartidos de la MISMA instancia de Jarvis: sin este
+# lock, dos chats a la vez (dos pestanas, o un doble click) corromperian esa
+# conversacion en vez de solo demorarse. Solo se serializa lo que de verdad
+# comparte estado (chat/comando/voz); /api/status y /api/history no lo usan.
+_chat_lock = threading.Lock()
 
 # Token de sesion generado al arrancar el servidor. El servidor solo escucha
 # en 127.0.0.1, pero eso no basta: sin este token, cualquier pagina web
@@ -31,8 +40,10 @@ _AUTH_TOKEN = secrets.token_urlsafe(24)
 def _get_jarvis():
     global _jarvis_instance
     if _jarvis_instance is None:
-        from jarvis_local.jarvis import Jarvis
-        _jarvis_instance = Jarvis()
+        with _jarvis_lock:
+            if _jarvis_instance is None:  # otro hilo pudo crearlo mientras esperabamos el lock
+                from jarvis_local.jarvis import Jarvis
+                _jarvis_instance = Jarvis()
     return _jarvis_instance
 
 
@@ -699,9 +710,10 @@ class JarvisHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": f"No se pudo conectar con Ollama: {e}"}, 500)
                 return
             try:
-                response = j.chat(msg)
-                _chat_history.append({"role": "user", "content": msg})
-                _chat_history.append({"role": "assistant", "content": response})
+                with _chat_lock:
+                    response = j.chat(msg)
+                    _chat_history.append({"role": "user", "content": msg})
+                    _chat_history.append({"role": "assistant", "content": response})
                 self._send_json({"response": response})
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
@@ -709,7 +721,8 @@ class JarvisHandler(BaseHTTPRequestHandler):
         elif path == "/api/voice":
             try:
                 from jarvis_local.voice.stt import capture_and_transcribe
-                text = capture_and_transcribe(8, show_stats=False)
+                with _chat_lock:
+                    text = capture_and_transcribe(8, show_stats=False)
                 self._send_json({"text": text})
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
@@ -722,12 +735,11 @@ class JarvisHandler(BaseHTTPRequestHandler):
             try:
                 from jarvis_local.jarvis import _parse_and_execute
                 j = _get_jarvis()
-                result = _parse_and_execute(cmd, j)
-                if result:
-                    self._send_json({"response": result})
-                else:
-                    response = j.chat(cmd)
-                    self._send_json({"response": response})
+                with _chat_lock:
+                    result = _parse_and_execute(cmd, j)
+                    if not result:
+                        result = j.chat(cmd)
+                self._send_json({"response": result})
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
 
@@ -770,7 +782,7 @@ def main():
     except Exception:
         pass
 
-    server = HTTPServer(("127.0.0.1", PORT), JarvisHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), JarvisHandler)
     print(f"\n  Servidor: http://127.0.0.1:{PORT}")
     print("  Ctrl+C para detener\n")
 

@@ -181,7 +181,13 @@ def _parse_reminder(m: str) -> IntentResult | None:
 
     # --- CANCELAR ---
     if re.search(r'\b(?:cancela|borra|elimina|quita)\b', low):
-        m_num = re.search(r'\b(?:numero\s+)?(\d+)\b', low)
+        # "las 3"/"a las 3"/"de las 3" es una HORA, no un numero de
+        # recordatorio: antes cualquier digito suelto en la frase se leia
+        # como ID, asi que "cancela la alarma de las 3" cancelaba el
+        # recordatorio #3 (si existia) en vez del que suena a esa hora.
+        es_hora = re.search(r'\b(?:a\s+)?las\s+\d', low)
+        m_num = re.search(r'\bnumero\s+(\d+)\b', low) or \
+            (None if es_hora else re.search(r'\b(\d+)\b', low))
         if m_num:
             which = m_num.group(1)
         elif re.search(r'\btod(?:o|os|as)\b', low):
@@ -1018,8 +1024,12 @@ def parse_intent(message: str) -> IntentResult:
                             reason="Ruta fuera de whitelist")
 
     # --- EJECUTAR COMANDO ---
+    # \b al inicio es obligatorio: sin el, "corre"/"lanza" matcheaban como
+    # subcadena dentro de otras palabras ("recorre", "alcanza"), y frases
+    # inocentes como "recorre los documentos del proyecto" se enrutaban a
+    # ejecutar un comando de terminal basura.
     m_exec = re.search(
-        r'(?:ejecuta|ejecutar|corre|correr|lanza|lanzar|run)\s+(?:el\s+)?(?:comando|orden|script)?\s*(.*)',
+        r'\b(?:ejecuta|ejecutar|corre|correr|lanza|lanzar|run)\s+(?:el\s+)?(?:comando|orden|script)?\s*(.*)',
         m, re.IGNORECASE)
     if m_exec:
         cmd = m_exec.group(1).strip().strip("'\"")

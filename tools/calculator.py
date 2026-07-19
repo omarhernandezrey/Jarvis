@@ -16,11 +16,32 @@ _OPS = {
     ast.Pow: operator.pow, ast.USub: operator.neg, ast.UAdd: operator.pos,
 }
 
+# Sin limites, "factorial de 999999999" o "2 elevado a 999999999" cuelgan
+# el proceso de verdad calculando un entero de millones de digitos (no es
+# teorico: probado, tarda mas de 8s y sigue subiendo memoria). El AST ya
+# impide ejecutar codigo arbitrario; esto impide DoS con codigo permitido.
+_MAX_FACTORIAL = 10000    # 10000! ya tiene ~35660 digitos
+_MAX_EXPONENT = 1000
+
+
+class _NumeroDemasiadoGrande(ValueError):
+    """Distinta de un ValueError generico para no confundirla con
+    'expresion no permitida' (esa si debe quedar como error generico:
+    no queremos mostrarle al usuario el dump interno del AST)."""
+
+
+def _bounded_factorial(n):
+    if abs(n) > _MAX_FACTORIAL:
+        raise _NumeroDemasiadoGrande(
+            f"El factorial es demasiado grande para calcularlo (maximo {_MAX_FACTORIAL}).")
+    return math.factorial(n)
+
+
 _FUNCS = {
     "raiz": math.sqrt, "sqrt": math.sqrt, "abs": abs, "redondear": round,
     "round": round, "sin": math.sin, "cos": math.cos, "tan": math.tan,
     "log": math.log, "log10": math.log10, "exp": math.exp,
-    "factorial": math.factorial,
+    "factorial": _bounded_factorial,
 }
 
 _CONSTS = {"pi": math.pi, "e": math.e}
@@ -78,7 +99,11 @@ def _safe_eval(node):
     if isinstance(node, ast.Name) and node.id in _CONSTS:
         return _CONSTS[node.id]
     if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
-        return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
+        left, right = _safe_eval(node.left), _safe_eval(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > _MAX_EXPONENT and abs(left) > 1:
+            raise _NumeroDemasiadoGrande(
+                f"Ese exponente es demasiado grande para calcularlo (maximo {_MAX_EXPONENT}).")
+        return _OPS[type(node.op)](left, right)
     if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
         return _OPS[type(node.op)](_safe_eval(node.operand))
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
@@ -109,6 +134,9 @@ def calculate(expression: str) -> ActionPlan:
     except ZeroDivisionError:
         plan.status = ActionStatus.ERROR
         plan.result = "No es posible dividir entre cero, senor."
+    except _NumeroDemasiadoGrande as e:
+        plan.status = ActionStatus.ERROR
+        plan.result = f"{e} senor."
     except Exception:
         plan.status = ActionStatus.ERROR
         plan.result = (f"No pude interpretar la expresion '{expression}'. "

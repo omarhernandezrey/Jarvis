@@ -11,7 +11,7 @@ from email.mime.text import MIMEText
 from jarvis_local.config import get_secrets
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
 
-_EMAIL_RE = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.-]+$")
+_EMAIL_RE = re.compile(r"\A[\w.+-]+@[\w-]+\.[\w.-]+\Z")
 
 SETUP_MSG = ("El correo no esta configurado, senor. Copie secrets.example.yaml "
              "como secrets.yaml y complete la seccion 'email' con su direccion "

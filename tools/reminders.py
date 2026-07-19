@@ -186,7 +186,13 @@ def cancel_reminder(which: str = "todos") -> ActionPlan:
             if which_str in ("todos", "todas", "all", ""):
                 borrar = [i["id"] for i in items]
             elif which_str.isdigit():
-                borrar = [int(which_str)]
+                # Solo cuenta si ese ID existe de verdad -- antes
+                # `borrar = [int(which_str)]` sin verificar dejaba pasar el
+                # chequeo de "no encontre" (borrar no vacio) aunque el ID no
+                # existiera, y el resultado quedaba en "Cancelados 0
+                # recordatorios" en vez de avisar que no lo encontro.
+                rid_pedido = int(which_str)
+                borrar = [i["id"] for i in items if i["id"] == rid_pedido]
             else:
                 # por texto: "cancela el del arroz"
                 borrar = [i["id"] for i in items
