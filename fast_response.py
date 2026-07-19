@@ -27,10 +27,23 @@ def _normalize(text: str) -> str:
     return t
 
 
+# "Jarvis" es un nombre inventado: el STT (faster-whisper) lo transcribe
+# distinto casi cada vez -- "Janbis", "Yarbis", "Harves"... Mismas variantes
+# que usa voice/continuous.py para la palabra de activacion del modo manos
+# libres; sin esto, "hola jarvis" mal transcrito no se reconocia como saludo
+# y bajaba por TODA la cascada hasta el LLM (~19-60s) en vez de responder al
+# instante.
+_VARIANTES_JARVIS = {
+    "jarvis", "yarbis", "yarvis", "garbis", "gerbis", "janbis",
+    "jarbis", "harvis", "carvis", "yarbi", "garbi", "arbis",
+    "jarbees", "jarvises", "garvis", "jervis", "jarbez",
+    "jarbes", "jarves", "charvis", "charbis",
+}
+
 # Palabras que pueden acompanar a una formula de cortesia sin cambiar su
 # sentido: "hola jarvis, buenas tardes senor" sigue siendo solo un saludo.
-_RELLENO = {
-    "jarvis", "senor", "senior", "sr", "omar", "por", "favor", "muy",
+_RELLENO = _VARIANTES_JARVIS | {
+    "senor", "senior", "sr", "omar", "por", "favor", "muy",
     "buenos", "buenas", "dias", "tardes", "noches", "y", "a", "ti", "tu",
     "usted", "todo", "bien", "pues", "che", "amigo", "que", "tal", "hay",
     "como", "estas", "esta", "va", "vas",

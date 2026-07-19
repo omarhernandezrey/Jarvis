@@ -10,12 +10,12 @@ import time
 import unicodedata
 from collections.abc import Callable
 
-_WAKE_VARIANTS = [
-    "jarvis", "yarbis", "yarvis", "garbis", "gerbis",
-    "jarbis", "harvis", "carvis", "yarbi", "garbi", "arbis",
-    "jarbees", "jarvises", "garvis", "jervis", "jarbez",
-    "jarbes", "jarves", "charvis", "charbis",
-]
+from jarvis_local.fast_response import _VARIANTES_JARVIS
+
+# Misma lista que usa fast_response.py para reconocer "jarvis" en saludos:
+# una sola fuente de verdad para las variantes que el STT transcribe mal,
+# en vez de dos listas que se van desincronizando con el tiempo.
+_WAKE_VARIANTS = sorted(_VARIANTES_JARVIS)
 _WAKE_PATTERN = "|".join(re.escape(v) for v in sorted(_WAKE_VARIANTS, key=len, reverse=True))
 _WAKE_REGEX = re.compile(
     rf'^(?:[a-z]{{1,5}}[,.]?\s+){{0,3}}\b({_WAKE_PATTERN})\b\s*[,.!?\u2026]*\s*(.*)',
