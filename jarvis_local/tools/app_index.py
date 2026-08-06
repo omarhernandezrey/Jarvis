@@ -13,9 +13,9 @@ import subprocess
 import time
 import unicodedata
 
-from jarvis_local.config import IS_WINDOWS
+from jarvis_local.config import BASE_DIR, IS_WINDOWS
 
-INDEX_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "apps_index.json")
+INDEX_PATH = str(BASE_DIR / "data" / "apps_index.json")
 INDEX_MAX_AGE_SECONDS = 7 * 24 * 3600  # re-escanear cada 7 dias
 
 # Entradas del menu inicio que no son aplicaciones abribles

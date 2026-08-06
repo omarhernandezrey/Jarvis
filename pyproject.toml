@@ -45,6 +45,7 @@ packages = [
     "jarvis_local.memory_context",
     "jarvis_local.ollama_client",
     "jarvis_local.ui",
+    "jarvis_local.eval",
 ]
 
 [tool.pytest.ini_options]
@@ -71,4 +72,4 @@ ignore = [
 "test/*" = ["E402", "F401", "E701", "E702", "B011", "F841", "SIM115"]
 # La UI de Tkinter usa el estilo compacto habitual (widget.pack() en la misma
 # linea que su creacion). Es legible aqui y reformatearlo no aporta nada.
-"ui/*" = ["E701", "E702"]
+"jarvis_local/ui/*" = ["E701", "E702"]

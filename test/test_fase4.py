@@ -6,7 +6,7 @@ Nada de red ni acciones reales (no se abre navegador ni se envian correos).
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus

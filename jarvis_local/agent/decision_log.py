@@ -14,7 +14,6 @@ Analisis rapido:
 import json
 from collections import Counter
 from datetime import datetime
-from pathlib import Path
 
 from jarvis_local.config import BASE_DIR
 

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.agent import retriever
 from jarvis_local.agent.loop import _clean_text, _limpiar_args, _validar, run_agent

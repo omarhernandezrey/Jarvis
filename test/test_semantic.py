@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.memory_context.recall import AutoRecall
 from jarvis_local.storage.memory import MemoryStore

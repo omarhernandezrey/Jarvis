@@ -9,7 +9,9 @@ from pathlib import Path
 
 import yaml
 
-BASE_DIR = Path(__file__).resolve().parent
+# Raiz del proyecto (la carpeta que contiene el paquete jarvis_local/).
+# Ahi viven config.yaml, secrets.yaml, data/ y logs/.
+BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_FILE = BASE_DIR / "config.yaml"
 
 IS_WINDOWS = sys.platform == "win32"

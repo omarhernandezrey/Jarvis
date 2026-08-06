@@ -14,10 +14,10 @@ import re
 import threading
 from datetime import datetime, timedelta
 
+from jarvis_local.config import BASE_DIR
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
-REMINDERS_PATH = os.path.join(os.path.dirname(__file__), "..", "data",
-                              "reminders.json")
+REMINDERS_PATH = str(BASE_DIR / "data" / "reminders.json")
 
 _LOCK = threading.Lock()
 _TIMERS: dict[int, threading.Timer] = {}

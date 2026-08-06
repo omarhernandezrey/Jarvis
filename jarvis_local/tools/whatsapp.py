@@ -14,10 +14,10 @@ import unicodedata
 import urllib.parse
 import webbrowser
 
+from jarvis_local.config import BASE_DIR
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
-CONTACTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data",
-                             "contacts.json")
+CONTACTS_PATH = str(BASE_DIR / "data" / "contacts.json")
 
 # Indicativo por defecto para numeros locales de 10 digitos (Colombia)
 DEFAULT_COUNTRY_CODE = "57"

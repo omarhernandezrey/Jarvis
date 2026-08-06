@@ -2,7 +2,7 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import jarvis_local.tools.briefing as brief
 from jarvis_local.intent.parser import parse_intent
