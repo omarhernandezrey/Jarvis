@@ -122,7 +122,7 @@
   - **Tests**: Los existentes deben pasar. Añadir test de `handle_command`.
   - **Verificar**: `python -m pytest test/test_cli* -q` + probar `python -m jarvis_local.cli` manualmente
 
-- [ ] **2.4 Compilar regex como constantes en `fast_response.py`**
+- [x] **2.4 Compilar regex como constantes en `fast_response.py`**
   - **Archivo**: `jarvis_local/fast_response.py:73-116`
   - **Problema**: 8+ regex se recompilan en cada mensaje.
   - **Acciones**:

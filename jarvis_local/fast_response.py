@@ -13,6 +13,16 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
 # Formas de dirigirse al usuario (como JARVIS real)
 _TRATO = ["senor", "senor Omar"]
 
+# Regex compiladas como constantes del módulo (rendimiento)
+_RE_SALUDO = re.compile(r'\b(hola|hey|hi|buenas|buenos dias|buenos tardes|buenas noches|saludos|que tal|que hay)\b')
+_RE_HORA = re.compile(r'\b(que hora es|hora actual|dime la hora|que horas son|la hora)\b')
+_RE_FECHA = re.compile(r'\b(que dia es|que fecha|fecha de hoy|dia de hoy|que dia estamos|cual es la fecha)\b')
+_RE_QUIEN = re.compile(r'\b(quien eres|que eres|presentate|como te llamas)\b')
+_RE_CAPACIDADES = re.compile(r'\b(que puedes|que sabes|capacidades|funciones|puedes hacer|para que sirves)\b')
+_RE_GRACIAS = re.compile(r'\b(gracias|muchas gracias|te lo agradezco|genial|perfecto|excelente|muy bien|chevere|bacano)\b')
+_RE_ADIOS = re.compile(r'\b(adios|hasta luego|hasta manana|nos vemos|chao|bye|hasta pronto|me voy)\b')
+_RE_ESTADO = re.compile(r'\b(como estas|todo bien|como vas|estas bien)\b')
+
 
 def _sr() -> str:
     """Alterna aleatoriamente entre 'senor' y 'senor Omar'."""
@@ -70,8 +80,7 @@ def fast_respond(message: str) -> str | None:
     m = _normalize(message)
 
     # --- SALUDOS ---
-    _saludo = r'\b(hola|hey|hi|buenas|buenos dias|buenos tardes|buenas noches|saludos|que tal|que hay)\b'
-    if re.search(_saludo, m) and _es_solo_cortesia(m, _saludo):
+    if _RE_SALUDO.search(m) and _es_solo_cortesia(m, _RE_SALUDO.pattern):
         hora = datetime.now().hour
         if hora < 12:
             return f"Buenos dias, {_sr()}. Sistemas en linea y listos. En que le puedo asistir?"
@@ -81,40 +90,37 @@ def fast_respond(message: str) -> str | None:
             return f"Buenas noches, {_sr()}. JARVIS en linea. En que le puedo ser de ayuda?"
 
     # --- HORA ---
-    if re.search(r'\b(que hora es|hora actual|dime la hora|que horas son|la hora)\b', m):
+    if _RE_HORA.search(m):
         ahora = datetime.now()
         return f"Son las {ahora.strftime('%H:%M')}, {_sr()}."
 
     # --- FECHA ---
-    if re.search(r'\b(que dia es|que fecha|fecha de hoy|dia de hoy|que dia estamos|cual es la fecha)\b', m):
+    if _RE_FECHA.search(m):
         ahora = datetime.now()
         return f"Hoy es {_DIAS[ahora.weekday()]}, {ahora.day} de {_MESES[ahora.month - 1]} de {ahora.year}, {_sr()}."
 
     # --- QUIEN ERES ---
-    if re.search(r'\b(quien eres|que eres|presentate|como te llamas)\b', m):
+    if _RE_QUIEN.search(m):
         return (f"Soy JARVIS, su asistente de inteligencia artificial personal, {_sr()}. "
                 "Opero localmente en su computador. Puedo gestionar archivos, abrir aplicaciones, "
                 "ejecutar comandos y responder preguntas usando el modelo de lenguaje local.")
 
     # --- QUE PUEDES HACER ---
-    if re.search(r'\b(que puedes|que sabes|capacidades|funciones|puedes hacer|para que sirves)\b', m):
+    if _RE_CAPACIDADES.search(m):
         return (f"A sus ordenes, {_sr()}. Puedo gestionar archivos, abrir aplicaciones como Chrome y VS Code, "
                 "ejecutar comandos de terminal, responder preguntas y razonar usando el modelo local qwen2.5. "
                 "Todo opera de forma privada en su propio equipo.")
 
     # --- GRACIAS ---
-    _gracias = r'\b(gracias|muchas gracias|te lo agradezco|genial|perfecto|excelente|muy bien|chevere|bacano)\b'
-    if re.search(_gracias, m) and _es_solo_cortesia(m, _gracias):
+    if _RE_GRACIAS.search(m) and _es_solo_cortesia(m, _RE_GRACIAS.pattern):
         return f"A sus ordenes, {_sr()}. Para eso estoy."
 
     # --- DESPEDIDA ---
-    _adios = r'\b(adios|hasta luego|hasta manana|nos vemos|chao|bye|hasta pronto|me voy)\b'
-    if re.search(_adios, m) and _es_solo_cortesia(m, _adios):
+    if _RE_ADIOS.search(m) and _es_solo_cortesia(m, _RE_ADIOS.pattern):
         return f"Hasta luego, {_sr()}. Estare disponible cuando me necesite."
 
     # --- ESTADO (de JARVIS, no del computador: "como estas" != "como esta la ram") ---
-    _estado = r'\b(como estas|todo bien|como vas|estas bien)\b'
-    if re.search(_estado, m) and _es_solo_cortesia(m, _estado):
+    if _RE_ESTADO.search(m) and _es_solo_cortesia(m, _RE_ESTADO.pattern):
         return f"Todos los sistemas operando con normalidad, {_sr()}. Listo para asistirle."
 
     return None
