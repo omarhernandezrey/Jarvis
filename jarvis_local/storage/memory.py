@@ -15,6 +15,15 @@ from filelock import FileLock
 
 MAX_MEMORIES = 100
 MAX_MEMORY_LENGTH = 500
+MAX_CORRUPT_FILES = 3
+
+
+def _cleanup_corrupt_files(data_dir: Path, pattern: str, keep: int = MAX_CORRUPT_FILES):
+    """Elimina archivos corruptos antiguos, manteniendo solo los más recientes."""
+    corrupt_files = sorted(data_dir.glob(pattern), key=lambda f: f.stat().st_mtime, reverse=True)
+    for f in corrupt_files[keep:]:
+        with contextlib.suppress(Exception):
+            f.unlink()
 
 
 class MemoryStore:
@@ -41,6 +50,7 @@ class MemoryStore:
                 shutil.move(str(self._path), str(corrupted))
             print(f"[AVISO] Memoria corrupta. Movida a {corrupted.name}. Iniciando vacia.")
             self._items = []
+            _cleanup_corrupt_files(self.data_dir, "memory.corrupt-*.json")
 
     def _save(self):
         data = {

@@ -316,7 +316,7 @@
   - **Tests**: Test con dos hilos haciendo `append()` simultáneamente
   - **Verificar**: `python -m pytest test/test_storage* -q`
 
-- [ ] **6.2 Limpiar archivos `.corrupt-*` automáticamente**
+- [x] **6.2 Limpiar archivos `.corrupt-*` automáticamente**
   - **Archivos**: `storage/history.py:35-36`, `storage/memory.py:34-35`
   - **Problema**: Archivos corrupt nunca se borran. Acumulación de basura.
   - **Acciones**:

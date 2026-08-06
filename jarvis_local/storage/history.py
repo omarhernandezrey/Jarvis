@@ -16,6 +16,15 @@ from jarvis_local.safety.secrets import redact_secrets
 
 MAX_MESSAGES = 50
 MAX_CONTENT_LENGTH = 2000
+MAX_CORRUPT_FILES = 3
+
+
+def _cleanup_corrupt_files(data_dir: Path, pattern: str, keep: int = MAX_CORRUPT_FILES):
+    """Elimina archivos corruptos antiguos, manteniendo solo los más recientes."""
+    corrupt_files = sorted(data_dir.glob(pattern), key=lambda f: f.stat().st_mtime, reverse=True)
+    for f in corrupt_files[keep:]:
+        with contextlib.suppress(Exception):
+            f.unlink()
 
 
 class HistoryStore:
@@ -42,6 +51,7 @@ class HistoryStore:
                 shutil.move(str(self._path), str(corrupted))
             print(f"[AVISO] Historial corrupto. Movido a {corrupted.name}. Iniciando vacio.")
             self._messages = []
+            _cleanup_corrupt_files(self.data_dir, "history.corrupt-*.json")
 
     def _save(self):
         data = {
