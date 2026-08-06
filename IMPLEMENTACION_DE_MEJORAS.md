@@ -432,6 +432,469 @@
 
 ---
 
+## FASE 9 — MIGRACIÓN A LOGGING (Reemplazar print)
+
+- [ ] **9.1 Configurar módulo `logging` centralizado**
+  - **Archivo**: Nuevo `jarvis_local/logging_config.py`
+  - **Problema**: 268 `print()` en producción. Sin niveles de log, sin formato consistente.
+  - **Acciones**:
+    - Crear `logging_config.py` con configuración centralizada
+    - Formato: `[%(asctime)s] [%(levelname)s] %(name)s: %(message)s`
+    - Handler para consola (INFO+) y archivo (DEBUG+)
+    - Nivel configurable desde `config.yaml`
+  - **Tests**: Verificar que logging funciona
+  - **Verificar**: `python -m pytest test -q`
+
+- [ ] **9.2 Migrar `print()` de `cli.py` a logging**
+  - **Archivo**: `jarvis_local/cli.py`
+  - **Problema**: ~100 `print()` que deberían usar logging o output directo al usuario.
+  - **Acciones**:
+    - Los mensajes al usuario (JARVIS dice) se mantienen como `print()`
+    - Los mensajes de debug/info/error migran a `logger.info/debug/error`
+    - Separar output de usuario de logging técnico
+  - **Tests**: `python -m pytest test/test_cli* -q`
+  - **Verificar**: `python -m jarvis_local.cli` funciona igual
+
+- [ ] **9.3 Migrar `print()` de herramientas a logging**
+  - **Archivos**: Todos en `jarvis_local/tools/`
+  - **Problema**: `print()` de debug en herramientas.
+  - **Acciones**:
+    - Reemplazar `print("[ERROR]...")` por `logger.error(...)`
+    - Reemplazar `print("[AVISO]...")` por `logger.warning(...)`
+    - Reemplazar `print("[INFO]...")` por `logger.info(...)`
+    - Mantener `print()` que son resultado para el usuario
+  - **Tests**: `python -m pytest test -q`
+  - **Verificar**: Logs se escriben correctamente
+
+- [ ] **9.4 Migrar `print()` de voice a logging**
+  - **Archivos**: `voice/stt.py`, `voice/continuous.py`, `voice/tts.py`
+  - **Problema**: `print()` de debug en módulos de voz.
+  - **Acciones**:
+    - Reemplazar `print("[Voz]...")` por `logger.info(...)`
+    - Reemplazar `print("[ERROR Voz]...")` por `logger.error(...)`
+    - Mantener indicadores visuales para el usuario en modo continuo
+  - **Tests**: `python -m pytest test/test_voice* -q`
+  - **Verificar**: Voz funciona igual
+
+- [ ] **9.5 Migrar `print()` de storage y agent a logging**
+  - **Archivos**: `storage/*.py`, `agent/*.py`
+  - **Problema**: `print()` de debug en módulos core.
+  - **Acciones**:
+    - Reemplazar `print("[AVISO]...")` por `logger.warning(...)`
+    - Reemplazar `print("[ERROR]...")` por `logger.error(...)`
+    - Añadir `logger.debug()` para información detallada
+  - **Tests**: `python -m pytest test/test_storage* test/test_agent* -q`
+  - **Verificar**: Logs se escriben correctamente
+
+---
+
+## FASE 10 — MIGRACIÓN A PATHLIB (Reemplazar os.path)
+
+- [ ] **10.1 Migrar `config.py` a pathlib**
+  - **Archivo**: `jarvis_local/config.py`
+  - **Problema**: Usos de `os.path` que podrían ser `Path`.
+  - **Acciones**:
+    - Reemplazar `os.path.join()` por `Path /`
+    - Reemplazar `os.path.exists()` por `Path.exists()`
+    - Reemplazar `os.path.expandvars()` por `Path.expandvars()`
+    - Mantener `os.path` donde es más legible
+  - **Tests**: `python -m pytest test/test_config* -q`
+  - **Verificar**: Config se carga correctamente
+
+- [ ] **10.2 Migrar `tools/files.py` a pathlib**
+  - **Archivo**: `jarvis_local/tools/files.py`
+  - **Problema**: Mezcla de `os.path` y `Path`.
+  - **Acciones**:
+    - Unificar a `Path` para todas las operaciones de archivo
+    - Reemplazar `os.path.join()` por `Path /`
+    - Reemplazar `os.path.normpath()` por `Path.resolve()`
+  - **Tests**: `python -m pytest test/test_files* -q`
+  - **Verificar**: Operaciones de archivo funcionan
+
+- [ ] **10.3 Migrar `tools/apps.py` a pathlib**
+  - **Archivo**: `jarvis_local/tools/apps.py`
+  - **Problema**: Usos de `os.path` para rutas de aplicaciones.
+  - **Acciones**:
+    - Reemplazar `os.path.join()` por `Path /`
+    - Reemplazar `os.path.expandvars()` por `Path.expandvars()`
+    - Usar `Path.exists()` para verificar aplicaciones
+  - **Tests**: `python -m pytest test/test_apps* -q`
+  - **Verificar**: Aplicaciones se abren correctamente
+
+- [ ] **10.4 Migrar `safety/permissions.py` a pathlib**
+  - **Archivo**: `jarvis_local/safety/permissions.py`
+  - **Problema**: Mezcla de `os.path` y `Path` para validación de rutas.
+  - **Acciones**:
+    - Unificar a `Path` para todas las validaciones
+    - Reemplazar `os.path.normpath()` por `Path.resolve()`
+    - Mejorar legibilidad de `is_within_allowed()`
+  - **Tests**: `python -m pytest test/test_permissions* -q`
+  - **Verificar**: Validación de rutas funciona
+
+- [ ] **10.5 Migrar herramientas restantes a pathlib**
+  - **Archivos**: `tools/reader.py`, `tools/hidden_files.py`, `tools/notes.py`, `tools/reminders.py`
+  - **Problema**: Uso disperso de `os.path`.
+  - **Acciones**:
+    - Reemplazar `os.path` por `Path` donde sea beneficio
+    - Mantener `os.path` donde es más legible o necesario
+  - **Tests**: `python -m pytest test -q`
+  - **Verificar**: Todas las herramientas funcionan
+
+---
+
+## FASE 11 — MEJORAR EXCEPCIONES GENÉRICAS
+
+- [ ] **11.1 Reemplazar `except Exception` en tools críticos**
+  - **Archivos**: `tools/terminal.py`, `tools/files.py`, `tools/apps.py`
+  - **Problema**: `except Exception` captura todo incluyendo `KeyboardInterrupt`.
+  - **Acciones**:
+    - Reemplazar por excepciones específicas: `OSError`, `PermissionError`, `subprocess.TimeoutExpired`
+    - Añadir `logger.error()` en cada bloque except
+    - Mantener `except Exception` solo como último recurso con log
+  - **Tests**: `python -m pytest test/test_terminal* test/test_files* test/test_apps* -q`
+  - **Verificar**: Errores se manejan correctamente
+
+- [ ] **11.2 Reemplazar `except Exception` en voice**
+  - **Archivos**: `voice/stt.py`, `voice/continuous.py`, `voice/tts.py`
+  - **Problema**: `except Exception` silencia errores de audio.
+  - **Acciones**:
+    - Reemplazar por `OSError`, `RuntimeError`, `sounddevice.PortAudioError`
+    - Añadir `logger.error()` con traceback
+    - Mejorar mensajes de error para el usuario
+  - **Tests**: `python -m pytest test/test_voice* -q`
+  - **Verificar**: Errores de audio se reportan correctamente
+
+- [ ] **11.3 Reemplazar `except Exception` en storage**
+  - **Archivos**: `storage/history.py`, `storage/memory.py`, `storage/semantic.py`
+  - **Problema**: `except Exception` puede silenciar corrupción de datos.
+  - **Acciones**:
+    - Reemplazar por `json.JSONDecodeError`, `OSError`, `KeyError`
+    - Añadir `logger.error()` con detalles del archivo
+    - Mantener recuperación de datos corruptos
+  - **Tests**: `python -m pytest test/test_storage* -q`
+  - **Verificar**: Corrupción se maneja correctamente
+
+- [ ] **11.4 Reemplazar `except Exception` en agent**
+  - **Archivos**: `agent/loop.py`, `agent/registry.py`
+  - **Problema**: `except Exception` puede ocultar bugs del agente.
+  - **Acciones**:
+    - Reemplazar por excepciones específicas de red/modelo
+    - Añadir `logger.error()` con contexto de la herramienta
+    - Mejorar mensajes de error para el usuario
+  - **Tests**: `python -m pytest test/test_agent* -q`
+  - **Verificar**: Errores del agente se reportan correctamente
+
+---
+
+## FASE 12 — ELIMINAR VARIABLES GLOBALES
+
+- [ ] **12.1 Eliminar `global` en `browser.py`**
+  - **Archivo**: `jarvis_local/tools/browser.py`
+  - **Problema**: `_driver` como variable global mutable.
+  - **Acciones**:
+    - Crear clase `BrowserManager` con `_driver` como atributo
+    - Singleton con `get_instance()`
+    - Eliminar todos los `global _driver`
+  - **Tests**: `python -m pytest test/test_browser* -q` (si existen)
+  - **Verificar**: Navegador funciona igual
+
+- [ ] **12.2 Eliminar `global` en `config.py`**
+  - **Archivo**: `jarvis_local/config.py`
+  - **Problema**: `_config_cache` y `_secrets_cache` como globales.
+  - **Acciones**:
+    - Crear clase `ConfigManager` con caché como atributo
+    - Singleton con `get_instance()`
+    - Eliminar todos los `global`
+  - **Tests**: `python -m pytest test/test_config* -q`
+  - **Verificar**: Config se carga correctamente
+
+- [ ] **12.3 Eliminar `global` en `retriever.py`**
+  - **Archivo**: `jarvis_local/agent/retriever.py`
+  - **Problema**: `_matriz`, `_nombres`, `_disponible` como globales.
+  - **Acciones**:
+    - Crear clase `RetrieverCache` con estado como atributo
+    - Singleton con `get_instance()`
+    - Eliminar todos los `global`
+  - **Tests**: `python -m pytest test/test_agent* -q`
+  - **Verificar**: Retriever funciona igual
+
+- [ ] **12.4 Eliminar `global` en `jobs.py`**
+  - **Archivo**: `jarvis_local/tools/jobs.py`
+  - **Problema**: `_last_results`, `_last_url`, `_last_query` como globales.
+  - **Acciones**:
+    - Crear clase `JobSearchCache` con estado como atributo
+    - Pasar como parámetro o usar singleton
+    - Eliminar todos los `global`
+  - **Tests**: `python -m pytest test/test_jobs* -q` (si existen)
+  - **Verificar**: Búsqueda de empleo funciona igual
+
+---
+
+## FASE 13 — ELIMINAR TIME.SLEEP DEL HILO PRINCIPAL
+
+- [ ] **13.1 Reemplazar `time.sleep()` en `desktop_actions.py`**
+  - **Archivo**: `jarvis_local/tools/desktop_actions.py:53,128`
+  - **Problema**: `time.sleep(0.05)` y `time.sleep(0.1)` bloquean el hilo.
+  - **Acciones**:
+    - Reemplazar por `asyncio.sleep()` si es posible
+    - O usar `threading.Timer` para operaciones no bloqueantes
+    - Verificar que la funcionalidad no se ve afectada
+  - **Tests**: `python -m pytest test/test_desktop* -q` (si existen)
+  - **Verificar**: Acciones de escritorio funcionan
+
+- [ ] **13.2 Reemplazar `time.sleep()` en `media_controls.py`**
+  - **Archivo**: `jarvis_local/tools/media_controls.py:44`
+  - **Problema**: `time.sleep(0.01)` en control de volumen.
+  - **Acciones**:
+    - Evaluar si el sleep es necesario
+    - Si es necesario, reducir o usar alternativa no bloqueante
+  - **Tests**: `python -m pytest test/test_media* -q`
+  - **Verificar**: Control de volumen funciona
+
+- [ ] **13.3 Reemplazar `time.sleep()` en `voz.py`**
+  - **Archivo**: `jarvis_local/voz.py:138`
+  - **Problema**: `time.sleep(0.05)` en polling de estado.
+  - **Acciones**:
+    - Reemplazar por `threading.Event.wait()` con timeout
+    - Más eficiente que polling con sleep
+  - **Tests**: `python -m pytest test/test_voice* -q`
+  - **Verificar**: Modo voz funciona
+
+---
+
+## FASE 14 — MEJORAR COBERTURA DE TESTS
+
+- [ ] **14.1 Tests para `ui/desktop.py`**
+  - **Archivo**: `jarvis_local/ui/desktop.py` (983 líneas sin tests)
+  - **Problema**: Interfaz de escritorio sin cobertura.
+  - **Acciones**:
+    - Crear `test/test_ui_desktop.py`
+    - Test de inicialización de la ventana
+    - Test de callbacks de botones
+    - Test de actualización de historial
+    - Mock de Tkinter para tests sin GUI
+  - **Tests**: `python -m pytest test/test_ui_desktop* -q`
+  - **Verificar**: Tests pasan
+
+- [ ] **14.2 Tests para `ui/server.py`**
+  - **Archivo**: `jarvis_local/ui/server.py` (799 líneas sin tests)
+  - **Problema**: Interfaz web sin cobertura.
+  - **Acciones**:
+    - Crear `test/test_ui_server.py`
+    - Test de rutas HTTP
+    - Test de API endpoints
+    - Test de WebSocket (si aplica)
+    - Usar `httpx` o `flask.testing` para tests
+  - **Tests**: `python -m pytest test/test_ui_server* -q`
+  - **Verificar**: Tests pasan
+
+- [ ] **14.3 Tests para `tools/browser.py`**
+  - **Archivo**: `jarvis_local/tools/browser.py`
+  - **Problema**: Navegador automatizado sin tests.
+  - **Acciones**:
+    - Crear `test/test_browser.py`
+    - Test de inicialización del driver
+    - Test de navegación con mock
+    - Test de cierre de navegador
+    - Mock de Selenium para tests sin Chrome
+  - **Tests**: `python -m pytest test/test_browser* -q`
+  - **Verificar**: Tests pasan
+
+- [ ] **14.4 Tests para `tools/wolfram.py`**
+  - **Archivo**: `jarvis_local/tools/wolfram.py`
+  - **Problema**: WolframAlpha sin tests.
+  - **Acciones**:
+    - Crear `test/test_wolfram.py`
+    - Test de parseo de expresiones
+    - Test de respuesta de API con mock
+    - Test de manejo de errores
+  - **Tests**: `python -m pytest test/test_wolfram* -q`
+  - **Verificar**: Tests pasan
+
+- [ ] **14.5 Tests para `tools/location.py`**
+  - **Archivo**: `jarvis_local/tools/location.py`
+  - **Problema**: Geolocalización sin tests.
+  - **Acciones**:
+    - Crear `test/test_location.py`
+    - Test de obtención de ubicación con mock
+    - Test de cálculo de distancia
+    - Test de manejo de errores de red
+  - **Tests**: `python -m pytest test/test_location* -q`
+  - **Verificar**: Tests pasan
+
+- [ ] **14.6 Tests de carga para storage**
+  - **Archivos**: `storage/history.py`, `storage/memory.py`, `storage/semantic.py`
+  - **Problema**: Sin tests de rendimiento con muchos datos.
+  - **Acciones**:
+    - Crear `test/test_storage_load.py`
+    - Test con 1000 mensajes en historial
+    - Test con 100 memorias y búsqueda semántica
+    - Test de escritura concurrente con múltiples hilos
+    - Medir tiempos de respuesta
+  - **Tests**: `python -m pytest test/test_storage_load* -q`
+  - **Verificar**: Rendimiento aceptable
+
+---
+
+## FASE 15 — FUNCIONALIDADES NUEVAS
+
+- [ ] **15.1 Sistema de plugins para herramientas**
+  - **Archivos**: Nuevo `jarvis_local/plugins/`
+  - **Problema**: No se pueden añadir herramientas sin modificar código fuente.
+  - **Acciones**:
+    - Crear `PluginManager` que carga herramientas desde `plugins/`
+    - Interfaz `ToolPlugin` que deben implementar las plugins
+    - Carga dinámica de archivos `.py` en `plugins/`
+    - Registro automático en el registry de herramientas
+    - Documentación de cómo crear plugins
+  - **Tests**: Test con plugin de ejemplo
+  - **Verificar**: Plugins se cargan correctamente
+
+- [ ] **15.2 Dashboard web con métricas**
+  - **Archivos**: Nuevo `jarvis_local/ui/dashboard.py`
+  - **Problema**: Sin visibilidad del estado del sistema.
+  - **Acciones**:
+    - Crear página web con métricas en tiempo real
+    - Mostrar: uso de CPU/RAM, latencia del LLM, herramientas usadas
+    - Gráficos de uso de herramientas
+    - Logs de actividad recientes
+    - Integrar con el servidor web existente
+  - **Tests**: Test de rutas del dashboard
+  - **Verificar**: Dashboard se carga en el navegador
+
+- [ ] **15.3 Soporte multi-usuario**
+  - **Archivos**: Múltiples
+  - **Problema**: Solo funciona para un usuario.
+  - **Acciones**:
+    - Crear sistema de perfiles en `data/profiles/`
+    - Cada perfil tiene su propio historial, memorias y config
+    - Selector de perfil al inicio
+    - Migración del usuario actual al perfil default
+  - **Tests**: Test de cambio de perfil
+  - **Verificar**: Multi-usuario funciona
+
+- [ ] **15.4 Visión: análisis de pantalla**
+  - **Archivos**: Nuevo `jarvis_local/vision/`
+  - **Problema**: Jarvis no puede "ver" la pantalla del usuario.
+  - **Acciones**:
+    - Captura de pantalla con `Pillow` o `mss`
+    - OCR con `pytesseract` o `easyocr`
+    - Análisis de texto en pantalla
+    - Integración con el agente para preguntas sobre la pantalla
+    - "¿Qué hay en mi pantalla?" → Jarvis describe el contenido
+  - **Tests**: Test de captura y OCR
+  - **Verificar**: Visión funciona
+
+- [ ] **15.5 Proactividad: sugerencias automáticas**
+  - **Archivos**: Nuevo `jarvis_local/proactive/`
+  - **Problema**: Jarvis solo responde, nunca sugiere.
+  - **Acciones**:
+    - Monitoreo de patrones de uso
+    - Sugerencias basadas en contexto (hora, día, apps abiertas)
+    - "Son las 8:30, ¿quiere saber el clima antes de salir?"
+    - "No ha revisado sus correos hoy, ¿quiere un resumen?"
+    - Configurable: activar/desactivar proactividad
+  - **Tests**: Test de detección de patrones
+  - **Verificar**: Sugerencias aparecen en contexto
+
+- [ ] **15.6 Instalador automático**
+  - **Archivos**: Nuevo `install.sh`, `install.ps1`
+  - **Problema**: Instalación manual de dependencias.
+  - **Acciones**:
+    - Script `install.sh` para Linux (Ubuntu/Debian)
+    - Script `install.ps1` para Windows
+    - Instalar Python, pip, dependencias del sistema
+    - Crear entorno virtual
+    - Instalar dependencias de Python
+    - Descargar modelos de Ollama
+    - Verificar que todo funciona
+  - **Tests**: Ejecutar scripts en VM limpia
+  - **Verificar**: Instalación funciona
+
+---
+
+## FASE 16 — DOCUMENTACIÓN
+
+- [ ] **16.1 Documentar API de herramientas**
+  - **Archivos**: Todos en `jarvis_local/tools/`
+  - **Problema**: Docstrings incompletos en muchas funciones.
+  - **Acciones**:
+    - Añadir docstring a todas las funciones públicas
+    - Formato Google: Args, Returns, Raises
+    - Ejemplos de uso en docstrings
+    - Generar documentación con Sphinx
+  - **Tests**: Verificar que Sphinx genera sin errores
+  - **Verificar**: Documentación se genera correctamente
+
+- [ ] **16.2 Documentar arquitectura**
+  - **Archivos**: Nuevo `docs/architecture.md`
+  - **Problema**: Sin documentación de arquitectura.
+  - **Acciones**:
+    - Documentar cascada de 4 capas
+    - Documentar flujo de datos
+    - Documentar decisiones de diseño
+    - Diagramas con Mermaid
+  - **Tests**: Verificar que los diagramas son correctos
+  - **Verificar**: Documentación es clara
+
+- [ ] **16.3 Crear CHANGELOG**
+  - **Archivos**: Nuevo `CHANGELOG.md`
+  - **Problema**: Sin registro de cambios.
+  - **Acciones**:
+    - Crear CHANGELOG.md con formato Keep a Changelog
+    - Documentar cambios de las versiones anteriores
+    - Configurar generación automática desde commits
+  - **Tests**: Verificar formato
+  - **Verificar**: CHANGELOG es legible
+
+---
+
+## FASE 17 — RENDIMIENTO
+
+- [ ] **17.1 Evaluar migración a `orjson`**
+  - **Archivos**: Todos los que usan `json`
+  - **Problema**: `json` es más lento que alternativas modernas.
+  - **Acciones**:
+    - Benchmark de `json` vs `orjson` en el proyecto
+    - Si mejora >50%, migrar
+    - Mantener fallback a `json` si `orjson` no está disponible
+  - **Tests**: Benchmark comparativo
+  - **Verificar**: Rendimiento mejora
+
+- [ ] **17.2 Evaluar migración a `httpx`**
+  - **Archivos**: `ollama_client/client.py`, herramientas que usan `requests`
+  - **Problema**: `requests` es síncrono, bloquea en I/O.
+  - **Acciones**:
+    - Benchmark de `requests` vs `httpx` en el proyecto
+    - Evaluar beneficio de async para llamadas al LLM
+    - Si beneficio significativo, migrar
+    - Mantener fallback a `requests` si `httpx` no está disponible
+  - **Tests**: Benchmark comparativo
+  - **Verificar**: Rendimiento mejora
+
+- [ ] **17.3 Caché de embeddings persistente**
+  - **Archivos**: `storage/semantic.py`
+  - **Problema**: Re-embebe todas las memorias al reiniciar.
+  - **Acciones**:
+    - Guardar embeddings en archivo separado `embeddings_cache.npz`
+    - Cargar caché al inicio
+    - Solo re-embeber memorias nuevas
+    - Invalidar caché si cambia el modelo de embeddings
+  - **Tests**: Test de persistencia de caché
+  - **Verificar**: Inicio más rápido
+
+- [ ] **17.4 Optimizar carga de app_index**
+  - **Archivos**: `tools/app_index.py`
+  - **Problema**: Lee cientos de archivos `.desktop` secuencialmente.
+  - **Acciones**:
+    - Cargar índice desde caché si existe y es reciente
+    - Escanear en background si el caché está desactualizado
+    - Usar `asyncio` o `threading` para escaneo no bloqueante
+  - **Tests**: Test de carga con muchos archivos
+  - **Verificar**: Inicio más rápido
+
+---
+
 ## VERIFICACIÓN FINAL
 
 Cuando todas las tareas estén completadas:
