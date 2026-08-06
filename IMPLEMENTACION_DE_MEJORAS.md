@@ -89,7 +89,7 @@
 
 ## FASE 2 — ARQUITECTURA CORE
 
-- [ ] **2.1 Implementar registry de herramientas en `jarvis.py`**
+- [x] **2.1 Implementar registry de herramientas en `jarvis.py`**
   - **Archivo**: `jarvis_local/jarvis.py:134-390`
   - **Problema**: `_execute_tool_read` y `_execute_tool_write` son cadenas de 20-30 `elif` (~260 líneas).
   - **Acciones**:

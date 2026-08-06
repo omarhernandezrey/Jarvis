@@ -5,6 +5,7 @@ En Fase 1, el modelo SOLO conversa. Sin herramientas.
 """
 import threading
 from collections.abc import Callable
+from typing import Any
 
 from jarvis_local.config import BASE_DIR, get_config
 from jarvis_local.fast_response import fast_respond
@@ -28,6 +29,116 @@ _EXACT_TRIGGERS = [
 
 _QUOTE_PAIRS = [('"', '"'), ("'", "'"), ("\u201c", "\u201d"), ("\u2018", "\u2019"), ("\u00ab", "\u00bb")]
 _TRAILING_PUNCT = ".!?\u00a1\u00bf"
+
+
+# =============================================================================
+# TOOL REGISTRY: mapeo nombre_herramienta -> función
+# =============================================================================
+
+def _get_weather(args: dict) -> Any:
+    from jarvis_local.tools.location import my_location
+    from jarvis_local.tools.weather import get_weather
+    city = args.get("city", "")
+    if not city:
+        loc = my_location()
+        city = loc["city"] if loc else ""
+    if not city:
+        return "De que ciudad desea saber el clima, senor?"
+    return get_weather(city)
+
+
+def _get_calculate(args: dict) -> Any:
+    from jarvis_local.safety.policy import ActionStatus
+    from jarvis_local.tools.calculator import calculate
+    from jarvis_local.tools.wolfram import ask_wolfram, has_app_id
+    plan = calculate(args.get("expression", ""))
+    if plan.status == ActionStatus.ERROR and has_app_id():
+        wa = ask_wolfram(args.get("expression", ""))
+        if wa.status != ActionStatus.ERROR:
+            plan = wa
+    return plan
+
+
+# Herramientas de lectura (solo consultan, no modifican)
+_READ_TOOLS: dict[str, Callable[[dict], Any]] = {
+    "list_files": lambda args: __import__("jarvis_local.tools.files", fromlist=["list_files"]).list_files(args.get("path", ".")),
+    "search_files": lambda args: __import__("jarvis_local.tools.files", fromlist=["search_files"]).search_files(args.get("name", ""), args.get("path", ".")),
+    "file_info": lambda args: __import__("jarvis_local.tools.files", fromlist=["read_metadata"]).read_metadata(args.get("path", "")),
+    "list_apps": lambda args: __import__("jarvis_local.tools.apps", fromlist=["list_apps"]).list_apps(),
+    "weather": _get_weather,
+    "system_status": lambda args: __import__("jarvis_local.tools.system_info", fromlist=["system_status"]).system_status(),
+    "calendar_events": lambda args: __import__("jarvis_local.tools.gcalendar", fromlist=["upcoming_events"]).upcoming_events(),
+    "wiki": lambda args: __import__("jarvis_local.tools.wiki", fromlist=["wiki_summary"]).wiki_summary(args.get("topic", "")),
+    "news_headlines": lambda args: __import__("jarvis_local.tools.news", fromlist=["headlines"]).headlines(),
+    "calculate": _get_calculate,
+    "wolfram": lambda args: __import__("jarvis_local.tools.wolfram", fromlist=["ask_wolfram"]).ask_wolfram(args.get("question", "")),
+    "tell_joke": lambda args: __import__("jarvis_local.tools.jokes", fromlist=["tell_joke"]).tell_joke(),
+    "get_ip": lambda args: __import__("jarvis_local.tools.ip_info", fromlist=["get_ip"]).get_ip(),
+    "search_jobs": lambda args: __import__("jarvis_local.tools.jobs", fromlist=["search_jobs"]).search_jobs(args.get("puesto", ""), args.get("ciudad", "")),
+    "list_reminders": lambda args: __import__("jarvis_local.tools.reminders", fromlist=["list_reminders"]).list_reminders(),
+    "list_contacts": lambda args: __import__("jarvis_local.tools.whatsapp", fromlist=["list_contacts"]).list_contacts(),
+    "read_clipboard": lambda args: __import__("jarvis_local.tools.reader", fromlist=["read_clipboard"]).read_clipboard(),
+    "read_file": lambda args: __import__("jarvis_local.tools.reader", fromlist=["read_file_aloud"]).read_file_aloud(args.get("path", "")),
+    "daily_briefing": lambda args: __import__("jarvis_local.tools.briefing", fromlist=["daily_briefing"]).daily_briefing(),
+}
+
+# Herramientas de escritura (planificación y ejecución)
+_WRITE_TOOLS: dict[str, Callable[[dict], Any]] = {
+    "open_app": lambda args: __import__("jarvis_local.tools.apps", fromlist=["open_app"]).open_app(args.get("app", "")),
+    "create_directory": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_directory"]).create_directory(args.get("path", "")),
+    "create_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_file"]).create_file(args.get("path", ""), args.get("content", "")),
+    "copy_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["copy_file"]).copy_file(args.get("src", ""), args.get("dst", "")),
+    "move_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["move_file"]).move_file(args.get("src", ""), args.get("dst", "")),
+    "rename_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["rename_file"]).rename_file(args.get("path", ""), args.get("new_name", "")),
+    "delete_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["plan_delete"]).plan_delete(args.get("path", "")),
+    "run_command": lambda args: __import__("jarvis_local.tools.terminal", fromlist=["execute_command"]).execute_command(args.get("command", "")),
+    "open_website": lambda args: __import__("jarvis_local.tools.web", fromlist=["open_website"]).open_website(args.get("site", "")),
+    "google_search": lambda args: __import__("jarvis_local.tools.web", fromlist=["google_search"]).google_search(args.get("query", "")),
+    "youtube_play": lambda args: __import__("jarvis_local.tools.web", fromlist=["youtube_play"]).youtube_play(args.get("query", "")),
+    "play_music": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["play_music"]).play_music(args.get("song", "")),
+    "take_note": lambda args: __import__("jarvis_local.tools.notes", fromlist=["take_note"]).take_note(args.get("text", "")),
+    "switch_window": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["switch_window"]).switch_window(),
+    "screenshot": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["take_screenshot"]).take_screenshot(args.get("name", "")),
+    "locate": lambda args: __import__("jarvis_local.tools.location", fromlist=["locate"]).locate(args.get("place", "")),
+    "open_job": lambda args: __import__("jarvis_local.tools.jobs", fromlist=["open_job"]).open_job(args.get("number", 1)),
+    "show_jobs": lambda args: __import__("jarvis_local.tools.browser", fromlist=["show_jobs_in_browser"]).show_jobs_in_browser(args.get("puesto", ""), args.get("ciudad", "")),
+    "browser_navigate": lambda args: __import__("jarvis_local.tools.browser", fromlist=["navigate"]).navigate(args.get("url", "")),
+    "close_browser": lambda args: __import__("jarvis_local.tools.browser", fromlist=["close_browser"]).close_browser(),
+    "close_app": lambda args: __import__("jarvis_local.tools.apps", fromlist=["close_app"]).close_app(args.get("app", "")),
+    "close_all_apps": lambda args: __import__("jarvis_local.tools.apps", fromlist=["close_all_apps"]).close_all_apps(),
+    "volume_set": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["set_volume"]).set_volume(args.get("level", 50)),
+    "volume_up": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["volume_up"]).volume_up(),
+    "volume_down": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["volume_down"]).volume_down(),
+    "volume_mute": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["volume_mute"]).volume_mute(args.get("mute", True)),
+    "media_play_pause": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["media_play_pause"]).media_play_pause(),
+    "media_next": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["media_next"]).media_next(),
+    "media_previous": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["media_previous"]).media_previous(),
+    "set_reminder": lambda args: __import__("jarvis_local.tools.reminders", fromlist=["set_reminder"]).set_reminder(args.get("text", ""), args.get("minutes", 0), args.get("at", "")),
+    "cancel_reminder": lambda args: __import__("jarvis_local.tools.reminders", fromlist=["cancel_reminder"]).cancel_reminder(args.get("which", "todos")),
+    "send_whatsapp": lambda args: __import__("jarvis_local.tools.whatsapp", fromlist=["send_whatsapp"]).send_whatsapp(args.get("to", ""), args.get("message", "")),
+    "add_contact": lambda args: __import__("jarvis_local.tools.whatsapp", fromlist=["add_contact"]).add_contact(args.get("name", ""), args.get("phone", "")),
+    "lock_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["lock_pc"]).lock_pc(),
+    "shutdown_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["shutdown_pc"]).shutdown_pc(args.get("seconds", 60)),
+    "restart_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["restart_pc"]).restart_pc(args.get("seconds", 60)),
+    "cancel_shutdown": lambda args: __import__("jarvis_local.tools.power", fromlist=["cancel_shutdown"]).cancel_shutdown(),
+    "suspend_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["suspend_pc"]).suspend_pc(),
+    "minimize_all": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["minimize_all"]).minimize_all(),
+    "snap_window": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["snap_window"]).snap_window(args.get("direction", "")),
+}
+
+# Herramientas que requieren planificación (confirmación)
+_PLAN_TOOLS: dict[str, Callable[[dict], Any]] = {
+    "open_app": lambda args: __import__("jarvis_local.tools.apps", fromlist=["open_app"]).open_app(args.get("app", "")),
+    "create_directory": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_directory"]).create_directory(args.get("path", "")),
+    "create_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_file"]).create_file(args.get("path", ""), args.get("content", "")),
+    "copy_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["copy_file"]).copy_file(args.get("src", ""), args.get("dst", "")),
+    "move_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["move_file"]).move_file(args.get("src", ""), args.get("dst", "")),
+    "rename_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["rename_file"]).rename_file(args.get("path", ""), args.get("new_name", "")),
+    "delete_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["plan_delete"]).plan_delete(args.get("path", "")),
+    "run_command": lambda args: __import__("jarvis_local.tools.terminal", fromlist=["plan_command"]).plan_command(args.get("command", "")),
+    "send_email": lambda args: __import__("jarvis_local.tools.email_sender", fromlist=["plan_email"]).plan_email(args.get("to", ""), args.get("subject", ""), args.get("body", "")),
+    "hide_files": lambda args: __import__("jarvis_local.tools.hidden_files", fromlist=["plan_hide"]).plan_hide(args.get("path", ""), args.get("hide", True)),
+}
 
 
 def _exact_response(message: str) -> str | None:
@@ -132,121 +243,25 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
 
 
 def _execute_tool_read(tool: str, args: dict) -> str:
-    from jarvis_local.safety.policy import ActionStatus
-    from jarvis_local.tools.apps import list_apps
-    from jarvis_local.tools.files import list_files, read_metadata, search_files
-    plan = None
-    if tool == "list_files":
-        plan = list_files(args.get("path", "."))
-    elif tool == "search_files":
-        plan = search_files(args.get("name", ""), args.get("path", "."))
-    elif tool == "file_info":
-        plan = read_metadata(args.get("path", ""))
-    elif tool == "list_apps":
-        plan = list_apps()
-    elif tool == "weather":
-        from jarvis_local.tools.location import my_location
-        from jarvis_local.tools.weather import get_weather
-        city = args.get("city", "")
-        if not city:
-            loc = my_location()
-            city = loc["city"] if loc else ""
-        if not city:
-            return "De que ciudad desea saber el clima, senor?"
-        plan = get_weather(city)
-    elif tool == "system_status":
-        from jarvis_local.tools.system_info import system_status
-        plan = system_status()
-    elif tool == "calendar_events":
-        from jarvis_local.tools.gcalendar import upcoming_events
-        plan = upcoming_events()
-    elif tool == "wiki":
-        from jarvis_local.tools.wiki import wiki_summary
-        plan = wiki_summary(args.get("topic", ""))
-    elif tool == "news_headlines":
-        from jarvis_local.tools.news import headlines
-        plan = headlines()
-    elif tool == "calculate":
-        from jarvis_local.tools.calculator import calculate
-        plan = calculate(args.get("expression", ""))
-        # Si la calculadora local no puede (ej. ecuaciones con x),
-        # intentar con WolframAlpha si esta configurado
-        if plan.status == ActionStatus.ERROR:
-            from jarvis_local.tools.wolfram import ask_wolfram, has_app_id
-            if has_app_id():
-                wa = ask_wolfram(args.get("expression", ""))
-                if wa.status != ActionStatus.ERROR:
-                    plan = wa
-    elif tool == "wolfram":
-        from jarvis_local.tools.wolfram import ask_wolfram
-        plan = ask_wolfram(args.get("question", ""))
-    elif tool == "tell_joke":
-        from jarvis_local.tools.jokes import tell_joke
-        plan = tell_joke()
-    elif tool == "get_ip":
-        from jarvis_local.tools.ip_info import get_ip
-        plan = get_ip()
-    elif tool == "search_jobs":
-        from jarvis_local.tools.jobs import search_jobs
-        plan = search_jobs(args.get("puesto", ""), args.get("ciudad", ""))
-    elif tool == "list_reminders":
-        from jarvis_local.tools.reminders import list_reminders
-        plan = list_reminders()
-    elif tool == "list_contacts":
-        from jarvis_local.tools.whatsapp import list_contacts
-        plan = list_contacts()
-    elif tool == "read_clipboard":
-        from jarvis_local.tools.reader import read_clipboard
-        plan = read_clipboard()
-    elif tool == "read_file":
-        from jarvis_local.tools.reader import read_file_aloud
-        plan = read_file_aloud(args.get("path", ""))
-    elif tool == "daily_briefing":
-        from jarvis_local.tools.briefing import daily_briefing
-        plan = daily_briefing()
-    if plan and plan.result:
+    """Ejecuta una herramienta de lectura usando el registry."""
+    fn = _READ_TOOLS.get(tool)
+    if fn is None:
+        return f"Herramienta de lectura no encontrada: {tool}"
+    plan = fn(args)
+    if plan and hasattr(plan, "result") and plan.result:
         return plan.result
+    if isinstance(plan, str):
+        return plan
     return "Operacion completada."
 
 
 def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
+    """Crea un plan de ejecución para una herramienta de escritura."""
     from jarvis_local.safety.policy import policy
-    from jarvis_local.tools.apps import open_app
-    from jarvis_local.tools.files import (
-        copy_file,
-        create_directory,
-        create_file,
-        move_file,
-        plan_delete,
-        rename_file,
-    )
-    from jarvis_local.tools.terminal import plan_command
-    plan = None
-    if tool == "open_app":
-        plan = open_app(args.get("app", ""))
-    elif tool == "create_directory":
-        plan = create_directory(args.get("path", ""))
-    elif tool == "create_file":
-        plan = create_file(args.get("path", ""), args.get("content", ""))
-    elif tool == "copy_file":
-        plan = copy_file(args.get("src", ""), args.get("dst", ""))
-    elif tool == "move_file":
-        plan = move_file(args.get("src", ""), args.get("dst", ""))
-    elif tool == "rename_file":
-        plan = rename_file(args.get("path", ""), args.get("new_name", ""))
-    elif tool == "delete_file":
-        plan = plan_delete(args.get("path", ""))
-    elif tool == "run_command":
-        plan = plan_command(args.get("command", ""))
-    elif tool == "send_email":
-        from jarvis_local.tools.email_sender import plan_email
-        plan = plan_email(args.get("to", ""), args.get("subject", ""),
-                          args.get("body", ""))
-        return str(plan)
-    elif tool == "hide_files":
-        from jarvis_local.tools.hidden_files import plan_hide
-        plan = plan_hide(args.get("path", ""), args.get("hide", True))
-        return str(plan)
+    fn = _PLAN_TOOLS.get(tool)
+    if fn is None:
+        return f"No pude planificar '{tool}'."
+    plan = fn(args)
     if plan:
         policy.pending_plan = plan
         return str(plan) + "\n\nEscribe /confirmar para ejecutar o /cancelar."
@@ -254,140 +269,21 @@ def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
 
 
 def _execute_tool_write(tool: str, args: dict) -> str:
-    from jarvis_local.tools.apps import open_app
-    from jarvis_local.tools.files import (
-        copy_file,
-        create_directory,
-        create_file,
-        move_file,
-        plan_delete,
-        rename_file,
-    )
-    from jarvis_local.tools.terminal import execute_command
-    plan = None
-    if tool == "open_app":
-        plan = open_app(args.get("app", ""))
-    elif tool == "create_directory":
-        plan = create_directory(args.get("path", ""))
-    elif tool == "create_file":
-        plan = create_file(args.get("path", ""), args.get("content", ""))
-    elif tool == "copy_file":
-        plan = copy_file(args.get("src", ""), args.get("dst", ""))
-    elif tool == "move_file":
-        plan = move_file(args.get("src", ""), args.get("dst", ""))
-    elif tool == "rename_file":
-        plan = rename_file(args.get("path", ""), args.get("new_name", ""))
-    elif tool == "delete_file":
-        plan = plan_delete(args.get("path", ""))
-    elif tool == "run_command":
-        plan = execute_command(args.get("command", ""))
-    elif tool == "open_website":
-        from jarvis_local.tools.web import open_website
-        plan = open_website(args.get("site", ""))
-    elif tool == "google_search":
-        from jarvis_local.tools.web import google_search
-        plan = google_search(args.get("query", ""))
-    elif tool == "youtube_play":
-        from jarvis_local.tools.web import youtube_play
-        plan = youtube_play(args.get("query", ""))
-    elif tool == "play_music":
-        from jarvis_local.tools.desktop_actions import play_music
-        plan = play_music(args.get("song", ""))
-    elif tool == "take_note":
-        from jarvis_local.tools.notes import take_note
-        plan = take_note(args.get("text", ""))
-    elif tool == "switch_window":
-        from jarvis_local.tools.desktop_actions import switch_window
-        plan = switch_window()
-    elif tool == "screenshot":
-        from jarvis_local.tools.desktop_actions import take_screenshot
-        plan = take_screenshot(args.get("name", ""))
-    elif tool == "locate":
-        from jarvis_local.tools.location import locate
-        plan = locate(args.get("place", ""))
-    elif tool == "open_job":
-        from jarvis_local.tools.jobs import open_job
-        plan = open_job(args.get("number", 1))
-    elif tool == "show_jobs":
-        from jarvis_local.tools.browser import show_jobs_in_browser
-        plan = show_jobs_in_browser(args.get("puesto", ""), args.get("ciudad", ""))
-    elif tool == "browser_navigate":
-        from jarvis_local.tools.browser import navigate
-        plan = navigate(args.get("url", ""))
-    elif tool == "close_browser":
-        from jarvis_local.tools.browser import close_browser
-        plan = close_browser()
-    elif tool == "close_app":
-        from jarvis_local.tools.apps import close_app
-        plan = close_app(args.get("app", ""))
-    elif tool == "close_all_apps":
-        from jarvis_local.tools.apps import close_all_apps
-        plan = close_all_apps()
-    elif tool == "volume_set":
-        from jarvis_local.tools.media_controls import set_volume
-        plan = set_volume(args.get("level", 50))
-    elif tool == "volume_up":
-        from jarvis_local.tools.media_controls import volume_up
-        plan = volume_up()
-    elif tool == "volume_down":
-        from jarvis_local.tools.media_controls import volume_down
-        plan = volume_down()
-    elif tool == "volume_mute":
-        from jarvis_local.tools.media_controls import volume_mute
-        plan = volume_mute(args.get("mute", True))
-    elif tool == "media_play_pause":
-        from jarvis_local.tools.media_controls import media_play_pause
-        plan = media_play_pause()
-    elif tool == "media_next":
-        from jarvis_local.tools.media_controls import media_next
-        plan = media_next()
-    elif tool == "media_previous":
-        from jarvis_local.tools.media_controls import media_previous
-        plan = media_previous()
-    elif tool == "set_reminder":
-        from jarvis_local.tools.reminders import set_reminder
-        plan = set_reminder(args.get("text", ""), args.get("minutes", 0),
-                            args.get("at", ""))
-    elif tool == "cancel_reminder":
-        from jarvis_local.tools.reminders import cancel_reminder
-        plan = cancel_reminder(args.get("which", "todos"))
-    elif tool == "send_whatsapp":
-        from jarvis_local.tools.whatsapp import send_whatsapp
-        plan = send_whatsapp(args.get("to", ""), args.get("message", ""))
-    elif tool == "add_contact":
-        from jarvis_local.tools.whatsapp import add_contact
-        plan = add_contact(args.get("name", ""), args.get("phone", ""))
-    elif tool == "lock_pc":
-        from jarvis_local.tools.power import lock_pc
-        plan = lock_pc()
-    elif tool == "shutdown_pc":
-        from jarvis_local.tools.power import shutdown_pc
-        plan = shutdown_pc(args.get("seconds", 60))
-    elif tool == "restart_pc":
-        from jarvis_local.tools.power import restart_pc
-        plan = restart_pc(args.get("seconds", 60))
-    elif tool == "cancel_shutdown":
-        from jarvis_local.tools.power import cancel_shutdown
-        plan = cancel_shutdown()
-    elif tool == "suspend_pc":
-        from jarvis_local.tools.power import suspend_pc
-        plan = suspend_pc()
-    elif tool == "minimize_all":
-        from jarvis_local.tools.desktop_actions import minimize_all
-        plan = minimize_all()
-    elif tool == "snap_window":
-        from jarvis_local.tools.desktop_actions import snap_window
-        plan = snap_window(args.get("direction", ""))
+    """Ejecuta una herramienta de escritura usando el registry."""
+    fn = _WRITE_TOOLS.get(tool)
+    if fn is None:
+        return f"No pude ejecutar '{tool}': herramienta no encontrada."
+    plan = fn(args)
     if plan is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
-    if plan.error:
-        # Los mensajes de excepcion de librerias externas (requests, etc.)
-        # suelen incluir la URL completa de la peticion, con API keys de
-        # query string incluidas (ej. WolframAlpha) -- se redactan antes de
-        # hablarle al usuario, no solo al loguear.
+    if hasattr(plan, "error") and plan.error:
         safe_error, _ = redact_secrets(plan.error)
         return f"Error: {safe_error}"
-    return plan.result or "Operacion completada."
+    if hasattr(plan, "result") and plan.result:
+        return plan.result
+    if isinstance(plan, str):
+        return plan
+    return "Operacion completada."
 
 
 SYSTEM_PROMPT = """Eres JARVIS (Just A Rather Very Intelligent System), el asistente de IA personal de Omar.
@@ -451,18 +347,18 @@ class Jarvis:
 
     def _warmup_model(self, model: str):
         """Precarga el modelo en RAM en segundo plano. No bloquea el arranque."""
+        import contextlib
+
         import requests as _requests
 
         def _do_warm():
-            try:
+            with contextlib.suppress(Exception):
                 _requests.post(
                     self.client._url("/api/generate"),
                     json={"model": model, "prompt": "", "stream": False,
                           "options": {"num_predict": 1}},
                     timeout=(10, 300),
                 )
-            except Exception:
-                pass
 
         t = threading.Thread(target=_do_warm, daemon=True)
         t.start()
