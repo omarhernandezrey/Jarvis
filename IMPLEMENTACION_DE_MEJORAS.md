@@ -26,7 +26,7 @@
   - **Tests a crear**: `test/test_terminal_security.py` con casos de inyección
   - **Verificar**: `python -m pytest test/test_terminal* -q`
 
-- [ ] **1.2 Sanitizar `new_name` en `rename_file`**
+- [x] **1.2 Sanitizar `new_name` en `rename_file`**
   - **Archivo**: `jarvis_local/tools/files.py:183`
   - **Problema**: `new_name` no se valida contra `/`, `\` o nombres reservados de Windows (`CON`, `NUL`, `AUX`).
   - **Acciones**:

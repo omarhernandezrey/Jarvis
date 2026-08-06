@@ -4,10 +4,58 @@ Listar, buscar, crear, copiar, mover, renombrar y plan de borrado.
 Todas las operaciones pasan por validacion de permisos y politica de seguridad.
 """
 import os
+import re
 from pathlib import Path
 
 from jarvis_local.safety.permissions import is_within_allowed
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
+
+# Nombres reservados en Windows que no pueden usarse como nombres de archivo
+_WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
+
+# Caracteres no permitidos en nombres de archivo
+_INVALID_FILENAME_CHARS = re.compile(r'[/\\:*?"<>|\x00-\x1f]')
+
+
+def _validate_filename(name: str) -> tuple[bool, str]:
+    """
+    Valida que un nombre de archivo sea seguro y válido.
+    Returns:
+        (True, "") si es válido.
+        (False, razón) si no es válido.
+    """
+    if not name or not name.strip():
+        return False, "El nombre no puede estar vacio"
+
+    # Eliminar espacios al inicio y final
+    name = name.strip()
+
+    # Verificar caracteres no permitidos
+    if _INVALID_FILENAME_CHARS.search(name):
+        return False, (
+            "El nombre contiene caracteres no permitidos: / \\ : * ? \" < > |"
+        )
+
+    # Verificar nombres reservados de Windows
+    name_upper = name.upper().split('.')[0]  # Sin extensión
+    if name_upper in _WINDOWS_RESERVED_NAMES:
+        return False, f"'{name}' es un nombre reservado del sistema"
+
+    # Verificar que no empiece o termine con punto o espacio
+    if name.startswith('.') or name.startswith(' '):
+        return False, "El nombre no puede empezar con punto o espacio"
+    if name.endswith('.') or name.endswith(' '):
+        return False, "El nombre no puede terminar con punto o espacio"
+
+    # Verificar longitud máxima
+    if len(name) > 255:
+        return False, "El nombre excede 255 caracteres"
+
+    return True, ""
 
 
 def _validate_path(path_str: str, require_exist: bool = False) -> tuple[bool, Path | None, ActionPlan | None]:
@@ -52,7 +100,7 @@ def search_files(name: str, path_str: str) -> ActionPlan:
         return blocked
     matches = []
     try:
-        for root, dirs, files in os.walk(str(resolved)):
+        for root, _dirs, files in os.walk(str(resolved)):
             for f in files:
                 if name.lower() in f.lower():
                     matches.append(str(Path(root) / f))
@@ -180,6 +228,12 @@ def rename_file(path_str: str, new_name: str) -> ActionPlan:
     ok, resolved, blocked = _validate_path(path_str, require_exist=True)
     if blocked:
         return blocked
+
+    # Validar el nuevo nombre
+    valid, reason = _validate_filename(new_name)
+    if not valid:
+        return policy.block(f"Nombre no valido: {reason}")
+
     new_path = resolved.parent / new_name
     ok2, _, blocked2 = _validate_path(str(new_path))
     if blocked2:
