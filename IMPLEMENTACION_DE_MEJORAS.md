@@ -292,7 +292,7 @@
   - **Tests**: Test con mock de `sounddevice` no disponible
   - **Verificar**: Jarvis funciona sin micrófono (modo texto)
 
-- [ ] **5.3 Añadir `threading.Lock` para acceso al modelo Whisper**
+- [x] **5.3 Añadir `threading.Lock` para acceso al modelo Whisper**
   - **Archivo**: `jarvis_local/voice/stt.py:34-36`
   - **Problema**: Lock existe pero no se usa en todos los accesos al modelo (ej: `capture_and_transcribe` línea 483).
   - **Acciones**:
