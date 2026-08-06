@@ -46,7 +46,7 @@
   - **Tests a crear**: Tests que se skippen en la plataforma contraria
   - **Verificar**: `python -m pytest test/test_hidden* -q`
 
-- [ ] **1.4 `atexit.register` para cerrar Chrome en `browser.py`**
+- [x] **1.4 `atexit.register` para cerrar Chrome en `browser.py`**
   - **Archivo**: `jarvis_local/tools/browser.py:8-27`
   - **Problema**: `_driver` global nunca se cierra automáticamente. Chrome queda como zombie si Jarvis crashea.
   - **Acciones**:

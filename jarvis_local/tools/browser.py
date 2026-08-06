@@ -3,9 +3,25 @@ JARVIS Local - Navegador automatizado con Selenium (Fase 5)
 Chrome controlado por JARVIS: navegar, buscar y mostrar ofertas de empleo.
 El chromedriver lo gestiona Selenium Manager automaticamente.
 """
+import atexit
+import contextlib
+
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 _driver = None
+
+
+def _cleanup_driver():
+    """Cierra el driver al terminar el proceso."""
+    global _driver
+    if _driver is not None:
+        with contextlib.suppress(Exception):
+            _driver.quit()
+        _driver = None
+
+
+# Registrar cleanup al terminar el proceso
+atexit.register(_cleanup_driver)
 
 
 def _get_driver():
