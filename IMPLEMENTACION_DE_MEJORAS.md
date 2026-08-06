@@ -585,7 +585,7 @@
 
 ## FASE 12 — ELIMINAR VARIABLES GLOBALES
 
-- [ ] **12.1 Eliminar `global` en `browser.py`**
+- [x] **12.1 Eliminar `global` en `browser.py`**
   - **Archivo**: `jarvis_local/tools/browser.py`
   - **Problema**: `_driver` como variable global mutable.
   - **Acciones**:
@@ -595,7 +595,7 @@
   - **Tests**: `python -m pytest test/test_browser* -q` (si existen)
   - **Verificar**: Navegador funciona igual
 
-- [ ] **12.2 Eliminar `global` en `config.py`**
+- [x] **12.2 Eliminar `global` en `config.py`**
   - **Archivo**: `jarvis_local/config.py`
   - **Problema**: `_config_cache` y `_secrets_cache` como globales.
   - **Acciones**:

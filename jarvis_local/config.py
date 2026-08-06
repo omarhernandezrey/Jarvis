@@ -66,58 +66,74 @@ DEFAULT_CONFIG = {
     },
 }
 
-_config_cache = None
+
+class ConfigManager:
+    """Gestiona la configuración y secretos de forma segura."""
+
+    _instance = None
+    _config_cache = None
+    _secrets_cache = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def get_config(self) -> dict:
+        if ConfigManager._config_cache is None:
+            ConfigManager._config_cache = self._load_config()
+        return ConfigManager._config_cache
+
+    def reload_config(self) -> dict:
+        ConfigManager._config_cache = None
+        return self.get_config()
+
+    def get_secrets(self) -> dict:
+        """Carga secrets.yaml (API keys, correo). Devuelve {} si no existe."""
+        if ConfigManager._secrets_cache is None:
+            secrets_file = BASE_DIR / "secrets.yaml"
+            if secrets_file.exists():
+                with open(secrets_file, encoding="utf-8") as f:
+                    ConfigManager._secrets_cache = yaml.safe_load(f) or {}
+            else:
+                ConfigManager._secrets_cache = {}
+        return ConfigManager._secrets_cache
+
+    def reload_secrets(self) -> dict:
+        ConfigManager._secrets_cache = None
+        return self.get_secrets()
+
+    @staticmethod
+    def _load_config() -> dict:
+        cfg = DEFAULT_CONFIG.copy()
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, encoding="utf-8") as f:
+                user_cfg = yaml.safe_load(f) or {}
+                ConfigManager._deep_merge(cfg, user_cfg)
+        return cfg
+
+    @staticmethod
+    def _deep_merge(base: dict, override: dict) -> None:
+        for key, value in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                ConfigManager._deep_merge(base[key], value)
+            else:
+                base[key] = value
 
 
-def _load_config() -> dict:
-    cfg = DEFAULT_CONFIG.copy()
-    if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, encoding="utf-8") as f:
-            user_cfg = yaml.safe_load(f) or {}
-            _deep_merge(cfg, user_cfg)
-    return cfg
-
-
-def _deep_merge(base: dict, override: dict) -> None:
-    for key, value in override.items():
-        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-            _deep_merge(base[key], value)
-        else:
-            base[key] = value
-
-
+# Funciones de compatibilidad con código existente
 def get_config() -> dict:
-    global _config_cache
-    if _config_cache is None:
-        _config_cache = _load_config()
-    return _config_cache
+    return ConfigManager.get_instance().get_config()
 
 
 def reload_config() -> dict:
-    global _config_cache
-    _config_cache = None
-    return get_config()
-
-
-# --- Secretos (API keys, credenciales) ---
-# Viven en secrets.yaml, que esta en .gitignore y NUNCA se sube al repo.
-SECRETS_FILE = BASE_DIR / "secrets.yaml"
-_secrets_cache = None
+    return ConfigManager.get_instance().reload_config()
 
 
 def get_secrets() -> dict:
-    """Carga secrets.yaml (API keys, correo). Devuelve {} si no existe."""
-    global _secrets_cache
-    if _secrets_cache is None:
-        if SECRETS_FILE.exists():
-            with open(SECRETS_FILE, encoding="utf-8") as f:
-                _secrets_cache = yaml.safe_load(f) or {}
-        else:
-            _secrets_cache = {}
-    return _secrets_cache
+    return ConfigManager.get_instance().get_secrets()
 
 
 def reload_secrets() -> dict:
-    global _secrets_cache
-    _secrets_cache = None
-    return get_secrets()
+    return ConfigManager.get_instance().reload_secrets()

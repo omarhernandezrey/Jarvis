@@ -8,39 +8,54 @@ import contextlib
 
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
-_driver = None
 
+class BrowserManager:
+    """Gestiona el driver de Chrome de forma segura."""
 
-def _cleanup_driver():
-    """Cierra el driver al terminar el proceso."""
-    global _driver
-    if _driver is not None:
-        with contextlib.suppress(Exception):
-            _driver.quit()
-        _driver = None
+    _instance = None
+    _driver = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def _cleanup(cls):
+        """Cierra el driver al terminar el proceso."""
+        if cls._driver is not None:
+            with contextlib.suppress(Exception):
+                cls._driver.quit()
+            cls._driver = None
+
+    def get_driver(self):
+        """Devuelve el Chrome controlado (lo crea si no existe o se cerro)."""
+        if BrowserManager._driver is not None:
+            try:
+                _ = BrowserManager._driver.current_url  # sigue vivo?
+                return BrowserManager._driver
+            except Exception:
+                BrowserManager._driver = None
+        from selenium import webdriver
+        opts = webdriver.ChromeOptions()
+        opts.add_argument("--start-maximized")
+        opts.add_argument("--disable-blink-features=AutomationControlled")
+        # No usar excludeSwitches: impide que Chrome 150+ arranque (session not created)
+        opts.add_experimental_option("detach", True)  # la ventana queda abierta
+        BrowserManager._driver = webdriver.Chrome(options=opts)
+        return BrowserManager._driver
+
+    def close(self):
+        """Cierra el Chrome controlado."""
+        if BrowserManager._driver is not None:
+            with contextlib.suppress(Exception):
+                BrowserManager._driver.quit()
+            BrowserManager._driver = None
 
 
 # Registrar cleanup al terminar el proceso
-atexit.register(_cleanup_driver)
-
-
-def _get_driver():
-    """Devuelve el Chrome controlado (lo crea si no existe o se cerro)."""
-    global _driver
-    if _driver is not None:
-        try:
-            _ = _driver.current_url  # sigue vivo?
-            return _driver
-        except Exception:
-            _driver = None
-    from selenium import webdriver
-    opts = webdriver.ChromeOptions()
-    opts.add_argument("--start-maximized")
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    # No usar excludeSwitches: impide que Chrome 150+ arranque (session not created)
-    opts.add_experimental_option("detach", True)  # la ventana queda abierta
-    _driver = webdriver.Chrome(options=opts)
-    return _driver
+atexit.register(BrowserManager._cleanup)
 
 
 def browser_available() -> bool:
@@ -60,7 +75,8 @@ def navigate(url: str) -> ActionPlan:
         plan.result = "Selenium no esta instalado, senor. Ejecute: pip install selenium"
         return plan
     try:
-        d = _get_driver()
+        manager = BrowserManager.get_instance()
+        d = manager.get_driver()
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
         d.get(url)
@@ -100,7 +116,8 @@ def show_jobs_in_browser(puesto: str = "", ciudad: str = "") -> ActionPlan:
         plan.result = "Selenium no esta instalado, senor. Ejecute: pip install selenium"
         return plan
     try:
-        d = _get_driver()
+        manager = BrowserManager.get_instance()
+        d = manager.get_driver()
         primero = True
         for _portal, url in urls.items():
             if primero:
@@ -122,17 +139,14 @@ def show_jobs_in_browser(puesto: str = "", ciudad: str = "") -> ActionPlan:
 
 def close_browser() -> ActionPlan:
     """Cierra el Chrome controlado por JARVIS."""
-    global _driver
     plan = ActionPlan(action="cerrar_navegador", risk=RiskLevel.EXECUTE,
                       reason="Cerrar navegador automatizado")
     try:
-        if _driver is not None:
-            _driver.quit()
+        manager = BrowserManager.get_instance()
+        manager.close()
         plan.result = "Navegador automatizado cerrado, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception:
         plan.result = "El navegador ya estaba cerrado, senor."
         plan.status = ActionStatus.EXECUTED
-    finally:
-        _driver = None
     return plan
