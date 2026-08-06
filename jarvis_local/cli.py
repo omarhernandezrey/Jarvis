@@ -297,10 +297,9 @@ def handle_cancel():
     print(plan)
 
 
-def main():
-    print(BANNER)
+def init_jarvis() -> Jarvis:
+    """Inicializa Jarvis y verifica la conexión con Ollama."""
     print("Verificando conexion con Ollama...")
-
     try:
         jarvis = Jarvis()
     except ConnectionError as e:
@@ -309,7 +308,297 @@ def main():
     except RuntimeError as e:
         print(f"\n[ERROR] {e}")
         sys.exit(1)
+    return jarvis
 
+
+def handle_memoria(parts: list[str], jarvis):
+    """Maneja los comandos /memoria."""
+    from jarvis_local.config import BASE_DIR
+    from jarvis_local.storage.memory import MemoryStore
+    mem = MemoryStore(BASE_DIR / "data")
+    if len(parts) < 2:
+        print("Uso: /memoria <guardar|listar|borrar|limpiar|usar|dejar|activas|desactivar-todas|buscar>")
+    elif parts[1].lower() == "guardar":
+        if len(parts) < 3:
+            print("Uso: /memoria guardar <texto>")
+        else:
+            text = " ".join(parts[2:])
+            item = mem.add(text)
+            if item:
+                print(f"[OK] Memoria guardada. ID: {item['id'][:8]}...")
+            else:
+                print("[ERROR] Limite de memorias alcanzado (max 100) o texto vacio.")
+    elif parts[1].lower() == "listar":
+        items = mem.list()
+        if not items:
+            print("[Sin memorias guardadas]")
+        else:
+            print(f"\nMemorias ({len(items)}):")
+            for it in items:
+                print(f"  [{it['id'][:8]}] {it['text'][:80]}")
+    elif parts[1].lower() == "borrar":
+        if len(parts) < 3:
+            print("Uso: /memoria borrar <id>")
+        else:
+            mem_id = parts[2]
+            from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+            from jarvis_local.safety.policy import policy as pol
+            plan = ActionPlan(
+                action="borrar_memoria", risk=RiskLevel.DELETE,
+                params={"memory_id": mem_id},
+                reason="Borrar memoria requiere confirmacion",
+                simulation_result=f"[Plan pendiente] Accion: borrar memoria {mem_id[:8]}... Escribe /confirmar para ejecutar o /cancelar para cancelar.",
+            )
+            plan.status = ActionStatus.PLANNED
+            pol.pending_plan = plan
+            pol.pending_plan._mem_id = mem_id
+            print(plan)
+    elif parts[1].lower() == "limpiar":
+        from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+        from jarvis_local.safety.policy import policy as pol
+        plan = ActionPlan(
+            action="limpiar_memorias", risk=RiskLevel.DELETE,
+            reason="Limpiar todas las memorias requiere confirmacion",
+            simulation_result="[Plan pendiente] Accion: borrar todas las memorias. Escribe /confirmar para ejecutar o /cancelar para cancelar.",
+        )
+        plan.status = ActionStatus.PLANNED
+        pol.pending_plan = plan
+        print(plan)
+    elif parts[1].lower() == "usar":
+        if len(parts) < 3:
+            print("Uso: /memoria usar <id>")
+        else:
+            mem_id = parts[2]
+            items = mem.list()
+            found = next((it for it in items if it["id"].startswith(mem_id)), None)
+            if not found:
+                print(f"Memoria con ID '{mem_id[:8]}...' no encontrada.")
+            else:
+                ok, msg = jarvis.memory_context.activate(found)
+                print(f"[{'OK' if ok else 'ERROR'}] {msg}")
+    elif parts[1].lower() == "dejar":
+        if len(parts) < 3:
+            print("Uso: /memoria dejar <id>")
+        else:
+            mem_id = parts[2]
+            if jarvis.memory_context.deactivate(mem_id):
+                print(f"[OK] Memoria {mem_id[:8]}... desactivada.")
+            else:
+                print(f"No se encontro la memoria activa con ID '{mem_id[:8]}...'.")
+    elif parts[1].lower() == "activas":
+        actives = jarvis.memory_context.list_active()
+        if not actives:
+            print("[Sin memorias activas]")
+        else:
+            print(f"\nMemorias activas ({len(actives)}/{5}):")
+            for a in actives:
+                print(f"  [{a['id'][:8]}] {a['text'][:80]}")
+    elif parts[1].lower() == "desactivar-todas":
+        jarvis.memory_context.clear()
+        print("[OK] Todas las memorias desactivadas.")
+    elif parts[1].lower() == "buscar":
+        if len(parts) < 3:
+            print("Uso: /memoria buscar <texto o pregunta>")
+        else:
+            query = " ".join(parts[2:])
+            items = mem.list()
+            # Busqueda semantica: encuentra por significado
+            # ("que me gusta tomar?" -> "prefiero el cafe")
+            results = []
+            if jarvis.auto_recall is not None:
+                hits = jarvis.auto_recall.index.search(
+                    query, items, top_k=5, min_score=0.4)
+                results = [(m, s) for m, s in hits]
+            if not results:  # respaldo: coincidencia literal
+                results = [(it, 0.0) for it in items
+                           if query.lower() in it["text"].lower()]
+            if not results:
+                print(f"No se encontraron memorias sobre '{query}'.")
+            else:
+                print(f"\nResultados ({len(results)}):")
+                for it, score in results:
+                    rel = f" ({score:.0%})" if score else ""
+                    print(f"  [{it['id'][:8]}]{rel} {it['text'][:80]}")
+    else:
+        print(f"Comando memoria desconocido: {parts[1]}")
+
+
+def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
+    """Maneja los comandos /voz. Retorna el nuevo estado de tts_enabled."""
+    if len(parts) < 2:
+        _handle_voz_capture(jarvis, tts_enabled)
+    elif parts[1].lower() == "on":
+        tts_enabled = True
+        _set_voice(jarvis, True)
+        print("[Voz] Lectura de respuestas ACTIVADA "
+              "(habla mientras genera)")
+    elif parts[1].lower() == "off":
+        tts_enabled = False
+        _set_voice(jarvis, False)
+        print("[Voz] Lectura de respuestas DESACTIVADA")
+    elif parts[1].lower() == "calibrar":
+        try:
+            from jarvis_local.voice.stt import calibrate
+            calibrate()
+        except Exception as e:
+            print(f"[ERROR Calibracion] {e}")
+    elif parts[1].lower() == "diagnostico":
+        try:
+            from jarvis_local.voice.stt import diagnose
+            diagnose()
+        except Exception as e:
+            print(f"[ERROR Diagnostico] {e}")
+    elif parts[1].lower() == "continuo":
+        if len(parts) == 2:
+            if (hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl
+                    and jarvis._continuous_ctrl.is_running()):
+                print("[Voz continua] Ya esta activa. Usa /voz continuo detener para detenerla.")
+            else:
+                from jarvis_local.voice.continuous import ContinuousVoiceController
+                from jarvis_local.voice.stt import (
+                    capture_and_transcribe,
+                    load_voice_config,
+                )
+                from jarvis_local.voice.tts import is_speaking as tts_is_speaking_fn
+                from jarvis_local.voice.tts import speak as tts_speak_fn
+                vcfg = load_voice_config()
+                mic_name = "auto"
+                try:
+                    import sounddevice as sd
+                    d = sd.query_devices(kind="input")
+                    mic_name = d.get("name", "auto")
+                except Exception:
+                    pass
+                ctrl = ContinuousVoiceController(
+                    stt_fn=capture_and_transcribe,
+                    chat_fn=jarvis.chat,
+                    tts_speak_fn=tts_speak_fn if tts_enabled else None,
+                    tts_speaking_fn=tts_is_speaking_fn,
+                )
+                jarvis._continuous_ctrl = ctrl
+                ctrl.start()
+                print("[Voz continua] ACTIVADA. Di 'Jarvis' seguido de tu solicitud.")
+                print(f"[Voz continua] Microfono: {mic_name}")
+                print(f"[Voz continua] Fragmentos: 2s | STT: faster-whisper {vcfg.get('stt_model','base')}")
+                print("  Usa /voz continuo detener para parar.")
+        elif parts[2].lower() == "detener":
+            if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
+                jarvis._continuous_ctrl.stop()
+                jarvis._continuous_ctrl = None
+            print("[Voz continua] DETENIDA.")
+        elif parts[2].lower() == "estado":
+            if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
+                st = jarvis._continuous_ctrl.get_state()
+                print(f"[Voz continua] {'ON' if st['active'] else 'OFF'}")
+                print(f"  Estado: {st['state']}")
+                print(f"  Wake word: {st['wake_word']}")
+                print(f"  Fragmento: {st['fragment_duration_s']}s")
+                print(f"  Pausa TTS: {st['tts_pause_ms']}ms")
+                if st.get('buffer'):
+                    print(f"  Buffer actual: {st['buffer']}")
+                if st.get('last_command'):
+                    print(f"  Ultimo comando: {st['last_command'][:80]}")
+                if st.get('silence_count'):
+                    print(f"  Silencio: {st['silence_count']}/{st.get('command_timeout_s',8)//2}")
+            else:
+                print("[Voz continua] OFF")
+        elif parts[2].lower() == "prueba":
+            from jarvis_local.voice.stt import (
+                capture_and_transcribe,
+                load_voice_config,
+            )
+            vcfg = load_voice_config()
+            mic_name = "auto"
+            try:
+                import sounddevice as sd
+                d = sd.query_devices(kind="input")
+                mic_name = d.get("name", "auto")
+            except Exception:
+                pass
+            print(f"[Voz continua prueba] Microfono: {mic_name}")
+            text = capture_and_transcribe(2, show_stats=True)
+            if text:
+                print(f"[Voz continua prueba] Transcripcion: \"{text}\"")
+            else:
+                print("[Voz continua prueba] Sin texto reconocido.")
+        else:
+            print("Uso: /voz continuo [detener|estado|prueba]")
+    elif parts[1].lower() == "voces":
+        try:
+            from jarvis_local.voice.tts import list_voices
+            voces = list_voices()
+            print(f"\nVoces TTS disponibles ({len(voces)}):")
+            for v in voces:
+                print(f"  [{v['index']}] {v['name']} | langs={v['languages']}")
+        except Exception as e:
+            print(f"[ERROR Voces] {e}")
+    elif parts[1].lower() == "voz":
+        try:
+            idx = int(parts[2])
+            from jarvis_local.voice.tts import select_voice
+            if select_voice(idx):
+                print(f"[Voz] Voz cambiada a indice {idx}")
+            else:
+                print(f"[ERROR] Indice de voz invalido: {idx}")
+        except (IndexError, ValueError):
+            print("Uso: /voz voz <indice>")
+        except Exception as e:
+            print(f"[ERROR] {e}")
+    elif parts[1].lower() == "velocidad":
+        try:
+            wpm = int(parts[2])
+            from jarvis_local.voice.tts import set_rate
+            if set_rate(wpm):
+                print(f"[Voz] Velocidad: {wpm} palabras/min")
+            else:
+                print("[ERROR] Velocidad fuera de rango (120-250)")
+        except (IndexError, ValueError):
+            print("Uso: /voz velocidad <120-250>")
+        except Exception as e:
+            print(f"[ERROR] {e}")
+    elif parts[1].lower() == "volumen":
+        try:
+            vol = float(parts[2])
+            from jarvis_local.voice.tts import set_volume
+            if set_volume(vol):
+                print(f"[Voz] Volumen: {vol:.1f}")
+            else:
+                print("[ERROR] Volumen fuera de rango (0.0-1.0)")
+        except (IndexError, ValueError):
+            print("Uso: /voz volumen <0.0-1.0>")
+        except Exception as e:
+            print(f"[ERROR] {e}")
+    elif parts[1].lower() == "probar":
+        from jarvis_local.voice.tts import speak
+        speak("Prueba de voz de Jarvis.")
+        print("[Voz] Prueba de voz reproducida.")
+    else:
+        stt_model = cfg.get("voice", {}).get("stt_model", "small")
+        threshold_val = None
+        noise_floor = None
+        try:
+            from jarvis_local.voice.stt import _get_threshold, load_voice_config
+            vcfg = load_voice_config()
+            threshold_val = _get_threshold()
+            noise_floor = vcfg.get("stt_noise_floor")
+        except Exception:
+            pass
+        if noise_floor is not None:
+            print(f"[Voz] Ruido base calibrado: {noise_floor:.6f}")
+        from jarvis_local.voice.tts import get_voice_state
+        tts_state = get_voice_state()
+        print(f"[Voz] STT: faster-whisper {stt_model}")
+        print(f"[Voz] TTS: pyttsx3 (SAPI5) | {'ON' if tts_enabled else 'OFF'}")
+        print(f"[Voz] Voz: indice {tts_state['voice_index']}")
+        print(f"[Voz] Velocidad: {tts_state['rate']} wpm | Volumen: {tts_state['volume']:.1f}")
+        if threshold_val is not None:
+            print(f"[Voz] Umbral STT: {threshold_val:.6f}")
+    return tts_enabled
+
+
+def main():
+    print(BANNER)
+    jarvis = init_jarvis()
     cfg = get_config()
     tts_enabled = cfg.get("voice", {}).get("tts_enabled", False)
 
@@ -392,287 +681,9 @@ def main():
                                 content = m["content"][:80] + ("..." if len(m["content"]) > 80 else "")
                                 print(f"  [{role}] {content}")
                 elif sub == "memoria":
-                    from jarvis_local.config import BASE_DIR
-                    from jarvis_local.storage.memory import MemoryStore
-                    mem = MemoryStore(BASE_DIR / "data")
-                    if len(parts) < 2:
-                        print("Uso: /memoria <guardar|listar|borrar|limpiar|usar|dejar|activas|desactivar-todas|buscar>")
-                    elif parts[1].lower() == "guardar":
-                        if len(parts) < 3:
-                            print("Uso: /memoria guardar <texto>")
-                        else:
-                            text = " ".join(parts[2:])
-                            item = mem.add(text)
-                            if item:
-                                print(f"[OK] Memoria guardada. ID: {item['id'][:8]}...")
-                            else:
-                                print("[ERROR] Limite de memorias alcanzado (max 100) o texto vacio.")
-                    elif parts[1].lower() == "listar":
-                        items = mem.list()
-                        if not items:
-                            print("[Sin memorias guardadas]")
-                        else:
-                            print(f"\nMemorias ({len(items)}):")
-                            for it in items:
-                                print(f"  [{it['id'][:8]}] {it['text'][:80]}")
-                    elif parts[1].lower() == "borrar":
-                        if len(parts) < 3:
-                            print("Uso: /memoria borrar <id>")
-                        else:
-                            mem_id = parts[2]
-                            from jarvis_local.safety.policy import (
-                                ActionPlan,
-                                ActionStatus,
-                                RiskLevel,
-                            )
-                            from jarvis_local.safety.policy import policy as pol
-                            plan = ActionPlan(
-                                action="borrar_memoria", risk=RiskLevel.DELETE,
-                                params={"memory_id": mem_id},
-                                reason="Borrar memoria requiere confirmacion",
-                                simulation_result=f"[Plan pendiente] Accion: borrar memoria {mem_id[:8]}... Escribe /confirmar para ejecutar o /cancelar para cancelar.",
-                            )
-                            plan.status = ActionStatus.PLANNED
-                            pol.pending_plan = plan
-                            pol.pending_plan._mem_id = mem_id
-                            print(plan)
-                    elif parts[1].lower() == "limpiar":
-                        from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
-                        from jarvis_local.safety.policy import policy as pol
-                        plan = ActionPlan(
-                            action="limpiar_memorias", risk=RiskLevel.DELETE,
-                            reason="Limpiar todas las memorias requiere confirmacion",
-                            simulation_result="[Plan pendiente] Accion: borrar todas las memorias. Escribe /confirmar para ejecutar o /cancelar para cancelar.",
-                        )
-                        plan.status = ActionStatus.PLANNED
-                        pol.pending_plan = plan
-                        print(plan)
-                    elif parts[1].lower() == "usar":
-                        if len(parts) < 3:
-                            print("Uso: /memoria usar <id>")
-                        else:
-                            mem_id = parts[2]
-                            items = mem.list()
-                            found = next((it for it in items if it["id"].startswith(mem_id)), None)
-                            if not found:
-                                print(f"Memoria con ID '{mem_id[:8]}...' no encontrada.")
-                            else:
-                                ok, msg = jarvis.memory_context.activate(found)
-                                print(f"[{'OK' if ok else 'ERROR'}] {msg}")
-                    elif parts[1].lower() == "dejar":
-                        if len(parts) < 3:
-                            print("Uso: /memoria dejar <id>")
-                        else:
-                            mem_id = parts[2]
-                            if jarvis.memory_context.deactivate(mem_id):
-                                print(f"[OK] Memoria {mem_id[:8]}... desactivada.")
-                            else:
-                                print(f"No se encontro la memoria activa con ID '{mem_id[:8]}...'.")
-                    elif parts[1].lower() == "activas":
-                        actives = jarvis.memory_context.list_active()
-                        if not actives:
-                            print("[Sin memorias activas]")
-                        else:
-                            print(f"\nMemorias activas ({len(actives)}/{5}):")
-                            for a in actives:
-                                print(f"  [{a['id'][:8]}] {a['text'][:80]}")
-                    elif parts[1].lower() == "desactivar-todas":
-                        jarvis.memory_context.clear()
-                        print("[OK] Todas las memorias desactivadas.")
-                    elif parts[1].lower() == "buscar":
-                        if len(parts) < 3:
-                            print("Uso: /memoria buscar <texto o pregunta>")
-                        else:
-                            query = " ".join(parts[2:])
-                            items = mem.list()
-                            # Busqueda semantica: encuentra por significado
-                            # ("que me gusta tomar?" -> "prefiero el cafe")
-                            results = []
-                            if jarvis.auto_recall is not None:
-                                hits = jarvis.auto_recall.index.search(
-                                    query, items, top_k=5, min_score=0.4)
-                                results = [(m, s) for m, s in hits]
-                            if not results:  # respaldo: coincidencia literal
-                                results = [(it, 0.0) for it in items
-                                           if query.lower() in it["text"].lower()]
-                            if not results:
-                                print(f"No se encontraron memorias sobre '{query}'.")
-                            else:
-                                print(f"\nResultados ({len(results)}):")
-                                for it, score in results:
-                                    rel = f" ({score:.0%})" if score else ""
-                                    print(f"  [{it['id'][:8]}]{rel} {it['text'][:80]}")
-                    else:
-                        print(f"Comando memoria desconocido: {parts[1]}")
+                    handle_memoria(parts, jarvis)
                 elif sub == "voz":
-                    if len(parts) < 2:
-                        _handle_voz_capture(jarvis, tts_enabled)
-                    elif parts[1].lower() == "on":
-                        tts_enabled = True
-                        _set_voice(jarvis, True)
-                        print("[Voz] Lectura de respuestas ACTIVADA "
-                              "(habla mientras genera)")
-                    elif parts[1].lower() == "off":
-                        tts_enabled = False
-                        _set_voice(jarvis, False)
-                        print("[Voz] Lectura de respuestas DESACTIVADA")
-                    elif parts[1].lower() == "calibrar":
-                        try:
-                            from jarvis_local.voice.stt import calibrate
-                            calibrate()
-                        except Exception as e:
-                            print(f"[ERROR Calibracion] {e}")
-                    elif parts[1].lower() == "diagnostico":
-                        try:
-                            from jarvis_local.voice.stt import diagnose
-                            diagnose()
-                        except Exception as e:
-                            print(f"[ERROR Diagnostico] {e}")
-                    elif parts[1].lower() == "continuo":
-                        if len(parts) == 2:
-                            if (hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl
-                                    and jarvis._continuous_ctrl.is_running()):
-                                print("[Voz continua] Ya esta activa. Usa /voz continuo detener para detenerla.")
-                            else:
-                                from jarvis_local.voice.continuous import ContinuousVoiceController
-                                from jarvis_local.voice.stt import (
-                                    capture_and_transcribe,
-                                    load_voice_config,
-                                )
-                                from jarvis_local.voice.tts import is_speaking as tts_is_speaking_fn
-                                from jarvis_local.voice.tts import speak as tts_speak_fn
-                                vcfg = load_voice_config()
-                                mic_name = "auto"
-                                try:
-                                    import sounddevice as sd
-                                    d = sd.query_devices(kind="input")
-                                    mic_name = d.get("name", "auto")
-                                except Exception:
-                                    pass
-                                ctrl = ContinuousVoiceController(
-                                    stt_fn=capture_and_transcribe,
-                                    chat_fn=jarvis.chat,
-                                    tts_speak_fn=tts_speak_fn if tts_enabled else None,
-                                    tts_speaking_fn=tts_is_speaking_fn,
-                                )
-                                jarvis._continuous_ctrl = ctrl
-                                ctrl.start()
-                                print("[Voz continua] ACTIVADA. Di 'Jarvis' seguido de tu solicitud.")
-                                print(f"[Voz continua] Microfono: {mic_name}")
-                                print(f"[Voz continua] Fragmentos: 2s | STT: faster-whisper {vcfg.get('stt_model','base')}")
-                                print("  Usa /voz continuo detener para parar.")
-                        elif parts[2].lower() == "detener":
-                            if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
-                                jarvis._continuous_ctrl.stop()
-                                jarvis._continuous_ctrl = None
-                            print("[Voz continua] DETENIDA.")
-                        elif parts[2].lower() == "estado":
-                            if hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl:
-                                st = jarvis._continuous_ctrl.get_state()
-                                print(f"[Voz continua] {'ON' if st['active'] else 'OFF'}")
-                                print(f"  Estado: {st['state']}")
-                                print(f"  Wake word: {st['wake_word']}")
-                                print(f"  Fragmento: {st['fragment_duration_s']}s")
-                                print(f"  Pausa TTS: {st['tts_pause_ms']}ms")
-                                if st.get('buffer'):
-                                    print(f"  Buffer actual: {st['buffer']}")
-                                if st.get('last_command'):
-                                    print(f"  Ultimo comando: {st['last_command'][:80]}")
-                                if st.get('silence_count'):
-                                    print(f"  Silencio: {st['silence_count']}/{st.get('command_timeout_s',8)//2}")
-                            else:
-                                print("[Voz continua] OFF")
-                        elif parts[2].lower() == "prueba":
-                            from jarvis_local.voice.stt import (
-                                capture_and_transcribe,
-                                load_voice_config,
-                            )
-                            vcfg = load_voice_config()
-                            mic_name = "auto"
-                            try:
-                                import sounddevice as sd
-                                d = sd.query_devices(kind="input")
-                                mic_name = d.get("name", "auto")
-                            except Exception:
-                                pass
-                            print(f"[Voz continua prueba] Microfono: {mic_name}")
-                            text = capture_and_transcribe(2, show_stats=True)
-                            if text:
-                                print(f"[Voz continua prueba] Transcripcion: \"{text}\"")
-                            else:
-                                print("[Voz continua prueba] Sin texto reconocido.")
-                        else:
-                            print("Uso: /voz continuo [detener|estado|prueba]")
-                    elif parts[1].lower() == "voces":
-                        try:
-                            from jarvis_local.voice.tts import list_voices
-                            voces = list_voices()
-                            print(f"\nVoces TTS disponibles ({len(voces)}):")
-                            for v in voces:
-                                print(f"  [{v['index']}] {v['name']} | langs={v['languages']}")
-                        except Exception as e:
-                            print(f"[ERROR Voces] {e}")
-                    elif parts[1].lower() == "voz":
-                        try:
-                            idx = int(parts[2])
-                            from jarvis_local.voice.tts import select_voice
-                            if select_voice(idx):
-                                print(f"[Voz] Voz cambiada a indice {idx}")
-                            else:
-                                print(f"[ERROR] Indice de voz invalido: {idx}")
-                        except (IndexError, ValueError):
-                            print("Uso: /voz voz <indice>")
-                        except Exception as e:
-                            print(f"[ERROR] {e}")
-                    elif parts[1].lower() == "velocidad":
-                        try:
-                            wpm = int(parts[2])
-                            from jarvis_local.voice.tts import set_rate
-                            if set_rate(wpm):
-                                print(f"[Voz] Velocidad: {wpm} palabras/min")
-                            else:
-                                print("[ERROR] Velocidad fuera de rango (120-250)")
-                        except (IndexError, ValueError):
-                            print("Uso: /voz velocidad <120-250>")
-                        except Exception as e:
-                            print(f"[ERROR] {e}")
-                    elif parts[1].lower() == "volumen":
-                        try:
-                            vol = float(parts[2])
-                            from jarvis_local.voice.tts import set_volume
-                            if set_volume(vol):
-                                print(f"[Voz] Volumen: {vol:.1f}")
-                            else:
-                                print("[ERROR] Volumen fuera de rango (0.0-1.0)")
-                        except (IndexError, ValueError):
-                            print("Uso: /voz volumen <0.0-1.0>")
-                        except Exception as e:
-                            print(f"[ERROR] {e}")
-                    elif parts[1].lower() == "probar":
-                        from jarvis_local.voice.tts import speak
-                        speak("Prueba de voz de Jarvis.")
-                        print("[Voz] Prueba de voz reproducida.")
-                    else:
-                        stt_model = cfg.get("voice", {}).get("stt_model", "small")
-                        threshold_val = None
-                        noise_floor = None
-                        try:
-                            from jarvis_local.voice.stt import _get_threshold, load_voice_config
-                            vcfg = load_voice_config()
-                            threshold_val = _get_threshold()
-                            noise_floor = vcfg.get("stt_noise_floor")
-                        except Exception:
-                            pass
-                        if noise_floor is not None:
-                            print(f"[Voz] Ruido base calibrado: {noise_floor:.6f}")
-                        from jarvis_local.voice.tts import get_voice_state
-                        tts_state = get_voice_state()
-                        print(f"[Voz] STT: faster-whisper {stt_model}")
-                        print(f"[Voz] TTS: pyttsx3 (SAPI5) | {'ON' if tts_enabled else 'OFF'}")
-                        print(f"[Voz] Voz: indice {tts_state['voice_index']}")
-                        print(f"[Voz] Velocidad: {tts_state['rate']} wpm | Volumen: {tts_state['volume']:.1f}")
-                        if threshold_val is not None:
-                            print(f"[Voz] Umbral STT: {threshold_val:.6f}")
+                    tts_enabled = handle_voz(parts, jarvis, tts_enabled, cfg)
                 elif sub == "archivos":
                     handle_archivos(parts[1:])
                 elif sub == "apps":

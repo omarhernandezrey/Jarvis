@@ -110,7 +110,7 @@
   - **Tests**: `python -m pytest test/test_jarvis* -q`
   - **Verificar**: Revisar que `data/history.json` sigue registrando correctamente
 
-- [ ] **2.3 Extraer `main()` de `cli.py` en funciones pequeñas**
+- [x] **2.3 Extraer `main()` de `cli.py` en funciones pequeñas**
   - **Archivo**: `jarvis_local/cli.py:300-743`
   - **Problema**: Función `main()` de 470 líneas que maneja todo.
   - **Acciones**:
