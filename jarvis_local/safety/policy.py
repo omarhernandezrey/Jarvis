@@ -3,6 +3,7 @@ JARVIS Local - Politicas de Seguridad (Fase 2)
 ActionPlan, modo simulacion, confirmacion de acciones.
 """
 import enum
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -81,6 +82,7 @@ class SafetyPolicy:
         safety_cfg = cfg.get("safety", {})
         self.simulation_mode = safety_cfg.get("simulation_mode", False)
         self.pending_plan: ActionPlan | None = None
+        self._lock = threading.Lock()
 
     def is_simulation_mode(self) -> bool:
         return self.simulation_mode
@@ -97,62 +99,65 @@ class SafetyPolicy:
 
     def confirm(self) -> ActionPlan | None:
         """Confirma el plan pendiente si existe y es de bajo riesgo."""
-        if not self.pending_plan:
-            return None
-        if self.pending_plan.risk.value >= RiskLevel.DELETE.value:
-            self.pending_plan.status = ActionStatus.BLOCKED
-            self.pending_plan.result = (
-                "OPERACION BLOQUEADA: Esta accion requiere doble confirmacion "
-                "que no esta disponible en esta fase."
-            )
-            logger.log_action(
-                instruction=self.pending_plan.action,
-                result=self.pending_plan.result,
-                error="Requiere doble confirmacion",
-            )
+        with self._lock:
+            if not self.pending_plan:
+                return None
+            if self.pending_plan.risk.value >= RiskLevel.DELETE.value:
+                self.pending_plan.status = ActionStatus.BLOCKED
+                self.pending_plan.result = (
+                    "OPERACION BLOQUEADA: Esta accion requiere doble confirmacion "
+                    "que no esta disponible en esta fase."
+                )
+                logger.log_action(
+                    instruction=self.pending_plan.action,
+                    result=self.pending_plan.result,
+                    error="Requiere doble confirmacion",
+                )
+                plan = self.pending_plan
+                self.pending_plan = None
+                return plan
+            self.pending_plan.status = ActionStatus.CONFIRMED
+            self._log_plan(self.pending_plan, "CONFIRMADO")
             plan = self.pending_plan
             self.pending_plan = None
             return plan
-        self.pending_plan.status = ActionStatus.CONFIRMED
-        self._log_plan(self.pending_plan, "CONFIRMADO")
-        plan = self.pending_plan
-        self.pending_plan = None
-        return plan
 
     def auto_confirm(self) -> ActionPlan | None:
         """Auto-confirma para modo voz: confirma operaciones de riesgo bajo
         sin intervencion del usuario. DELETE y CRITICAL siguen bloqueados."""
-        if not self.pending_plan:
-            return None
-        if self.pending_plan.risk.value >= RiskLevel.DELETE.value:
-            self.pending_plan.status = ActionStatus.BLOCKED
-            self.pending_plan.result = (
-                "OPERACION BLOQUEADA: Borrado requiere confirmacion manual. "
-                "Usa /confirmar en la consola."
-            )
-            logger.log_action(
-                instruction=self.pending_plan.action,
-                result=self.pending_plan.result,
-                error="Auto-confirm bloqueada para DELETE",
-            )
+        with self._lock:
+            if not self.pending_plan:
+                return None
+            if self.pending_plan.risk.value >= RiskLevel.DELETE.value:
+                self.pending_plan.status = ActionStatus.BLOCKED
+                self.pending_plan.result = (
+                    "OPERACION BLOQUEADA: Borrado requiere confirmacion manual. "
+                    "Usa /confirmar en la consola."
+                )
+                logger.log_action(
+                    instruction=self.pending_plan.action,
+                    result=self.pending_plan.result,
+                    error="Auto-confirm bloqueada para DELETE",
+                )
+                plan = self.pending_plan
+                self.pending_plan = None
+                return plan
+            self.pending_plan.status = ActionStatus.CONFIRMED
+            self._log_plan(self.pending_plan, "AUTO-CONFIRMADO")
             plan = self.pending_plan
             self.pending_plan = None
             return plan
-        self.pending_plan.status = ActionStatus.CONFIRMED
-        self._log_plan(self.pending_plan, "AUTO-CONFIRMADO")
-        plan = self.pending_plan
-        self.pending_plan = None
-        return plan
 
     def reject(self) -> ActionPlan | None:
         """Rechaza el plan pendiente."""
-        if not self.pending_plan:
-            return None
-        self.pending_plan.status = ActionStatus.REJECTED
-        self._log_plan(self.pending_plan, "RECHAZADO")
-        plan = self.pending_plan
-        self.pending_plan = None
-        return plan
+        with self._lock:
+            if not self.pending_plan:
+                return None
+            self.pending_plan.status = ActionStatus.REJECTED
+            self._log_plan(self.pending_plan, "RECHAZADO")
+            plan = self.pending_plan
+            self.pending_plan = None
+            return plan
 
     def execute_plan(self, plan: ActionPlan, executor_fn) -> ActionPlan:
         """Ejecuta un plan usando la funcion proporcionada.

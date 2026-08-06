@@ -75,7 +75,7 @@
   - **Tests a crear**: Casos con `javascript:`, `data:`, `file:`
   - **Verificar**: `python -m pytest test/test_web* -q`
 
-- [ ] **1.7 Sincronizar `pending_plan` con `threading.Lock`**
+- [x] **1.7 Sincronizar `pending_plan` con `threading.Lock`**
   - **Archivo**: `jarvis_local/safety/policy.py:83`
   - **Problema**: `pending_plan` mutable sin sincronización. Race condition con voz continua + CLI.
   - **Acciones**:
