@@ -258,7 +258,7 @@
   - **Tests**: `python -m pytest test/test_agent* -q`
   - **Verificar**: `ruff check jarvis_local/agent/`
 
-- [ ] **4.5 Añadir `enum` a parámetros con valores fijos en schemas**
+- [x] **4.5 Añadir `enum` a parámetros con valores fijos en schemas**
   - **Archivo**: `jarvis_local/agent/registry.py` (múltiples herramientas)
   - **Problema**: Los schemas usan `"type": "string"` con hint en descripción, pero no `enum`.
   - **Acciones**:

@@ -46,8 +46,11 @@ def _obj(props: dict, required: list[str] | None = None) -> dict:
     return {"type": "object", "properties": props, "required": required}
 
 
-def _str(desc: str) -> dict:
-    return {"type": "string", "description": desc}
+def _str(desc: str, enum: list[str] | None = None) -> dict:
+    schema = {"type": "string", "description": desc}
+    if enum:
+        schema["enum"] = enum
+    return schema
 
 
 def _int(desc: str) -> dict:
@@ -363,14 +366,16 @@ TOOLS: list[Tool] = [
     Tool("controlar_volumen",
          "Controla el volumen del computador: subir, bajar, silenciar, activar "
          "el sonido o fijarlo a un nivel exacto (0-100).",
-         _obj({"accion": _str("Una de: subir, bajar, silenciar, activar, nivel"),
+         _obj({"accion": _str("Una de: subir, bajar, silenciar, activar, nivel",
+                              ["subir", "bajar", "silenciar", "activar", "nivel"]),
                "nivel": _int("Nivel 0-100, solo si accion=nivel")}, ["accion"]),
          _volume_control),
 
     Tool("controlar_musica",
          "Controla la reproduccion multimedia en curso (Spotify, YouTube, "
          "etc.): pausar/reanudar, siguiente cancion o cancion anterior.",
-         _obj({"accion": _str("Una de: pausar, siguiente, anterior")}),
+         _obj({"accion": _str("Una de: pausar, siguiente, anterior",
+                              ["pausar", "siguiente", "anterior"])}),
          _media_control),
 
     Tool("crear_recordatorio",
@@ -404,7 +409,9 @@ TOOLS: list[Tool] = [
          "Organiza las ventanas del escritorio: minimizar todas, o poner la "
          "ventana activa a la izquierda, derecha, maximizarla o minimizarla.",
          _obj({"accion": _str("Una de: minimizar_todo, izquierda, derecha, "
-                              "maximizar, minimizar")}),
+                              "maximizar, minimizar",
+                              ["minimizar_todo", "izquierda", "derecha",
+                               "maximizar", "minimizar"])}),
          _window_control),
 
     Tool("resumen_del_dia",
@@ -427,7 +434,8 @@ TOOLS: list[Tool] = [
          "Bloquear la sesion, apagar, reiniciar o suspender el computador, o "
          "cancelar un apagado programado. Apagar y reiniciar dan 60 segundos "
          "cancelables. NO usar para cerrar programas ni para apagar el sonido.",
-         _obj({"accion": _str("Una de: bloquear, apagar, reiniciar, suspender, cancelar")}),
+         _obj({"accion": _str("Una de: bloquear, apagar, reiniciar, suspender, cancelar",
+                              ["bloquear", "apagar", "reiniciar", "suspender", "cancelar"])}),
          _power_control),
 
     Tool("estado_del_sistema",
