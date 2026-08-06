@@ -336,7 +336,7 @@
   - **Tests**: Test con JSON versión 0 y verificar que migra a versión 1
   - **Verificar**: `python -m pytest test/test_storage* -q`
 
-- [ ] **6.4 Separar `sync()` de `search()` en `semantic.py`**
+- [x] **6.4 Separar `sync()` de `search()` en `semantic.py`**
   - **Archivo**: `storage/semantic.py:155-172`
   - **Problema**: `search()` llama a `sync()` en cada búsqueda. Latencia de 1-3s si hay memorias nuevas.
   - **Acciones**:

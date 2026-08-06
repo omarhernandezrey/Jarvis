@@ -144,6 +144,7 @@ def test_busqueda_por_significado(tmp_dir):
     store.add("Mi perro se llama Rocky y es un labrador")
     store.add("Trabajo como desarrollador frontend en Bogota")
     idx = SemanticIndex(tmp_dir)
+    idx.sync(store.list())
 
     hits = idx.search("puedo comer camarones?", store.list(), top_k=1)
     assert hits and "mariscos" in hits[0][0]["text"]

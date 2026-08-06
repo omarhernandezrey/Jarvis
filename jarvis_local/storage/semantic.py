@@ -158,14 +158,21 @@ class SemanticIndex:
         return True
 
     def search(self, query: str, items: list[dict], top_k: int = 3,
-               min_score: float = 0.45) -> list[tuple[dict, float]]:
-        """Memorias mas parecidas a la consulta, con su puntaje (0-1)."""
+               min_score: float = 0.45, sync: bool = False) -> list[tuple[dict, float]]:
+        """Memorias mas parecidas a la consulta, con su puntaje (0-1).
+
+        Args:
+            sync: Si True, sincroniza el índice antes de buscar. Por defecto False
+                  para evitar latencia en cada búsqueda.
+        """
         if not items:
             return []
         por_id = {it["id"]: it for it in items}
 
-        usa_vectores = self.sync(items)
-        if usa_vectores and self.matrix.size:
+        if sync:
+            self.sync(items)
+
+        if self.matrix.size:
             q = embed_query(query)
             if q:
                 scores = cosine_similarity(np.array(q, dtype=np.float32),
