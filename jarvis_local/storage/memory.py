@@ -16,6 +16,19 @@ from filelock import FileLock
 MAX_MEMORIES = 100
 MAX_MEMORY_LENGTH = 500
 MAX_CORRUPT_FILES = 3
+CURRENT_VERSION = 1
+
+
+def _migrate(data: dict, store_name: str) -> dict:
+    """Aplica migraciones secuencialmente al esquema de datos."""
+    version = data.get("version", 0)
+
+    # Migración 0 -> 1: añadir campo version
+    if version < 1:
+        data["version"] = 1
+        # Aquí se pueden añadir más migraciones en el futuro
+
+    return data
 
 
 def _cleanup_corrupt_files(data_dir: Path, pattern: str, keep: int = MAX_CORRUPT_FILES):
@@ -43,6 +56,7 @@ class MemoryStore:
             with FileLock(str(self._lock_path), timeout=5), \
                  open(self._path, encoding="utf-8") as f:
                 data = json.load(f)
+            data = _migrate(data, "memory")
             self._items = data.get("items", [])
         except (json.JSONDecodeError, KeyError, ValueError):
             corrupted = self.data_dir / f"memory.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"

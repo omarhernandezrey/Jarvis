@@ -325,7 +325,7 @@
   - **Tests**: Test que verifique que solo quedan 3 archivos corrupt
   - **Verificar**: `python -m pytest test/test_storage* -q`
 
-- [ ] **6.3 Implementar campo `version` y migrador de esquema**
+- [x] **6.3 Implementar campo `version` y migrador de esquema**
   - **Archivos**: `storage/history.py`, `storage/memory.py`, `storage/semantic.py`
   - **Problema**: Sin mecanismo de migración. Si se cambia el formato, los datos viejos se pierden.
   - **Acciones**:
