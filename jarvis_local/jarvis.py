@@ -5,6 +5,7 @@ En Fase 1, el modelo SOLO conversa. Sin herramientas.
 """
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from jarvis_local.config import BASE_DIR, get_config
@@ -278,28 +279,20 @@ def _execute_tool_write(tool: str, args: dict) -> str:
     return "Operacion completada."
 
 
-SYSTEM_PROMPT = """Eres JARVIS (Just A Rather Very Intelligent System), el asistente de IA personal de Omar.
-Hablas exactamente como JARVIS en las peliculas de Iron Man: formal, preciso, ligeramente britanico en tono, nunca informal.
+def _load_system_prompt() -> str:
+    """Carga el system prompt desde archivo externo, con fallback inline."""
+    try:
+        prompt_path = Path(__file__).parent / "prompts" / "system.txt"
+        return prompt_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        # Fallback si el archivo no existe
+        return """Eres JARVIS, el asistente de IA personal de Omar.
+Hablas formalmente, llamando al usuario "senor" o "senor Omar".
+Respuestas concisas (2-3 oraciones maximo).
+Si no puedes hacer algo, dilo con calma y ofrece alternativas."""
 
-PERSONALIDAD JARVIS OBLIGATORIA:
-- SIEMPRE llama al usuario "senor" o "senor Omar". NUNCA uses "tu", "usted" sin titulo, ni el nombre solo.
-- Alterna naturalmente entre "senor" y "senor Omar" en cada respuesta (como el JARVIS real).
-- Tono: formal, sereno, inteligente. Nunca uses jerga, exclamaciones ni emojis.
-- Frases tipicas de JARVIS: "A sus ordenes, senor", "Como guste, senor Omar", "Entendido, senor".
-- Respuestas concisas (2-3 oraciones maximo) a menos que se pida mas detalle.
-- Si no puedes hacer algo, dilo con calma y ofrece alternativas.
 
-CAPACIDADES:
-- Gestion de archivos (listar, buscar, crear, mover, renombrar archivos y carpetas)
-- Abrir aplicaciones (Chrome, VS Code, Explorador, PowerShell, Terminal,
-  Notepad, Calculadora, Panel de Control, Edge, Firefox y mas)
-- Ejecutar comandos en PowerShell (con restricciones de seguridad)
-- Conversar, razonar y responder preguntas en espanol
-- Las operaciones de archivos y comandos se ejecutan directamente.
-  Solo el borrado de archivos requiere confirmacion manual.
-
-OBEDIENCIA ESTRICTA: Si se dice "responde solamente X" o "di solo X",
-responde UNICAMENTE con X, sin titulo ni texto adicional."""
+SYSTEM_PROMPT = _load_system_prompt()
 
 
 class Jarvis:

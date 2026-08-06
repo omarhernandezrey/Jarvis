@@ -142,7 +142,7 @@
   - **Tests**: `python -m pytest test -q`
   - **Verificar**: Tiempo de respuesta no empeora
 
-- [ ] **2.6 Mover `SYSTEM_PROMPT` a archivo externo**
+- [x] **2.6 Mover `SYSTEM_PROMPT` a archivo externo**
   - **Archivo**: `jarvis_local/jarvis.py:393-414`
   - **Problema**: 20 líneas de prompt hardcodeado en el código fuente.
   - **Acciones**:
