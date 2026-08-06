@@ -12,7 +12,10 @@ from pathlib import Path
 
 from filelock import FileLock
 
+from jarvis_local.logging_config import get_logger
 from jarvis_local.safety.secrets import redact_secrets
+
+logger = get_logger("storage.history")
 
 MAX_MESSAGES = 50
 MAX_CONTENT_LENGTH = 2000
@@ -63,7 +66,7 @@ class HistoryStore:
             corrupted = self.data_dir / f"history.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
             with FileLock(str(self._lock_path), timeout=5):
                 shutil.move(str(self._path), str(corrupted))
-            print(f"[AVISO] Historial corrupto. Movido a {corrupted.name}. Iniciando vacio.")
+            logger.warning(f"Historial corrupto. Movido a {corrupted.name}. Iniciando vacio.")
             self._messages = []
             _cleanup_corrupt_files(self.data_dir, "history.corrupt-*.json")
 

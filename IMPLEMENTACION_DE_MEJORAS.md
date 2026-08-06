@@ -434,7 +434,7 @@
 
 ## FASE 9 — MIGRACIÓN A LOGGING (Reemplazar print)
 
-- [ ] **9.1 Configurar módulo `logging` centralizado**
+- [x] **9.1 Configurar módulo `logging` centralizado**
   - **Archivo**: Nuevo `jarvis_local/logging_config.py`
   - **Problema**: 268 `print()` en producción. Sin niveles de log, sin formato consistente.
   - **Acciones**:
@@ -445,7 +445,7 @@
   - **Tests**: Verificar que logging funciona
   - **Verificar**: `python -m pytest test -q`
 
-- [ ] **9.2 Migrar `print()` de `cli.py` a logging**
+- [x] **9.2 Migrar `print()` de `cli.py` a logging**
   - **Archivo**: `jarvis_local/cli.py`
   - **Problema**: ~100 `print()` que deberían usar logging o output directo al usuario.
   - **Acciones**:
@@ -455,18 +455,16 @@
   - **Tests**: `python -m pytest test/test_cli* -q`
   - **Verificar**: `python -m jarvis_local.cli` funciona igual
 
-- [ ] **9.3 Migrar `print()` de herramientas a logging**
+- [x] **9.3 Migrar `print()` de herramientas a logging**
   - **Archivos**: Todos en `jarvis_local/tools/`
   - **Problema**: `print()` de debug en herramientas.
   - **Acciones**:
-    - Reemplazar `print("[ERROR]...")` por `logger.error(...)`
-    - Reemplazar `print("[AVISO]...")` por `logger.warning(...)`
-    - Reemplazar `print("[INFO]...")` por `logger.info(...)`
-    - Mantener `print()` que son resultado para el usuario
+    - Solo 1 print en tools (recordatorio) - es output al usuario, se mantiene
+    - No hay prints de error/debug en herramientas
   - **Tests**: `python -m pytest test -q`
   - **Verificar**: Logs se escriben correctamente
 
-- [ ] **9.4 Migrar `print()` de voice a logging**
+- [x] **9.4 Migrar `print()` de voice a logging**
   - **Archivos**: `voice/stt.py`, `voice/continuous.py`, `voice/tts.py`
   - **Problema**: `print()` de debug en módulos de voz.
   - **Acciones**:
@@ -476,7 +474,7 @@
   - **Tests**: `python -m pytest test/test_voice* -q`
   - **Verificar**: Voz funciona igual
 
-- [ ] **9.5 Migrar `print()` de storage y agent a logging**
+- [x] **9.5 Migrar `print()` de storage y agent a logging**
   - **Archivos**: `storage/*.py`, `agent/*.py`
   - **Problema**: `print()` de debug en módulos core.
   - **Acciones**:

@@ -7,6 +7,10 @@ import os
 import shlex
 import sys
 
+from jarvis_local.logging_config import get_logger
+
+logger = get_logger("cli")
+
 # Forzar UTF-8 en la consola de Windows para que los acentos se muestren correctamente
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     try:
@@ -180,7 +184,7 @@ def handle_archivos(args: list[str]):
         else:
             print(f"Accion desconocida: {action}")
     except Exception as e:
-        print(f"[ERROR] {e}")
+        logger.error(f"Error: {e}")
 
 
 def handle_apps(args: list[str]):
@@ -201,7 +205,7 @@ def handle_apps(args: list[str]):
         else:
             print(f"Accion desconocida: {action}")
     except Exception as e:
-        print(f"[ERROR] {e}")
+        logger.error(f"Error: {e}")
 
 
 def handle_terminal(args: list[str]):
@@ -229,7 +233,7 @@ def _set_voice(jarvis, enabled: bool):
         from jarvis_local.voice.tts import speak
         jarvis.speak_fn = speak
     except Exception as e:
-        print(f"[ERROR Voz] No pude activar la voz: {e}")
+        logger.error(f"No pude activar la voz: {e}")
         jarvis.speak_fn = None
 
 
@@ -441,13 +445,13 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
             from jarvis_local.voice.stt import calibrate
             calibrate()
         except Exception as e:
-            print(f"[ERROR Calibracion] {e}")
+            logger.error(f"Error de calibracion: {e}")
     elif parts[1].lower() == "diagnostico":
         try:
             from jarvis_local.voice.stt import diagnose
             diagnose()
         except Exception as e:
-            print(f"[ERROR Diagnostico] {e}")
+            logger.error(f"Error de diagnostico: {e}")
     elif parts[1].lower() == "continuo":
         if len(parts) == 2:
             if (hasattr(jarvis, '_continuous_ctrl') and jarvis._continuous_ctrl
@@ -531,7 +535,7 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
             for v in voces:
                 print(f"  [{v['index']}] {v['name']} | langs={v['languages']}")
         except Exception as e:
-            print(f"[ERROR Voces] {e}")
+            logger.error(f"Error al listar voces: {e}")
     elif parts[1].lower() == "voz":
         try:
             idx = int(parts[2])
@@ -539,11 +543,11 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
             if select_voice(idx):
                 print(f"[Voz] Voz cambiada a indice {idx}")
             else:
-                print(f"[ERROR] Indice de voz invalido: {idx}")
+                logger.error(f"Indice de voz invalido: {idx}")
         except (IndexError, ValueError):
             print("Uso: /voz voz <indice>")
         except Exception as e:
-            print(f"[ERROR] {e}")
+            logger.error(f"Error: {e}")
     elif parts[1].lower() == "velocidad":
         try:
             wpm = int(parts[2])
@@ -555,7 +559,7 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
         except (IndexError, ValueError):
             print("Uso: /voz velocidad <120-250>")
         except Exception as e:
-            print(f"[ERROR] {e}")
+            logger.error(f"Error: {e}")
     elif parts[1].lower() == "volumen":
         try:
             vol = float(parts[2])
@@ -567,7 +571,7 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
         except (IndexError, ValueError):
             print("Uso: /voz volumen <0.0-1.0>")
         except Exception as e:
-            print(f"[ERROR] {e}")
+            logger.error(f"Error: {e}")
     elif parts[1].lower() == "probar":
         from jarvis_local.voice.tts import speak
         speak("Prueba de voz de Jarvis.")
@@ -704,7 +708,7 @@ def main():
                     except KeyboardInterrupt:
                         print("\nInterfaz web detenida.")
                     except Exception as e:
-                        print(f"[ERROR UI] {e}")
+                        logger.error(f"Error en interfaz web: {e}")
                 elif sub == "desktop":
                     print("Iniciando JARVIS Desktop...")
                     try:
@@ -713,7 +717,7 @@ def main():
                     except KeyboardInterrupt:
                         print("\nInterfaz desktop cerrada.")
                     except Exception as e:
-                        print(f"[ERROR Desktop] {e}")
+                        logger.error(f"Error en interfaz desktop: {e}")
                 elif sub == "confirmar":
                     handle_confirm(jarvis)
                 elif sub == "cancelar":
@@ -774,7 +778,7 @@ def _handle_voz_capture(jarvis, tts_enabled):
     except RuntimeError as e:
         print(f"\n[ERROR] {e}")
     except Exception as e:
-        print(f"[ERROR Voz] {e}")
+        logger.error(f"Error de voz: {e}")
 
 
 if __name__ == "__main__":

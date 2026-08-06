@@ -9,7 +9,10 @@ import time
 import yaml
 
 from jarvis_local.config import CONFIG_FILE
+from jarvis_local.logging_config import get_logger
 from jarvis_local.safety.logger import logger
+
+logger = get_logger("voice.stt")
 
 
 def load_voice_config() -> dict:
@@ -143,7 +146,7 @@ def record_until_silence(
                 break
     except Exception as e:
         if show_stats:
-            print(f"[Voz] ERROR captura: {e}")
+            logger.error(f"Error de captura: {e}")
         return None, 0.0, False
 
     if not blocks:
@@ -190,7 +193,7 @@ def calibrate() -> dict:
         recording = _sd.rec(int(3 * 16000), samplerate=16000, channels=1, dtype="int16")
         _sd.wait()
     except Exception as e:
-        print(f"[ERROR] No se pudo grabar: {e}")
+        logger.error(f"No se pudo grabar: {e}")
         return {"error": str(e)}
 
     audio = recording.flatten().astype("float32") / 32768.0
@@ -475,7 +478,7 @@ def capture_and_transcribe(
 
     except Exception as e:
         if show_stats:
-            print(f"[Voz] ERROR captura: {e}")
+            logger.error(f"Error de captura: {e}")
         if return_extra:
             return {"text": None, "rms": 0.0, "has_voice": False}
         return None
@@ -507,7 +510,7 @@ def capture_and_transcribe(
         return text if text else None
     except Exception as e:
         if show_stats:
-            print(f"[Voz] ERROR transcripcion: {type(e).__name__}: {e}")
+            logger.error(f"Error de transcripcion: {type(e).__name__}: {e}")
         if return_extra:
             return {"text": None, "rms": rms, "has_voice": True}
         return None

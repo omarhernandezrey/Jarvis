@@ -13,6 +13,10 @@ from pathlib import Path
 
 from filelock import FileLock
 
+from jarvis_local.logging_config import get_logger
+
+logger = get_logger("storage.memory")
+
 MAX_MEMORIES = 100
 MAX_MEMORY_LENGTH = 500
 MAX_CORRUPT_FILES = 3
@@ -62,7 +66,7 @@ class MemoryStore:
             corrupted = self.data_dir / f"memory.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
             with FileLock(str(self._lock_path), timeout=5):
                 shutil.move(str(self._path), str(corrupted))
-            print(f"[AVISO] Memoria corrupta. Movida a {corrupted.name}. Iniciando vacia.")
+            logger.warning(f"Memoria corrupta. Movida a {corrupted.name}. Iniciando vacia.")
             self._items = []
             _cleanup_corrupt_files(self.data_dir, "memory.corrupt-*.json")
 
