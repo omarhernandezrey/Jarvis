@@ -132,7 +132,7 @@
   - **Tests**: `python -m pytest test/test_fast_response* -q`
   - **Verificar**: Probar manualmente: "hola", "gracias", "qué hora es"
 
-- [ ] **2.5 Mover imports lazy al nivel de módulo en `jarvis.py`**
+- [x] **2.5 Mover imports lazy al nivel de módulo en `jarvis.py`**
   - **Archivo**: `jarvis_local/jarvis.py:70,136-137,213,257`
   - **Problema**: Imports repetidos en cada llamada al path caliente.
   - **Acciones**:
