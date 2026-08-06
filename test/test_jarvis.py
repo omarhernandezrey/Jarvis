@@ -219,3 +219,55 @@ if __name__ == "__main__":
     test_chat_intercept_lowercase_greeting(); test_chat_intercept_multiple_spaces()
     test_chat_not_matched_uses_ollama()
     print("OK: Todos los tests de jarvis pasaron.")
+
+
+# --- Tests de Registry de Herramientas ---
+
+def test_registry_read_tools_not_empty():
+    """Verifica que el registry de herramientas de lectura no está vacío."""
+    from jarvis_local.jarvis import _READ_TOOLS
+    assert len(_READ_TOOLS) >= 15
+
+
+def test_registry_write_tools_not_empty():
+    """Verifica que el registry de herramientas de escritura no está vacío."""
+    from jarvis_local.jarvis import _WRITE_TOOLS
+    assert len(_WRITE_TOOLS) >= 25
+
+
+def test_registry_plan_tools_not_empty():
+    """Verifica que el registry de herramientas de planificación no está vacío."""
+    from jarvis_local.jarvis import _PLAN_TOOLS
+    assert len(_PLAN_TOOLS) >= 8
+
+
+def test_registry_has_critical_tools():
+    """Verifica que las herramientas críticas están en el registry."""
+    from jarvis_local.jarvis import _READ_TOOLS, _WRITE_TOOLS
+    critical_read = ["list_files", "weather", "system_status", "calculate"]
+    critical_write = ["open_app", "create_file", "run_command", "open_website"]
+    for tool in critical_read:
+        assert tool in _READ_TOOLS, f"Herramienta de lectura faltante: {tool}"
+    for tool in critical_write:
+        assert tool in _WRITE_TOOLS, f"Herramienta de escritura faltante: {tool}"
+
+
+def test_execute_tool_read_unknown():
+    """Verifica que herramienta desconocida devuelve mensaje de error."""
+    from jarvis_local.jarvis import _execute_tool_read
+    result = _execute_tool_read("herramienta_inexistente", {})
+    assert "no encontrada" in result.lower()
+
+
+def test_execute_tool_write_unknown():
+    """Verifica que herramienta desconocida devuelve mensaje de error."""
+    from jarvis_local.jarvis import _execute_tool_write
+    result = _execute_tool_write("herramienta_inexistente", {})
+    assert "no encontrada" in result.lower()
+
+
+def test_create_tool_plan_unknown():
+    """Verifica que herramienta desconocida devuelve mensaje de error."""
+    from jarvis_local.jarvis import _create_tool_plan
+    result = _create_tool_plan("herramienta_inexistente", {}, "test")
+    assert "no pude" in result.lower() or "inexistente" in result.lower()

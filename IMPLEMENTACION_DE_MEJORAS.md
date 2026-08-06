@@ -152,6 +152,15 @@
   - **Tests**: `python -m pytest test/test_jarvis* -q`
   - **Verificar**: El prompt se carga correctamente
 
+- [x] **2.7 Crear tests de registry y handle_command**
+  - **Archivos**: `test/test_jarvis.py`, `test/test_cli.py`
+  - **Problema**: Faltaban tests para verificar el registry y las funciones extraídas
+  - **Acciones**:
+    - Añadir tests de registry (herramientas críticas, desconocidas)
+    - Crear `test/test_cli.py` con tests de `parse_args`, `handle_archivos`, `handle_apps`, `handle_terminal`
+  - **Tests**: 51 tests pasan
+  - **Verificar**: `python -m pytest test/test_jarvis.py test/test_cli.py -q`
+
 ---
 
 ## FASE 3 — HERRAMIENTAS (TOOLS)
