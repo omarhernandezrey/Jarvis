@@ -55,7 +55,7 @@
   - **Tests**: Verificar que `close_browser()` funciona correctamente
   - **Verificar**: `python -m pytest test/test_browser* -q` (si existen)
 
-- [ ] **1.5 Verificar `is_command_blocked` en `registry.py:_run_command`**
+- [x] **1.5 Verificar `is_command_blocked` en `registry.py:_run_command`**
   - **Archivo**: `jarvis_local/agent/registry.py:189-191`
   - **Problema**: `_run_command` delega a `execute_command` sin verificar explícitamente el blocklist aquí.
   - **Acciones**:

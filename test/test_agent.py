@@ -190,6 +190,24 @@ def test_arguments_parsea_dict_y_string():
     assert _arguments({}) == {}
 
 
+def test_run_command_blocked():
+    """Verifica que comandos bloqueados son rechazados desde el agente."""
+    from jarvis_local.agent.registry import execute
+    # Comando con keyword bloqueada
+    texto, pendiente = execute("ejecutar_comando", {"command": "rm -rf /"})
+    assert "bloqueado" in texto.lower()
+    assert pendiente is False
+
+
+def test_run_command_injection_blocked():
+    """Verifica que inyección de comandos es rechazada desde el agente."""
+    from jarvis_local.agent.registry import execute
+    # Intento de inyección
+    texto, pendiente = execute("ejecutar_comando", {"command": "echo hola; rm -rf /"})
+    assert "bloqueado" in texto.lower() or "inyeccion" in texto.lower()
+    assert pendiente is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
