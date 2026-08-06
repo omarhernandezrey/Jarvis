@@ -17,8 +17,8 @@ ALLOWED_APP_NAMES = ["chrome", "vscode", "explorador", "powershell", "terminal",
                        "wsl", "notepad", "calculadora", "control", "configuracion",
                        "cmd", "taskmgr", "edge", "firefox"]
 
-# Directorio inicial (ruta Linux) al abrir la terminal de WSL
-WSL_START_DIR = "/home/omarhernandez/personalProjects"
+# Directorio inicial al abrir la terminal de WSL (usa el home del usuario actual)
+WSL_START_DIR = os.path.expanduser("~")
 
 # Programas abiertos por JARVIS en esta sesion, para poder cerrarlos despues.
 # clave normalizada -> {"display": nombre, "pids": set, "procnames": [exe...]}

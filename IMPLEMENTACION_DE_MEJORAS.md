@@ -175,7 +175,7 @@
   - **Tests**: `python -m pytest test -q` (todos los existentes deben pasar)
   - **Verificar**: No hay imports rotos
 
-- [ ] **3.2 Eliminar `WSL_START_DIR` hardcodeado en `apps.py`**
+- [x] **3.2 Eliminar `WSL_START_DIR` hardcodeado en `apps.py`**
   - **Archivo**: `jarvis_local/tools/apps.py:21`
   - **Problema**: Hardcodeado a `/home/omarhernandez/personalProjects`. Solo funciona para un usuario.
   - **Acciones**:
