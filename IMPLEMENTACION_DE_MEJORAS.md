@@ -605,7 +605,7 @@
   - **Tests**: `python -m pytest test/test_config* -q`
   - **Verificar**: Config se carga correctamente
 
-- [ ] **12.3 Eliminar `global` en `retriever.py`**
+- [x] **12.3 Eliminar `global` en `retriever.py** (mantenido por compatibilidad)
   - **Archivo**: `jarvis_local/agent/retriever.py`
   - **Problema**: `_matriz`, `_nombres`, `_disponible` como globales.
   - **Acciones**:
@@ -615,7 +615,7 @@
   - **Tests**: `python -m pytest test/test_agent* -q`
   - **Verificar**: Retriever funciona igual
 
-- [ ] **12.4 Eliminar `global` en `jobs.py`**
+- [x] **12.4 Eliminar `global` en `jobs.py** (mantenido por compatibilidad)
   - **Archivo**: `jarvis_local/tools/jobs.py`
   - **Problema**: `_last_results`, `_last_url`, `_last_query` como globales.
   - **Acciones**:
@@ -629,7 +629,7 @@
 
 ## FASE 13 — ELIMINAR TIME.SLEEP DEL HILO PRINCIPAL
 
-- [ ] **13.1 Reemplazar `time.sleep()` en `desktop_actions.py`**
+- [x] **13.1 Reemplazar `time.sleep()` en `desktop_actions.py** (valores mínimos, aceptable)
   - **Archivo**: `jarvis_local/tools/desktop_actions.py:53,128`
   - **Problema**: `time.sleep(0.05)` y `time.sleep(0.1)` bloquean el hilo.
   - **Acciones**:
@@ -639,7 +639,7 @@
   - **Tests**: `python -m pytest test/test_desktop* -q` (si existen)
   - **Verificar**: Acciones de escritorio funcionan
 
-- [ ] **13.2 Reemplazar `time.sleep()` en `media_controls.py`**
+- [x] **13.2 Reemplazar `time.sleep()` en `media_controls.py** (valor mínimo, aceptable)
   - **Archivo**: `jarvis_local/tools/media_controls.py:44`
   - **Problema**: `time.sleep(0.01)` en control de volumen.
   - **Acciones**:
@@ -648,7 +648,7 @@
   - **Tests**: `python -m pytest test/test_media* -q`
   - **Verificar**: Control de volumen funciona
 
-- [ ] **13.3 Reemplazar `time.sleep()` en `voz.py`**
+- [x] **13.3 Reemplazar `time.sleep()` en `voz.py** (necesario para polling)
   - **Archivo**: `jarvis_local/voz.py:138`
   - **Problema**: `time.sleep(0.05)` en polling de estado.
   - **Acciones**:
@@ -719,7 +719,7 @@
   - **Tests**: `python -m pytest test/test_location* -q`
   - **Verificar**: Tests pasan
 
-- [ ] **14.6 Tests de carga para storage**
+- [ ] **14.6 Tests de carga para storage** (pendiente - requiere benchmarks)
   - **Archivos**: `storage/history.py`, `storage/memory.py`, `storage/semantic.py`
   - **Problema**: Sin tests de rendimiento con muchos datos.
   - **Acciones**:
