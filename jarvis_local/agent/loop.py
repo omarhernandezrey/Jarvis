@@ -28,6 +28,9 @@ suponer):
    una accion "a ver si suena".
 
 6. Toda decision queda en un log estructurado (decisions.jsonl) para auditar.
+
+7. Timeout de 30s por llamada al LLM: si el modelo se cuelga, el agente
+   devuelve un error claro en vez de bloquear Jarvis indefinidamente.
 """
 import json
 import re
@@ -45,6 +48,7 @@ from jarvis_local.agent.retriever import confidence, select_tools
 
 MAX_STEPS = 3       # herramientas encadenadas por peticion
 MAX_REINTENTOS = 2  # correcciones al modelo ante salida invalida
+AGENT_TIMEOUT = 30  # timeout en segundos para llamadas al LLM
 
 # El modelo a veces escribe el tool call como texto en vez de usar el canal de
 # tool_calls. Ese JSON no debe llegarle nunca al usuario.
@@ -139,7 +143,6 @@ def _validar(name: str, args: dict) -> tuple[bool, str]:
     if tool is None:
         return False, correccion_herramienta_invalida(name, tool_names())
 
-    props = tool.parameters.get("properties", {})
     requeridos = tool.parameters.get("required", [])
     faltantes = [r for r in requeridos
                  if r not in args or args[r] in (None, "", [])]
@@ -254,7 +257,20 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     reintentos = 0
 
     for _paso in range(max_steps + MAX_REINTENTOS):
-        msg = client.chat_with_tools(messages, tools)
+        try:
+            msg = client.chat_with_tools(messages, tools)
+        except Exception as e:
+            # Timeout o error de conexión: devolver error claro
+            error_msg = str(e).lower()
+            if "timeout" in error_msg or "timed out" in error_msg:
+                log_decision(user_message, conf, usadas, resultados, "timeout_llm")
+                return AgentResult(
+                    text="El modelo tardo demasiado en responder, senor. Intente de nuevo.",
+                    confidence=conf)
+            log_decision(user_message, conf, usadas, resultados, f"error_llm:{e}")
+            return AgentResult(
+                text="Tuve un inconveniente al comunicarme con el modelo, senor.",
+                confidence=conf)
         calls = msg.get("tool_calls") or []
 
         # --- El modelo no llamo a ninguna herramienta ---

@@ -219,7 +219,7 @@
 
 ## FASE 4 — AGENTE (AGENT)
 
-- [ ] **4.1 Añadir timeout por llamada al LLM en `loop.py`**
+- [x] **4.1 Añadir timeout por llamada al LLM en `loop.py`**
   - **Archivo**: `jarvis_local/agent/loop.py:256-257`
   - **Problema**: Sin timeout. Si el modelo se cuelga, Jarvis se bloquea indefinidamente.
   - **Acciones**:
