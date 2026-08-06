@@ -7,6 +7,7 @@ import contextlib
 import difflib
 import os
 import subprocess
+from pathlib import Path
 
 from jarvis_local.config import IS_WINDOWS
 from jarvis_local.safety.permissions import get_app_path, list_allowed_apps
@@ -18,7 +19,7 @@ ALLOWED_APP_NAMES = ["chrome", "vscode", "explorador", "powershell", "terminal",
                        "cmd", "taskmgr", "edge", "firefox"]
 
 # Directorio inicial al abrir la terminal de WSL (usa el home del usuario actual)
-WSL_START_DIR = os.path.expanduser("~")
+WSL_START_DIR = str(Path.home())
 
 # Programas abiertos por JARVIS en esta sesion, para poder cerrarlos despues.
 # clave normalizada -> {"display": nombre, "pids": set, "procnames": [exe...]}
@@ -123,11 +124,11 @@ def open_app(name: str) -> ActionPlan:
         elif IS_WINDOWS and name_lower == "wsl":
             proc = _launch_wsl(path)
             _register_opened(name_lower, name, pid=proc.pid,
-                             procnames=[os.path.basename(path)])
+                             procnames=[Path(path).name])
         else:
             proc = subprocess.Popen([path], shell=False)
             _register_opened(name_lower, name, pid=proc.pid,
-                             procnames=[os.path.basename(path)])
+                             procnames=[Path(path).name])
         plan.result = f"{name} abierto correctamente."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -207,7 +208,7 @@ def execute_open_app(name: str) -> ActionPlan:
         else:
             proc = subprocess.Popen([path], shell=False)
         _register_opened(name_lower, name, pid=proc.pid,
-                         procnames=[os.path.basename(path)])
+                         procnames=[Path(path).name])
         plan.result = f"{name} abierto correctamente"
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -302,7 +303,7 @@ def close_app(name: str) -> ActionPlan:
 
     path = get_app_path(query)
     if path:
-        procnames.append(os.path.basename(path))
+        procnames.append(Path(path).name)
 
     tracked = _OPENED.get(query)
     pids = set(tracked["pids"]) if tracked else set()

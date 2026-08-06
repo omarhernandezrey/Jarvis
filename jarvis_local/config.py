@@ -36,7 +36,7 @@ def user_dir(kind: str) -> str:
     usuario, resuelta para el SO y el idioma real de esta maquina."""
     win_name, xdg_key, fallback = _USER_DIRS[kind]
     if IS_WINDOWS:
-        return os.path.expandvars(f"%USERPROFILE%\\{win_name}")
+        return str(Path(os.environ.get("USERPROFILE", "~")) / win_name)
     try:
         out = subprocess.run(["xdg-user-dir", xdg_key], capture_output=True,
                              text=True, timeout=5)
@@ -45,7 +45,7 @@ def user_dir(kind: str) -> str:
             return resolved
     except (OSError, subprocess.SubprocessError):
         pass
-    return os.path.expanduser(f"~/{fallback}")
+    return str(Path.home() / fallback)
 
 DEFAULT_CONFIG = {
     "ollama": {

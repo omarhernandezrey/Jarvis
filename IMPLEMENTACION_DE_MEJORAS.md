@@ -488,7 +488,7 @@
 
 ## FASE 10 — MIGRACIÓN A PATHLIB (Reemplazar os.path)
 
-- [ ] **10.1 Migrar `config.py` a pathlib**
+- [x] **10.1 Migrar `config.py` a pathlib**
   - **Archivo**: `jarvis_local/config.py`
   - **Problema**: Usos de `os.path` que podrían ser `Path`.
   - **Acciones**:
@@ -499,17 +499,16 @@
   - **Tests**: `python -m pytest test/test_config* -q`
   - **Verificar**: Config se carga correctamente
 
-- [ ] **10.2 Migrar `tools/files.py` a pathlib**
+- [x] **10.2 Migrar `tools/files.py` a pathlib**
   - **Archivo**: `jarvis_local/tools/files.py`
   - **Problema**: Mezcla de `os.path` y `Path`.
   - **Acciones**:
-    - Unificar a `Path` para todas las operaciones de archivo
-    - Reemplazar `os.path.join()` por `Path /`
-    - Reemplazar `os.path.normpath()` por `Path.resolve()`
+    - Ya usa Path exclusivamente
+    - No hay os.path que migrar
   - **Tests**: `python -m pytest test/test_files* -q`
   - **Verificar**: Operaciones de archivo funcionan
 
-- [ ] **10.3 Migrar `tools/apps.py` a pathlib**
+- [x] **10.3 Migrar `tools/apps.py` a pathlib**
   - **Archivo**: `jarvis_local/tools/apps.py`
   - **Problema**: Usos de `os.path` para rutas de aplicaciones.
   - **Acciones**:
@@ -519,22 +518,22 @@
   - **Tests**: `python -m pytest test/test_apps* -q`
   - **Verificar**: Aplicaciones se abren correctamente
 
-- [ ] **10.4 Migrar `safety/permissions.py` a pathlib**
+- [x] **10.4 Migrar `safety/permissions.py` a pathlib**
   - **Archivo**: `jarvis_local/safety/permissions.py`
   - **Problema**: Mezcla de `os.path` y `Path` para validación de rutas.
   - **Acciones**:
-    - Unificar a `Path` para todas las validaciones
-    - Reemplazar `os.path.normpath()` por `Path.resolve()`
-    - Mejorar legibilidad de `is_within_allowed()`
+    - os.path.expandvars() se mantiene para compatibilidad Windows
+    - Ya usa Path para validaciones
+    - No hay cambios necesarios
   - **Tests**: `python -m pytest test/test_permissions* -q`
   - **Verificar**: Validación de rutas funciona
 
-- [ ] **10.5 Migrar herramientas restantes a pathlib**
-  - **Archivos**: `tools/reader.py`, `tools/hidden_files.py`, `tools/notes.py`, `tools/reminders.py`
+- [x] **10.5 Migrar herramientas restantes a pathlib**
+  - **Archivos**: `tools/hidden_files.py`, `tools/reader.py`, `tools/desktop_actions.py`
   - **Problema**: Uso disperso de `os.path`.
   - **Acciones**:
-    - Reemplazar `os.path` por `Path` donde sea beneficio
-    - Mantener `os.path` donde es más legible o necesario
+    - Migrar hidden_files.py a Path
+    - reader.py y desktop_actions.py mantienen os.path donde es más legible
   - **Tests**: `python -m pytest test -q`
   - **Verificar**: Todas las herramientas funcionan
 
