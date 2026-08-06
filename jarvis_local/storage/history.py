@@ -2,12 +2,15 @@
 JARVIS Local - Almacenamiento de historial (Fase 5)
 Persiste la conversacion en JSON atomico. Sin pickle.
 """
+import contextlib
 import json
 import os
 import shutil
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+
+from filelock import FileLock
 
 from jarvis_local.safety.secrets import redact_secrets
 
@@ -20,6 +23,7 @@ class HistoryStore:
         self.data_dir = data_dir
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._path = self.data_dir / "history.json"
+        self._lock_path = self.data_dir / "history.lock"
         self._messages: list[dict] = []
         self._load()
 
@@ -28,12 +32,14 @@ class HistoryStore:
             self._messages = []
             return
         try:
-            with open(self._path, encoding="utf-8") as f:
+            with FileLock(str(self._lock_path), timeout=5), \
+                 open(self._path, encoding="utf-8") as f:
                 data = json.load(f)
             self._messages = data.get("messages", [])
         except (json.JSONDecodeError, KeyError, ValueError):
             corrupted = self.data_dir / f"history.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
-            shutil.move(str(self._path), str(corrupted))
+            with FileLock(str(self._lock_path), timeout=5):
+                shutil.move(str(self._path), str(corrupted))
             print(f"[AVISO] Historial corrupto. Movido a {corrupted.name}. Iniciando vacio.")
             self._messages = []
 
@@ -43,17 +49,16 @@ class HistoryStore:
             "updated_at": datetime.now(UTC).isoformat(),
             "messages": self._messages,
         }
-        fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, str(self._path))
-        except Exception:
+        with FileLock(str(self._lock_path), timeout=5):
+            fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
             try:
-                os.remove(tmp_path)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp_path, str(self._path))
             except Exception:
-                pass
-            raise
+                with contextlib.suppress(Exception):
+                    os.remove(tmp_path)
+                raise
 
     @staticmethod
     def sanitize(role: str, content: str) -> str:

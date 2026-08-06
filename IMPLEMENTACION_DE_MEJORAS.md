@@ -305,7 +305,7 @@
 
 ## FASE 6 — PERSISTENCIA (STORAGE)
 
-- [ ] **6.1 Añadir file locking a stores**
+- [x] **6.1 Añadir file locking a stores**
   - **Archivos**: `storage/history.py:40`, `storage/memory.py:39`, `storage/semantic.py:124`
   - **Problema**: Sin lock. Dos procesos escribiendo simultáneamente = pérdida de datos.
   - **Acciones**:

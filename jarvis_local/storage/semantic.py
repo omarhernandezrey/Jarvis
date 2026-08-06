@@ -105,6 +105,7 @@ class SemanticIndex:
         self.data_dir = data_dir
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._path = self.data_dir / "semantic_index.npz"
+        self._lock_path = self.data_dir / "semantic.lock"
         self.ids: list[str] = []
         self.matrix: np.ndarray = np.zeros((0, EMBED_DIM), dtype=np.float32)
         self._load()
@@ -113,17 +114,21 @@ class SemanticIndex:
         if not self._path.exists():
             return
         try:
-            data = np.load(self._path, allow_pickle=False)
-            self.matrix = data["matrix"].astype(np.float32)
-            self.ids = json.loads(str(data["ids"]))
+            from filelock import FileLock
+            with FileLock(str(self._lock_path), timeout=5):
+                data = np.load(self._path, allow_pickle=False)
+                self.matrix = data["matrix"].astype(np.float32)
+                self.ids = json.loads(str(data["ids"]))
             if len(self.ids) != self.matrix.shape[0]:  # indice inconsistente
                 self.ids, self.matrix = [], np.zeros((0, EMBED_DIM), np.float32)
         except Exception:
             self.ids, self.matrix = [], np.zeros((0, EMBED_DIM), np.float32)
 
     def _save(self):
-        np.savez_compressed(self._path, matrix=self.matrix,
-                            ids=np.array(json.dumps(self.ids)))
+        from filelock import FileLock
+        with FileLock(str(self._lock_path), timeout=5):
+            np.savez_compressed(self._path, matrix=self.matrix,
+                                ids=np.array(json.dumps(self.ids)))
 
     def sync(self, items: list[dict]) -> bool:
         """Alinea el indice con las memorias. True si uso embeddings."""
