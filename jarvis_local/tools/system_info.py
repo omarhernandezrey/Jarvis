@@ -4,21 +4,26 @@ Uso de CPU, RAM, disco y estado de la bateria (psutil).
 """
 import psutil
 
+from jarvis_local.config import IS_WINDOWS
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+
+_DISK_PATH = "C:\\" if IS_WINDOWS else "/"
+_DISK_LABEL = "Disco C" if IS_WINDOWS else "Disco"
 
 
 def system_status() -> ActionPlan:
     plan = ActionPlan(action="estado_sistema", risk=RiskLevel.READ,
                       reason="Consultar estado del sistema (solo lectura)")
     try:
-        cpu = psutil.cpu_percent(interval=0.5)
+        # interval=0 lee el último valor conocido sin bloquear el hilo
+        cpu = psutil.cpu_percent(interval=0)
         ram = psutil.virtual_memory()
-        disk = psutil.disk_usage("C:\\")
+        disk = psutil.disk_usage(_DISK_PATH)
         lines = [
             f"CPU: {cpu:.0f} por ciento en uso",
             f"RAM: {ram.percent:.0f} por ciento en uso "
             f"({ram.used / 1024**3:.1f} de {ram.total / 1024**3:.1f} GB)",
-            f"Disco C: {disk.percent:.0f} por ciento usado "
+            f"{_DISK_LABEL}: {disk.percent:.0f} por ciento usado "
             f"({disk.free / 1024**3:.0f} GB libres)",
         ]
         bat = psutil.sensors_battery()

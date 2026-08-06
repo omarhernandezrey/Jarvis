@@ -185,7 +185,7 @@
   - **Tests**: `python -m pytest test/test_apps* -q`
   - **Verificar**: Funciona con cualquier usuario
 
-- [ ] **3.3 Mejorar `system_info.py:cpu_percent` sin bloqueo**
+- [x] **3.3 Mejorar `system_info.py:cpu_percent` sin bloqueo**
   - **Archivo**: `jarvis_local/tools/system_info.py:18`
   - **Problema**: `psutil.cpu_percent(interval=0.5)` bloquea el hilo principal 500ms.
   - **Acciones**:
