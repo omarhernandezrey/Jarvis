@@ -176,6 +176,16 @@ def _mc_test():
     return j, mc
 
 
+def _record_exchange(jarvis_instance, message: str, result: str, instruction: str = ""):
+    """Registra un intercambio usuario-asistente en historial, persistencia y logs."""
+    jarvis_instance.history.add_user(message)
+    jarvis_instance.history.add_assistant(result)
+    jarvis_instance._persist_message("user", message)
+    jarvis_instance._persist_message("assistant", result)
+    if instruction:
+        logger.log_action(instruction=instruction, result=result[:150])
+
+
 def _parse_and_execute(message: str, jarvis_instance) -> str | None:
     """Parsea intencion y ejecuta herramienta si aplica. Retorna respuesta o None."""
     from jarvis_local.intent.parser import parse_intent
@@ -187,11 +197,7 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
     if intent.kind == "tool_read":
         try:
             result = _execute_tool_read(intent.tool, intent.arguments)
-            jarvis_instance.history.add_user(message)
-            jarvis_instance.history.add_assistant(result)
-            jarvis_instance._persist_message("user", message)
-            jarvis_instance._persist_message("assistant", result)
-            logger.log_action(instruction=intent.tool, result=result[:150])
+            _record_exchange(jarvis_instance, message, result, intent.tool)
             return result
         except Exception as e:
             logger.log_error("intent_tool_read", str(e))
@@ -200,11 +206,7 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
     if intent.kind == "tool_execute":
         try:
             result = _execute_tool_write(intent.tool, intent.arguments)
-            jarvis_instance.history.add_user(message)
-            jarvis_instance.history.add_assistant(result)
-            jarvis_instance._persist_message("user", message)
-            jarvis_instance._persist_message("assistant", result)
-            logger.log_action(instruction=intent.tool, result=result[:150])
+            _record_exchange(jarvis_instance, message, result, intent.tool)
             return result
         except Exception as e:
             logger.log_error("intent_tool_execute", str(e))
@@ -213,11 +215,7 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
     if intent.kind == "tool_plan":
         try:
             plan_msg = _create_tool_plan(intent.tool, intent.arguments, intent.reason)
-            jarvis_instance.history.add_user(message)
-            jarvis_instance.history.add_assistant(plan_msg)
-            jarvis_instance._persist_message("user", message)
-            jarvis_instance._persist_message("assistant", plan_msg)
-            logger.log_action(instruction=intent.tool, result=plan_msg[:150])
+            _record_exchange(jarvis_instance, message, plan_msg, intent.tool)
             return plan_msg
         except Exception as e:
             logger.log_error("intent_tool_plan", str(e))
@@ -225,18 +223,12 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
 
     if intent.kind == "ambiguous":
         clarification = intent.clarification or "No entendi bien. Puedes ser mas especifico?"
-        jarvis_instance.history.add_user(message)
-        jarvis_instance.history.add_assistant(clarification)
-        jarvis_instance._persist_message("user", message)
-        jarvis_instance._persist_message("assistant", clarification)
+        _record_exchange(jarvis_instance, message, clarification)
         return clarification
 
     if intent.kind == "unsupported":
         reason = intent.reason or "Esa accion no esta disponible."
-        jarvis_instance.history.add_user(message)
-        jarvis_instance.history.add_assistant(reason)
-        jarvis_instance._persist_message("user", message)
-        jarvis_instance._persist_message("assistant", reason)
+        _record_exchange(jarvis_instance, message, reason)
         return reason
 
     return None

@@ -100,7 +100,7 @@
   - **Tests**: Los existentes deben pasar sin cambios. Añadir test de registry.
   - **Verificar**: `python -m pytest test -q`
 
-- [ ] **2.2 Método `_record_exchange` para eliminar duplicación**
+- [x] **2.2 Método `_record_exchange` para eliminar duplicación**
   - **Archivo**: `jarvis_local/jarvis.py:76-131`
   - **Problema**: Los bloques `tool_read`, `tool_execute`, `tool_plan` repiten history+persist+log 4 veces.
   - **Acciones**:
