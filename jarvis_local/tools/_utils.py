@@ -4,7 +4,11 @@ Funciones de normalización, carga/guardado JSON y helpers comunes.
 """
 import json
 import unicodedata
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
+
+from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
 
 def normalize_text(text: str) -> str:
@@ -34,3 +38,35 @@ def save_json(path: Path, data) -> bool:
         return True
     except OSError:
         return False
+
+
+def tool_action(action_name: str, risk: RiskLevel = RiskLevel.READ):
+    """Decorador que envuelve el patrón ActionPlan + try/except.
+
+    Uso:
+        @tool_action("calcular", RiskLevel.READ)
+        def calculate(expression: str) -> ActionPlan:
+            # ... lógica que devuelve resultado o lanza excepción
+            return resultado_como_string
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> ActionPlan:
+            plan = ActionPlan(
+                action=action_name,
+                risk=risk,
+                reason=f"Ejecutar {action_name}",
+            )
+            try:
+                result = func(*args, **kwargs)
+                if isinstance(result, ActionPlan):
+                    return result
+                plan.result = str(result) if result is not None else "Operacion completada."
+                plan.status = ActionStatus.EXECUTED
+            except Exception as e:
+                plan.status = ActionStatus.ERROR
+                plan.error = str(e)
+                plan.result = f"Error en {action_name}: {e}"
+            return plan
+        return wrapper
+    return decorator

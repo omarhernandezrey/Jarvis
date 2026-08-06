@@ -195,7 +195,7 @@
   - **Tests**: `python -m pytest test/test_system* -q`
   - **Verificar**: Respuesta de "cómo está mi máquina" es rápida
 
-- [ ] **3.4 Decorador `@tool_action` para reducir boilerplate**
+- [x] **3.4 Decorador `@tool_action` para reducir boilerplate**
   - **Archivo**: Nuevo `jarvis_local/tools/_decorators.py` o en `_utils.py`
   - **Problema**: Cada herramienta repite el patrón ActionPlan + try/except + status.
   - **Acciones**:
