@@ -15,7 +15,7 @@
 
 ## FASE 1 — SEGURIDAD (Urgente)
 
-- [ ] **1.1 Fix command injection en `terminal.py`**
+- [x] **1.1 Fix command injection en `terminal.py`**
   - **Archivo**: `jarvis_local/tools/terminal.py:52`
   - **Problema**: `subprocess.run(["bash", "-c", command])` ejecuta input directo en shell. El blocklist regex es bypassable.
   - **Acciones**:

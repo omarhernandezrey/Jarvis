@@ -246,12 +246,38 @@ def is_command_blocked(command: str) -> tuple[bool, str]:
         (False, "") si esta permitido.
     """
     import re
-    cmd_lower = command.lower()
+
+    # Normalizar: minúsculas y sin espacios extra para evitar ofuscaciones
+    cmd_lower = command.lower().strip()
+    # Colapsar espacios múltiples (evita "rm  -rf" o "rm\t-rf")
+    cmd_normalized = re.sub(r'\s+', ' ', cmd_lower)
+
+    # Verificar keywords bloqueadas como token completo
     for kw in BLOCKED_CMD_KEYWORDS:
         pattern = r'\b' + re.escape(kw) + r'\b'
-        if re.search(pattern, cmd_lower):
+        if re.search(pattern, cmd_normalized):
             return True, f"Comando bloqueado: '{kw}' no esta permitido"
+
+    # Verificar patrones bloqueados
     for pattern in BLOCKED_COMMAND_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
+        if re.search(pattern, cmd_normalized, re.IGNORECASE):
             return True, "El comando contiene un patron bloqueado"
+
+    # Verificar ofuscaciones comunes
+    # 1. Caracteres de control y null bytes
+    if re.search(r'[\x00-\x08\x0e-\x1f\x7f]', command):
+        return True, "Comando contiene caracteres de control no permitidos"
+
+    # 2. Secuencias de escape que podrían ocultar comandos
+    if re.search(r'\\x[0-9a-f]{2}', cmd_lower):
+        return True, "Comando contiene secuencias de escape hexadecimales"
+
+    # 3. Encoding sospechoso (base64 en bash)
+    if re.search(r'base64\s+(-d|--decode)', cmd_lower):
+        return True, "Decodificacion base64 no permitida en comandos"
+
+    # 4. Subshells y command substitution
+    if re.search(r'\$\(|`[^`]*`', command):
+        return True, "Subshells y command substitution no permitidos"
+
     return False, ""
