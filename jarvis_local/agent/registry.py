@@ -626,6 +626,42 @@ def tool_names() -> list[str]:
     return list(_BY_NAME)
 
 
+def _validate_arg_type(value, expected_type: str) -> bool:
+    """Valida que un valor coincida con el tipo esperado del schema."""
+    if expected_type == "string":
+        return isinstance(value, str)
+    elif expected_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    elif expected_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif expected_type == "boolean":
+        return isinstance(value, bool)
+    elif expected_type == "array":
+        return isinstance(value, list)
+    elif expected_type == "object":
+        return isinstance(value, dict)
+    return True  # Tipo desconocido, no validar
+
+
+def _coerce_arg_type(value, expected_type: str):
+    """Intenta convertir un valor al tipo esperado."""
+    if expected_type == "integer":
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return value
+    elif expected_type == "number":
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return value
+    elif expected_type == "boolean":
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "si", "yes")
+        return bool(value)
+    return value
+
+
 def execute(name: str, arguments: dict) -> tuple[str, bool]:
     """
     Ejecuta una herramienta por nombre.
@@ -640,6 +676,21 @@ def execute(name: str, arguments: dict) -> tuple[str, bool]:
     # Filtrar argumentos que la herramienta no conoce (el LLM a veces inventa)
     validos = set(tool.parameters.get("properties", {}))
     args = {k: v for k, v in (arguments or {}).items() if k in validos}
+
+    # Validar y convertir tipos de argumentos
+    properties = tool.parameters.get("properties", {})
+    for key, value in list(args.items()):
+        if key in properties:
+            expected_type = properties[key].get("type", "string")
+            if not _validate_arg_type(value, expected_type):
+                # Intentar convertir al tipo correcto
+                coerced = _coerce_arg_type(value, expected_type)
+                if _validate_arg_type(coerced, expected_type):
+                    args[key] = coerced
+                else:
+                    return (f"El argumento '{key}' debe ser de tipo {expected_type}, "
+                            f"pero recibi '{value}'. Puede corregirlo, senor?"), False
+
     faltantes = [r for r in tool.parameters.get("required", []) if r not in args]
     if faltantes:
         return (f"Me falta un dato para {name}: {', '.join(faltantes)}. "

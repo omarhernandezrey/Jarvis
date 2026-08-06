@@ -229,7 +229,7 @@
   - **Tests**: Test con mock que simule timeout
   - **Verificar**: `python -m pytest test/test_agent* -q`
 
-- [ ] **4.2 Validación de tipos de argumentos en `registry.py:execute`**
+- [x] **4.2 Validación de tipos de argumentos en `registry.py:execute`**
   - **Archivo**: `jarvis_local/agent/registry.py:636-637`
   - **Problema**: Solo filtra por nombre, no por tipo. `"nivel": "cincuenta"` pasa.
   - **Acciones**:
