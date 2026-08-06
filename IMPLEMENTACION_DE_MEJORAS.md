@@ -282,7 +282,7 @@
   - **Tests**: Test con múltiples hilos simulando comandos simultáneos
   - **Verificar**: `python -m pytest test/test_voice* -q` (si existen)
 
-- [ ] **5.2 Manejo de errores de audio en `stt.py`**
+- [x] **5.2 Manejo de errores de audio en `stt.py`**
   - **Archivo**: `jarvis_local/voice/stt.py:100-101,174-176,324-327`
   - **Problema**: Sin fallback cuando no hay micrófono. Solo imprime error.
   - **Acciones**:

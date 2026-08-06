@@ -59,6 +59,101 @@ def _get_threshold() -> float:
     return min_threshold
 
 
+def _get_vad_threshold() -> float:
+    """Umbral para detectar VOZ activa (mas exigente que el de 'hubo audio').
+    Con calibracion usa ruido_base * 2.5; sin calibrar, un piso conservador
+    que casi cualquier voz supera pero el silencio absoluto no."""
+    cfg = load_voice_config()
+    noise_floor = cfg.get("stt_noise_floor")
+    floor = cfg.get("stt_vad_min_threshold", 0.0008)
+    if noise_floor is not None and isinstance(noise_floor, (int, float)):
+        return max(float(noise_floor) * 2.5, floor)
+    return floor
+
+
+def _get_beam_size(default: int = 5) -> int:
+    cfg = load_voice_config()
+    try:
+        return int(cfg.get("stt_beam_size", default))
+    except (TypeError, ValueError):
+        return default
+
+
+def record_until_silence(
+    max_seconds: float,
+    sample_rate: int = 16000,
+    silence_ms: int = 1200,
+    start_timeout_s: float = 6.0,
+    show_stats: bool = False,
+):
+    """Graba del microfono y CORTA SOLO cuando el usuario deja de hablar.
+
+    En vez de grabar una duracion fija (y obligar a esperar en silencio o
+    cortar frases largas), escucha por bloques de 100 ms:
+      - si no arranca voz en start_timeout_s, devuelve lo grabado (poco);
+      - cuando arranca voz, termina tras silence_ms de silencio sostenido
+        o al llegar a max_seconds.
+
+    Returns:
+        (audio_float32, rms_total, hubo_voz) o (None, 0.0, False) si fallo.
+    """
+    if not _AUDIO_OK:
+        return None, 0.0, False
+
+    vad_threshold = _get_vad_threshold()
+    block = int(sample_rate * 0.1)  # 100 ms
+    blocks: list = []
+    rms_history: list = []
+    speech_started = False
+    silent_ms = 0
+    voiced_blocks = 0
+
+    try:
+        total_blocks = int(max_seconds * 10)
+        for i in range(total_blocks):
+            data = _sd.rec(block, samplerate=sample_rate, channels=1, dtype="int16")
+            _sd.wait()
+            blocks.append(data.copy())
+            rms = float(_np.sqrt(_np.mean(
+                (data.astype("float32") / 32768.0) ** 2)))
+            rms_history.append(rms)
+
+            # Umbral adaptativo: la calibracion guardada envejece (otro
+            # microfono, ventilador encendido, ruido electrico). El piso
+            # real ES el bloque mas silencioso reciente: hablar es subir
+            # bastante por encima de ese piso.
+            noise_floor_live = min(rms_history[-30:])
+            effective = max(vad_threshold, noise_floor_live * 2.0)
+
+            if rms > effective:
+                voiced_blocks += 1
+                silent_ms = 0
+                # 2 bloques con voz seguidos = empezo a hablar de verdad
+                if not speech_started and voiced_blocks >= 2:
+                    speech_started = True
+                    if show_stats:
+                        print("[Voz] Grabando... (para de hablar para enviar)")
+            else:
+                voiced_blocks = 0
+                silent_ms += 100
+
+            if speech_started and silent_ms >= silence_ms:
+                break
+            if not speech_started and (i + 1) * 0.1 >= start_timeout_s:
+                break
+    except Exception as e:
+        if show_stats:
+            print(f"[Voz] ERROR captura: {e}")
+        return None, 0.0, False
+
+    if not blocks:
+        return None, 0.0, False
+    recording = _np.concatenate(blocks, axis=0)
+    audio = recording.flatten().astype("float32") / 32768.0
+    rms_total = float(_np.sqrt(_np.mean(audio ** 2)))
+    return audio, rms_total, speech_started
+
+
 def _audio_stats(recording) -> dict:
     """Calcula estadisticas del audio capturado."""
     audio = recording.flatten().astype("float32") / 32768.0
@@ -78,6 +173,8 @@ def calibrate() -> dict:
     print(f"Configuracion cargada desde: {CONFIG_FILE}")
     if not _AUDIO_OK:
         print("[ERROR] sounddevice/numpy no disponibles.")
+        print("  Solucion: pip install sounddevice numpy")
+        print("  En Linux tambien: sudo apt install libportaudio2")
         return {"error": "audio_no_disponible"}
 
     try:
@@ -159,8 +256,8 @@ def diagnose() -> dict:
 
     try:
         from faster_whisper import WhisperModel
-        model = WhisperModel("small", device="cpu", compute_type="int8",
-                             download_root=None, local_files_only=True)
+        WhisperModel("small", device="cpu", compute_type="int8",
+                     download_root=None, local_files_only=True)
         info["config"]["whisper_model_downloaded"] = True
     except Exception:
         pass
@@ -206,11 +303,18 @@ def listen() -> str | None:
     """
     Captura audio del microfono y transcribe con faster-whisper.
 
+    La captura es dinamica: arranca cuando detecta voz y corta sola cuando
+    el usuario deja de hablar (o al llegar al maximo). Ya no hay que esperar
+    en silencio a que termine una grabacion de duracion fija.
+
     Returns:
         Texto transcrito en espanol, o None si fallo.
     """
     cfg = load_voice_config()
     duration = cfg.get("stt_duration", 8)
+    max_duration = cfg.get("stt_max_duration", max(float(duration), 20.0))
+    silence_ms = cfg.get("stt_silence_ms", 1200)
+    start_timeout = cfg.get("stt_start_timeout_s", 6.0)
     sample_rate = cfg.get("stt_sample_rate", 16000)
     model_name = cfg.get("stt_model", "small")
     compute_type = cfg.get("stt_compute_type", "int8")
@@ -221,43 +325,44 @@ def listen() -> str | None:
 
     if not _AUDIO_OK:
         print("[ERROR Voz] sounddevice/numpy no estan disponibles.")
+        print("  Solucion: pip install sounddevice numpy")
+        print("  En Linux tambien: sudo apt install libportaudio2")
+        print("  JARVIS funcionara en modo texto sin voz.")
         logger.log_error("stt", "sounddevice/numpy no instalados")
         return None
 
+    mic_name = "desconocido"
     try:
-        mic_name = "desconocido"
-        try:
-            default = _sd.query_devices(kind="input")
-            mic_name = default.get("name", "desconocido")[:40]
-        except Exception:
-            pass
+        default = _sd.query_devices(kind="input")
+        mic_name = default.get("name", "desconocido")[:40]
+    except Exception:
+        pass
 
-        print(f"[Escuchando...] max {duration}s | Microfono: {mic_name}")
-        print(f"  Sample rate: {sample_rate} Hz | Umbral: {threshold:.6f}")
-        recording = _sd.rec(
-            int(duration * sample_rate),
-            samplerate=sample_rate,
-            channels=1,
-            dtype="int16",
-        )
-        _sd.wait()
-        elapsed = time.time() - start_time
-
-        stats = _audio_stats(recording)
-        print(f"  RMS min={stats['rms_min']:.6f} avg={stats['rms_avg']:.6f} max={stats['rms_max']:.6f}")
-        print(f"  Peak: {stats['peak']:.6f} | Duracion: {elapsed:.1f}s")
-    except Exception as e:
-        msg = f"Error al grabar audio: {e}"
+    print(f"[Escuchando...] Habla ahora; corto solo cuando calles. "
+          f"Max {max_duration:.0f}s | Mic: {mic_name}")
+    audio_float, rms, had_voice = record_until_silence(
+        max_seconds=float(max_duration), sample_rate=sample_rate,
+        silence_ms=int(silence_ms), start_timeout_s=float(start_timeout),
+        show_stats=True,
+    )
+    elapsed = time.time() - start_time
+    if audio_float is None:
+        msg = "Error al grabar audio"
         print(f"[ERROR Voz] {msg}")
         logger.log_error("stt", msg)
         return None
 
+    print(f"  RMS: {rms:.6f} | Duracion: {elapsed:.1f}s")
+
     logger.log_action(
         instruction="/voz",
-        result=f"voice_captured duration_ms={int(elapsed*1000)} rms={stats['rms_avg']:.6f} threshold={threshold:.6f}",
+        result=f"voice_captured duration_ms={int(elapsed*1000)} rms={rms:.6f} threshold={threshold:.6f}",
     )
 
-    # Intentar transcribir SIEMPRE que haya audio
+    # No cortamos aqui aunque el VAD no haya marcado voz: intentamos
+    # transcribir SIEMPRE que haya audio capturado. El VAD decide cuando
+    # CORTAR la grabacion, no si vale la pena mandarla a Whisper -- una voz
+    # baja/susurrada puede no cruzar el umbral y aun asi ser transcribible.
     print("[Procesando...]")
 
     try:
@@ -271,11 +376,10 @@ def listen() -> str | None:
         return None
 
     try:
-        audio_float = recording.flatten().astype("float32") / 32768.0
         segments, info = model.transcribe(
             audio_float,
             language=language,
-            beam_size=5,
+            beam_size=_get_beam_size(5),
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500},
         )
@@ -284,12 +388,6 @@ def listen() -> str | None:
         if text:
             print(f"[Reconocido]: {text}")
             return text
-
-        if stats["rms_avg"] < threshold:
-            print(f"[Voz] No se detecto habla. RMS={stats['rms_avg']:.6f} < umbral={threshold:.6f}")
-            print("  Ejecuta /voz calibrar para ajustar el umbral a tu ambiente.")
-            logger.log_action(instruction="/voz", result="no_speech_detected")
-            return None
 
         print("[Voz] No se detecto habla en el audio.")
         logger.log_action(instruction="/voz", result="no_speech_detected")
@@ -305,14 +403,23 @@ def capture_and_transcribe(
     duration_seconds: float,
     show_stats: bool = True,
     return_extra: bool = False,
+    dynamic: bool = False,
+    beam_size: int | None = None,
+    skip_silent: bool = False,
 ) -> str | dict | None:
     """Captura audio y transcribe. Reutilizada por /voz y modo continuo.
 
     Args:
-        duration_seconds: Duracion de la captura.
+        duration_seconds: Duracion de la captura (maximo, si dynamic=True).
         show_stats: Mostrar estadisticas en consola.
         return_extra: Si True, retorna dict con claves:
             text (str|None), rms (float), has_voice (bool).
+        dynamic: Si True, la grabacion corta sola al detectar silencio
+            sostenido en vez de durar exactamente duration_seconds.
+        beam_size: beam de Whisper (1 = rapido, 5 = preciso). None usa config.
+        skip_silent: Si True y el fragmento no supera el umbral de voz,
+            NO invoca Whisper (ahorra CPU en la escucha continua: en una
+            habitacion en silencio no se transcribe nada).
 
     Returns:
         str|None si return_extra=False.
@@ -324,36 +431,47 @@ def capture_and_transcribe(
     compute_type = cfg.get("stt_compute_type", "int8")
     language = cfg.get("stt_language", "es")
     threshold = _get_threshold()
+    vad_threshold = _get_vad_threshold()
 
     if not _AUDIO_OK:
         if show_stats:
             print("[Voz] sounddevice/numpy no disponibles.")
+            print("  Solucion: pip install sounddevice numpy")
+            print("  En Linux tambien: sudo apt install libportaudio2")
         if return_extra:
             return {"text": None, "rms": 0.0, "has_voice": False}
         return None
 
     try:
-        mic_name = "desconocido"
-        try:
-            default = _sd.query_devices(kind="input")
-            mic_name = default.get("name", "desconocido")[:40]
-        except Exception:
-            pass
+        if dynamic:
+            silence_ms = int(cfg.get("stt_silence_ms", 1200))
+            start_timeout = float(cfg.get("stt_start_timeout_s", 6.0))
+            if show_stats:
+                print(f"[Voz] Te escucho (corto solo cuando calles, "
+                      f"max {duration_seconds:.0f}s)...")
+            audio, rms, had_voice = record_until_silence(
+                max_seconds=float(duration_seconds), sample_rate=sample_rate,
+                silence_ms=silence_ms, start_timeout_s=start_timeout,
+                show_stats=show_stats,
+            )
+            if audio is None:
+                if return_extra:
+                    return {"text": None, "rms": 0.0, "has_voice": False}
+                return None
+        else:
+            if show_stats:
+                print(f"[Voz] Escuchando {duration_seconds:.0f}s...")
+            recording = _sd.rec(
+                int(duration_seconds * sample_rate),
+                samplerate=sample_rate, channels=1, dtype="int16",
+            )
+            _sd.wait()
+            audio = recording.flatten().astype("float32") / 32768.0
+            rms = float(_np.sqrt(_np.mean(audio ** 2)))
+            had_voice = rms > vad_threshold
 
         if show_stats:
-            print(f"[Voz] Escuchando {duration_seconds:.0f}s... Mic: {mic_name}")
-
-        recording = _sd.rec(
-            int(duration_seconds * sample_rate),
-            samplerate=sample_rate, channels=1, dtype="int16",
-        )
-        _sd.wait()
-
-        audio = recording.flatten().astype("float32") / 32768.0
-        rms = float(_np.sqrt(_np.mean(audio ** 2)))
-
-        if show_stats:
-            print(f"[Voz] RMS: {rms:.6f} | Duracion: {duration_seconds:.0f}s")
+            print(f"[Voz] RMS: {rms:.6f}")
 
     except Exception as e:
         if show_stats:
@@ -362,10 +480,18 @@ def capture_and_transcribe(
             return {"text": None, "rms": 0.0, "has_voice": False}
         return None
 
+    if skip_silent and not had_voice:
+        # Sin energia de voz en el fragmento: no gastar CPU en Whisper.
+        if return_extra:
+            return {"text": None, "rms": rms, "has_voice": False}
+        return None
+
     try:
         model = _get_whisper_model(model_name, compute_type)
         segments, _ = model.transcribe(
-            audio, language=language, beam_size=5, vad_filter=True,
+            audio, language=language,
+            beam_size=beam_size if beam_size else _get_beam_size(5),
+            vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500},
         )
         text = " ".join(s.text.strip() for s in segments).strip()
