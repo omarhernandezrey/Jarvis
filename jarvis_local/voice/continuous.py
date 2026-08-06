@@ -34,7 +34,6 @@ def find_wake_word(text: str) -> tuple[bool, str]:
     m = _WAKE_REGEX.match(n)
     if not m:
         return False, ""
-    wake_word = m.group(1)
     cmd_normalized = m.group(2)
     if not cmd_normalized:
         return True, ""
@@ -115,6 +114,7 @@ class ContinuousVoiceController:
         self._last_command = ""
         self._state = VoiceState.STOPPED
         self._state_lock = threading.Lock()
+        self._buffer_lock = threading.Lock()
 
     # -- state helpers --
 
@@ -125,6 +125,35 @@ class ContinuousVoiceController:
     def _get_state(self) -> VoiceState:
         with self._state_lock:
             return self._state
+
+    # -- buffer helpers --
+
+    def _clear_buffer(self):
+        with self._buffer_lock:
+            self._command_buffer.clear()
+            self._command_start_time = 0.0
+            self._silence_count = 0
+
+    def _append_to_buffer(self, text: str):
+        with self._buffer_lock:
+            self._command_buffer.append(text)
+
+    def _get_buffer_text(self) -> str:
+        with self._buffer_lock:
+            return " ".join(self._command_buffer)
+
+    def _increment_silence(self) -> int:
+        with self._buffer_lock:
+            self._silence_count += 1
+            return self._silence_count
+
+    def _reset_silence(self):
+        with self._buffer_lock:
+            self._silence_count = 0
+
+    def _set_last_command(self, text: str):
+        with self._buffer_lock:
+            self._last_command = text
 
     @property
     def state(self):
@@ -151,15 +180,19 @@ class ContinuousVoiceController:
 
     def get_state(self) -> dict:
         st = self._get_state()
+        with self._buffer_lock:
+            buffer_text = " | ".join(self._command_buffer) if self._command_buffer else ""
+            last_cmd = self._last_command
+            silence = self._silence_count
         return {
             "active": self.is_running(),
             "state": st.value,
             "wake_word": "Jarvis (tolerante: " + ", ".join(_WAKE_VARIANTS[:4]) + "...)",
             "fragment_duration_s": self._fragment_duration,
             "tts_pause_ms": self._tts_pause_ms,
-            "buffer": " | ".join(self._command_buffer) if self._command_buffer else "",
-            "last_command": self._last_command,
-            "silence_count": self._silence_count,
+            "buffer": buffer_text,
+            "last_command": last_cmd,
+            "silence_count": silence,
             "command_timeout_s": self._command_timeout_s,
         }
 
@@ -177,9 +210,20 @@ class ContinuousVoiceController:
     # -- fragment capture helper --
 
     def _capture_fragment(self) -> str | None:
-        """Captura un fragmento. Retorna texto transcrito o None."""
+        """Captura un fragmento. Retorna texto transcrito o None.
+
+        Pide al STT que salte la transcripcion si el fragmento no tiene
+        energia de voz (skip_silent) y use beam rapido (beam_size=1): en
+        silencio la escucha continua no gasta CPU y el ciclo es mas corto,
+        asi que se pierden menos wake words. Si el stt_fn no soporta esos
+        parametros (dobles de prueba), se llama en modo clasico.
+        """
         try:
-            result = self._stt(self._fragment_duration, show_stats=True)
+            try:
+                result = self._stt(self._fragment_duration, show_stats=False,
+                                   skip_silent=True, beam_size=1)
+            except TypeError:
+                result = self._stt(self._fragment_duration, show_stats=True)
             if isinstance(result, dict):
                 return result.get("text")
             return result
@@ -219,15 +263,19 @@ class ContinuousVoiceController:
 
         # Wake word detectada.
         print("[Voz continua] Wake word detectada.")
-        self._command_buffer = [cmd] if cmd else []
-        self._command_start_time = time.time()
-        self._silence_count = 0
+        with self._buffer_lock:
+            self._command_buffer = [cmd] if cmd else []
+            self._command_start_time = time.time()
+            self._silence_count = 0
         self._set_state(VoiceState.COLLECTING_COMMAND)
 
     def _handle_collecting(self):
-        # Si el buffer inicial esta vacio (solo "Jarvis"):
-        # decir "Te escucho." y captura unica de 8s.
-        if not self._command_buffer or not any(p.strip() for p in self._command_buffer):
+        # Si el buffer inicial esta vacio (solo "Jarvis"): decir "Te escucho."
+        # y capturar el comando con corte por silencio (max 12s). Si el stt_fn
+        # no soporta captura dinamica (dobles de prueba), captura fija de 8s.
+        with self._buffer_lock:
+            buffer_empty = not self._command_buffer or not any(p.strip() for p in self._command_buffer)
+        if buffer_empty:
             if self._tts_speak:
                 try:
                     self._tts_speak("Te escucho.")
@@ -236,11 +284,14 @@ class ContinuousVoiceController:
             if not self._running.is_set():
                 self._set_state(VoiceState.LISTENING_WAKE_WORD)
                 return
-            text = self._stt(8, show_stats=True)
+            try:
+                text = self._stt(12, show_stats=True, dynamic=True)
+            except TypeError:
+                text = self._stt(8, show_stats=True)
             if isinstance(text, dict):
                 text = text.get("text")
             if text and text.strip() and self._running.is_set():
-                self._command_buffer.append(text)
+                self._append_to_buffer(text)
             else:
                 print("[Voz continua] Sin comando detectado.")
                 print("[Voz continua] Escucha reanudada.")
@@ -249,9 +300,10 @@ class ContinuousVoiceController:
 
         # Capturar fragmentos hasta silencio o timeout
         while self._running.is_set() and self._get_state() == VoiceState.COLLECTING_COMMAND:
-            elapsed = time.time() - self._command_start_time
-            timed_out = elapsed >= self._command_timeout_s
-            silent_enough = self._silence_count >= self._silence_to_end
+            with self._buffer_lock:
+                elapsed = time.time() - self._command_start_time
+                timed_out = elapsed >= self._command_timeout_s
+                silent_enough = self._silence_count >= self._silence_to_end
 
             if timed_out or silent_enough:
                 break
@@ -262,17 +314,17 @@ class ContinuousVoiceController:
 
             text = self._capture_fragment()
             if text:
-                self._command_buffer.append(text)
-                self._silence_count = 0
+                self._append_to_buffer(text)
+                self._reset_silence()
             else:
-                self._silence_count += 1
+                self._increment_silence()
 
-            elapsed = time.time() - self._command_start_time
+            with self._buffer_lock:
+                elapsed = time.time() - self._command_start_time
 
         # Construir comando final
         command = _merge_fragments(self._command_buffer)
-        self._command_buffer = []
-        self._silence_count = 0
+        self._clear_buffer()
 
         if not command or not command.strip():
             print("[Voz continua] Sin comando detectado.")
@@ -283,18 +335,17 @@ class ContinuousVoiceController:
         # Procesar
         self._set_state(VoiceState.PROCESSING)
         print(f"[Voz continua] Comando completo: {command}")
-        self._last_command = command
+        self._set_last_command(command)
 
         try:
             response = self._chat(command)
             if response:
                 print(f"[JARVIS]: {response}")
-            if response and self._tts_speak:
-                if self._running.is_set():
-                    try:
-                        self._tts_speak(response)
-                    except Exception as e:
-                        print(f"[Voz continua] Error TTS: {e}")
+            if response and self._tts_speak and self._running.is_set():
+                try:
+                    self._tts_speak(response)
+                except Exception as e:
+                    print(f"[Voz continua] Error TTS: {e}")
         except Exception as e:
             print(f"[Voz continua] Error: {e}")
 

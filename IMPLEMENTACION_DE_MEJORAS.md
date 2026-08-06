@@ -272,7 +272,7 @@
 
 ## FASE 5 — VOZ (VOICE)
 
-- [ ] **5.1 Mejorar threading en `continuous.py`**
+- [x] **5.1 Mejorar threading en `continuous.py`**
   - **Archivo**: `jarvis_local/voice/continuous.py:111-116`
   - **Problema**: Solo `_state` está protegido por lock. `_command_buffer`, `_silence_count` etc. no.
   - **Acciones**:
