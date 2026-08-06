@@ -703,6 +703,21 @@ def execute(name: str, arguments: dict) -> tuple[str, bool]:
         logger.log_error(f"tool:{name}", str(e))
         return f"No pude ejecutar '{name}': {e}", False
 
+    # Verificación centralizada de needs_confirmation
+    if tool.needs_confirmation:
+        if not isinstance(result, ActionPlan):
+            # La herramienta debería haber devuelto un ActionPlan para confirmación
+            from jarvis_local.safety.logger import logger
+            logger.log_error(f"tool:{name}",
+                             f"Herramienta con needs_confirmation=True no devolvió ActionPlan: {type(result)}")
+            return (f"Error interno: la herramienta '{name}' requiere confirmación "
+                    "pero no generó un plan."), False
+        if result.status not in (ActionStatus.PLANNED, ActionStatus.CONFIRMED):
+            # El plan debería estar pendiente de confirmación
+            from jarvis_local.safety.logger import logger
+            logger.log_error(f"tool:{name}",
+                             f"Herramienta con needs_confirmation=True devolvió status: {result.status}")
+
     if isinstance(result, ActionPlan):
         pendiente = result.status in (ActionStatus.PLANNED, ActionStatus.CONFIRMED)
         texto = result.result or (str(result) if pendiente else "Operacion completada.")

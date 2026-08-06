@@ -239,7 +239,7 @@
   - **Tests**: Test con argumentos de tipo incorrecto
   - **Verificar**: `python -m pytest test/test_agent* -q`
 
-- [ ] **4.3 Verificación centralizada de `needs_confirmation`**
+- [x] **4.3 Verificación centralizada de `needs_confirmation`**
   - **Archivo**: `jarvis_local/agent/registry.py:624-656`
   - **Problema**: `execute()` no verifica `tool.needs_confirmation`. La seguridad depende de cada herramienta.
   - **Acciones**:
