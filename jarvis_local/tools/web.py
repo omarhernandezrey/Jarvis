@@ -3,18 +3,39 @@ JARVIS Local - Herramientas Web (Fase 4)
 Abrir sitios web, buscar en Google y reproducir en YouTube.
 """
 import webbrowser
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+
+
+def _is_safe_url(url: str) -> bool:
+    """Verifica que la URL sea segura (solo http/https)."""
+    parsed = urlparse(url)
+    # Solo permitir http, https y URLs sin esquema (se añadirá https)
+    return parsed.scheme in ("http", "https", "")
 
 
 def build_url(site: str) -> str:
     """Normaliza un nombre de sitio a URL completa."""
     s = site.strip().strip('"\'').rstrip('.!?').strip()
+
+    # Verificar si tiene un esquema (http, https, javascript, data, etc.)
+    if ":" in s and not s.startswith(("http://", "https://")):
+        # Tiene un esquema que no es http/https, verificar si es seguro
+        if not _is_safe_url(s):
+            return "https://www.google.com"  # Fallback seguro
+        return s
+
     if s.startswith(("http://", "https://")):
+        # Validar que el esquema sea seguro
+        if not _is_safe_url(s):
+            return "https://www.google.com"  # Fallback seguro
         return s
     if "." in s and " " not in s:
-        return f"https://{s}"
+        url = f"https://{s}"
+        if not _is_safe_url(url):
+            return "https://www.google.com"  # Fallback seguro
+        return url
     # nombre sin dominio: probar .com
     return f"https://www.{s.replace(' ', '')}.com"
 

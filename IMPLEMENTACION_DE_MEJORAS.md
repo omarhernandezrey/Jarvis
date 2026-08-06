@@ -65,7 +65,7 @@
   - **Tests a crear**: En `test/test_agent.py` con comandos maliciosos
   - **Verificar**: `python -m pytest test/test_agent* -q`
 
-- [ ] **1.6 Validar esquema de URL en `web.py:build_url`**
+- [x] **1.6 Validar esquema de URL en `web.py:build_url`**
   - **Archivo**: `jarvis_local/tools/web.py:11-19`
   - **Problema**: `javascript:alert(1)` pasaría el check. Sin validación de esquema.
   - **Acciones**:
