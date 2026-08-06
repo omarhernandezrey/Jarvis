@@ -61,5 +61,5 @@ def locate(place: str) -> ActionPlan:
     except requests.RequestException as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
-        plan.result = "No pude consultar la ubicacion. Verifique su conexion a internet."
+        plan.result = "No pude consultar la ubicacion, senor. Verifique su conexion a internet."
     return plan

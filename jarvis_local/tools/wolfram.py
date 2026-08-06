@@ -41,5 +41,5 @@ def ask_wolfram(question: str) -> ActionPlan:
     except requests.RequestException as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
-        plan.result = "No pude consultar WolframAlpha. Verifique su conexion."
+        plan.result = "No pude consultar WolframAlpha, senor. Verifique su conexion."
     return plan

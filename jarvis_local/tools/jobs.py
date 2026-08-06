@@ -285,7 +285,7 @@ def search_jobs(puesto: str, ciudad: str = "", limit: int = 8) -> ActionPlan:
     except Exception as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
-        plan.result = "No pude consultar los portales de empleo. Verifique su conexion."
+        plan.result = "No pude consultar los portales de empleo, senor. Verifique su conexion."
         return plan
 
     if not jobs:

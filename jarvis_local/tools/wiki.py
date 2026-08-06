@@ -53,5 +53,5 @@ def wiki_summary(topic: str) -> ActionPlan:
     except requests.RequestException as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
-        plan.result = "No pude consultar Wikipedia. Verifique su conexion a internet."
+        plan.result = "No pude consultar Wikipedia, senor. Verifique su conexion a internet."
     return plan

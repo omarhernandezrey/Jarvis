@@ -46,5 +46,5 @@ def headlines(limit: int = 5) -> ActionPlan:
     except (requests.RequestException, ET.ParseError) as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
-        plan.result = "No pude consultar las noticias. Verifique su conexion a internet."
+        plan.result = "No pude consultar las noticias, senor. Verifique su conexion a internet."
     return plan

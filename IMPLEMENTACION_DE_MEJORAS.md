@@ -205,7 +205,7 @@
   - **Tests**: `python -m pytest test/test_calculator* test/test_weather* -q`
   - **Verificar**: No hay regresiones
 
-- [ ] **3.5 Unificar mensajes de error con "señor"**
+- [x] **3.5 Unificar mensajes de error con "señor"**
   - **Archivo**: Múltiples en `jarvis_local/tools/`
   - **Problema**: Algunos errores dicen "señor", otros no. Inconsistencia.
   - **Acciones**:

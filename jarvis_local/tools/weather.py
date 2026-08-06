@@ -71,5 +71,5 @@ def get_weather(city: str) -> ActionPlan:
     except requests.RequestException as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
-        plan.result = "No pude consultar el clima. Verifique su conexion a internet."
+        plan.result = "No pude consultar el clima, senor. Verifique su conexion a internet."
     return plan
