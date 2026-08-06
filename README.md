@@ -11,6 +11,14 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 ---
 
+## 📋 Plan de Mejoras en Curso
+
+> **Si eres un agente IA o desarrollador**, lee obligatoriamente [`IMPLEMENTACION_DE_MEJORAS.md`](IMPLEMENTACION_DE_MEJORAS.md) antes de hacer cualquier cambio. Contiene el plan maestro con tareas en orden específico.
+
+Rama activa: `implementacion-de-mejoras` | Tareas: 38 | Fases: 8
+
+---
+
 ## ✨ Qué lo hace distinto
 
 No es un menú de comandos con voz: es un **agente**. El modelo de lenguaje (que corre en tu propia máquina) recibe el catálogo de herramientas y **decide cuál usar**, así que entiende frases que nadie programó:
