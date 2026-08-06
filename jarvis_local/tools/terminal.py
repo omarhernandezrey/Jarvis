@@ -107,8 +107,12 @@ def execute_command(command: str) -> ActionPlan:
         plan.status = ActionStatus.ERROR
         plan.error = "Timeout"
         plan.result = "El comando excedio el tiempo limite de 30 segundos."
+    except OSError as e:
+        plan.status = ActionStatus.ERROR
+        plan.error = str(e)
+        plan.result = f"Error de sistema al ejecutar comando: {e}"
     except Exception as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
-        plan.result = f"Error al ejecutar comando: {e}"
+        plan.result = f"Error inesperado al ejecutar comando: {e}"
     return plan

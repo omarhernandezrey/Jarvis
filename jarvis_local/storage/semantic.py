@@ -18,6 +18,10 @@ from pathlib import Path
 import numpy as np
 import requests
 
+from jarvis_local.logging_config import get_logger
+
+logger = get_logger("storage.semantic")
+
 from jarvis_local.config import get_config
 
 # bge-m3, no nomic-embed-text: nomic es un modelo de ingles y en espanol no
@@ -121,7 +125,8 @@ class SemanticIndex:
                 self.ids = json.loads(str(data["ids"]))
             if len(self.ids) != self.matrix.shape[0]:  # indice inconsistente
                 self.ids, self.matrix = [], np.zeros((0, EMBED_DIM), np.float32)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Error cargando índice semántico: {e}")
             self.ids, self.matrix = [], np.zeros((0, EMBED_DIM), np.float32)
 
     def _save(self):

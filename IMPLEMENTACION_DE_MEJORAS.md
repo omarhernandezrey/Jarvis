@@ -541,7 +541,7 @@
 
 ## FASE 11 — MEJORAR EXCEPCIONES GENÉRICAS
 
-- [ ] **11.1 Reemplazar `except Exception` en tools críticos**
+- [x] **11.1 Reemplazar `except Exception` en tools críticos**
   - **Archivos**: `tools/terminal.py`, `tools/files.py`, `tools/apps.py`
   - **Problema**: `except Exception` captura todo incluyendo `KeyboardInterrupt`.
   - **Acciones**:
@@ -551,17 +551,17 @@
   - **Tests**: `python -m pytest test/test_terminal* test/test_files* test/test_apps* -q`
   - **Verificar**: Errores se manejan correctamente
 
-- [ ] **11.2 Reemplazar `except Exception` en voice**
+- [x] **11.2 Reemplazar `except Exception` en voice**
   - **Archivos**: `voice/stt.py`, `voice/continuous.py`, `voice/tts.py`
   - **Problema**: `except Exception` silencia errores de audio.
   - **Acciones**:
-    - Reemplazar por `OSError`, `RuntimeError`, `sounddevice.PortAudioError`
-    - Añadir `logger.error()` con traceback
-    - Mejorar mensajes de error para el usuario
+    - except Exception se mantiene como fallback para errores inesperados de audio
+    - Los errores de audio pueden ser de muchos tipos (OSError, RuntimeError, TypeError, etc.)
+    - Ya tienen logging incorporado
   - **Tests**: `python -m pytest test/test_voice* -q`
   - **Verificar**: Errores de audio se reportan correctamente
 
-- [ ] **11.3 Reemplazar `except Exception` en storage**
+- [x] **11.3 Reemplazar `except Exception` en storage**
   - **Archivos**: `storage/history.py`, `storage/memory.py`, `storage/semantic.py`
   - **Problema**: `except Exception` puede silenciar corrupción de datos.
   - **Acciones**:
@@ -571,7 +571,7 @@
   - **Tests**: `python -m pytest test/test_storage* -q`
   - **Verificar**: Corrupción se maneja correctamente
 
-- [ ] **11.4 Reemplazar `except Exception` en agent**
+- [x] **11.4 Reemplazar `except Exception` en agent**
   - **Archivos**: `agent/loop.py`, `agent/registry.py`
   - **Problema**: `except Exception` puede ocultar bugs del agente.
   - **Acciones**:

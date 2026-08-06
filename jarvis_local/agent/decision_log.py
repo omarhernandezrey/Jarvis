@@ -16,6 +16,9 @@ from collections import Counter
 from datetime import datetime
 
 from jarvis_local.config import BASE_DIR
+from jarvis_local.logging_config import get_logger
+
+logger = get_logger("agent.decision_log")
 
 LOG_PATH = BASE_DIR / "logs" / "decisions.jsonl"
 MAX_LINEAS = 5000  # rotacion simple: el log no debe crecer sin limite
@@ -37,8 +40,8 @@ def log_decision(entrada: str, confianza: float, herramientas: list[str],
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(registro, ensure_ascii=False) + "\n")
         _rotar()
-    except Exception:
-        pass  # el log jamas debe tumbar una conversacion
+    except Exception as e:
+        logger.debug(f"Error escribiendo log de decisión: {e}")
 
 
 def _rotar() -> None:
@@ -49,8 +52,8 @@ def _rotar() -> None:
         if len(lineas) > MAX_LINEAS:
             LOG_PATH.write_text("\n".join(lineas[-MAX_LINEAS:]) + "\n",
                                 encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Error rotando log de decisiones: {e}")
 
 
 def leer(limite: int = 0) -> list[dict]:
