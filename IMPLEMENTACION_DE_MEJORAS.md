@@ -165,7 +165,7 @@
 
 ## FASE 3 — HERRAMIENTAS (TOOLS)
 
-- [ ] **3.1 Crear módulo `tools/_utils.py` con funciones compartidas**
+- [x] **3.1 Crear módulo `tools/_utils.py` con funciones compartidas**
   - **Archivo**: Nuevo `jarvis_local/tools/_utils.py`
   - **Problema**: `_norm()` copiada 4 veces. Helpers JSON repetidos 3 veces.
   - **Acciones**:

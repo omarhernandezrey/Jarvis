@@ -7,11 +7,11 @@ import contextlib
 import difflib
 import os
 import subprocess
-import unicodedata
 
 from jarvis_local.config import IS_WINDOWS
 from jarvis_local.safety.permissions import get_app_path, list_allowed_apps
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
+from jarvis_local.tools._utils import normalize_text as _norm
 
 ALLOWED_APP_NAMES = ["chrome", "vscode", "explorador", "powershell", "terminal",
                        "wsl", "notepad", "calculadora", "control", "configuracion",
@@ -66,12 +66,6 @@ _PROTECTED_PROCS = {
 # Palabras de relleno en nombres de apps: no sirven para identificar el proceso
 _FILLER_WORDS = {"microsoft", "google", "mozilla", "apple", "windows", "app",
                  "de", "la", "el", "corporation", "inc"}
-
-
-def _norm(text: str) -> str:
-    """minusculas y sin acentos, para comparar nombres hablados."""
-    t = unicodedata.normalize("NFD", text.lower().strip())
-    return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
 
 def _register_opened(name: str, display: str, pid: int | None = None,

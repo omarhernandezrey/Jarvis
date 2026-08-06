@@ -10,22 +10,17 @@ Los contactos viven en data/contacts.json: {"juan": "573001234567", ...}
 import json
 import os
 import re
-import unicodedata
 import urllib.parse
 import webbrowser
 
 from jarvis_local.config import BASE_DIR
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+from jarvis_local.tools._utils import normalize_text as _norm
 
 CONTACTS_PATH = str(BASE_DIR / "data" / "contacts.json")
 
 # Indicativo por defecto para numeros locales de 10 digitos (Colombia)
 DEFAULT_COUNTRY_CODE = "57"
-
-
-def _norm(text: str) -> str:
-    t = unicodedata.normalize("NFD", text.lower().strip())
-    return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
 
 def _load_contacts() -> dict:

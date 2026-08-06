@@ -11,9 +11,9 @@ import json
 import os
 import subprocess
 import time
-import unicodedata
 
 from jarvis_local.config import BASE_DIR, IS_WINDOWS
+from jarvis_local.tools._utils import normalize_text as _normalize
 
 INDEX_PATH = str(BASE_DIR / "data" / "apps_index.json")
 INDEX_MAX_AGE_SECONDS = 7 * 24 * 3600  # re-escanear cada 7 dias
@@ -44,12 +44,6 @@ _LINUX_DESKTOP_DIRS = [
 _cache: list | None = None
 
 
-def _normalize(text: str) -> str:
-    """minusculas y sin acentos, para comparar nombres hablados."""
-    t = unicodedata.normalize("NFD", text.lower().strip())
-    return "".join(c for c in t if unicodedata.category(c) != "Mn")
-
-
 def _is_launchable(name: str, appid: str) -> bool:
     n = _normalize(name)
     if any(marker in n for marker in _EXCLUDE_NAME_MARKERS):
@@ -57,9 +51,7 @@ def _is_launchable(name: str, appid: str) -> bool:
     a = appid.lower()
     if a.startswith(("http://", "https://")):
         return False
-    if a.endswith(_EXCLUDE_APPID_SUFFIXES):
-        return False
-    return True
+    return not a.endswith(_EXCLUDE_APPID_SUFFIXES)
 
 
 def _scan_installed_apps_windows() -> list:
