@@ -6,6 +6,7 @@ Accion de escritura: requiere plan + /confirmar.
 import os
 import subprocess
 
+from jarvis_local.config import IS_WINDOWS
 from jarvis_local.safety.permissions import is_within_allowed
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
 
@@ -35,7 +36,7 @@ def plan_hide(path: str, hide: bool = True) -> ActionPlan:
 
 
 def execute_hide(path: str, hide: bool = True) -> ActionPlan:
-    """Ejecuta el ocultar/mostrar CONFIRMADO usando attrib."""
+    """Ejecuta el ocultar/mostrar CONFIRMADO."""
     action = "ocultar_archivos" if hide else "mostrar_archivos"
     norm = os.path.normpath(os.path.expandvars(path))
     plan = ActionPlan(action=action, params={"path": norm, "hide": hide},
@@ -47,9 +48,10 @@ def execute_hide(path: str, hide: bool = True) -> ActionPlan:
         plan.result = f"Ruta invalida o no permitida: {norm}"
         return plan
     try:
-        flag = "+h" if hide else "-h"
-        subprocess.run(["attrib", flag, os.path.join(norm, "*")],
-                       capture_output=True, text=True, timeout=60, shell=False)
+        if IS_WINDOWS:
+            _hide_windows(norm, hide)
+        else:
+            _hide_linux(norm, hide)
         n = len([f for f in os.listdir(norm)
                  if os.path.isfile(os.path.join(norm, f))])
         estado = "ocultos" if hide else "visibles"
@@ -60,3 +62,28 @@ def execute_hide(path: str, hide: bool = True) -> ActionPlan:
         plan.error = str(e)
         plan.result = f"No pude cambiar los atributos: {e}"
     return plan
+
+
+def _hide_windows(norm: str, hide: bool):
+    """Oculta/muestra archivos en Windows usando attrib."""
+    flag = "+h" if hide else "-h"
+    subprocess.run(["attrib", flag, os.path.join(norm, "*")],
+                   capture_output=True, text=True, timeout=60, shell=False)
+
+
+def _hide_linux(norm: str, hide: bool):
+    """
+    Oculta/muestra archivos en Linux renombrando con/sin prefijo '.'.
+    En Linux, los archivos ocultos empiezan con punto.
+    """
+    for filename in os.listdir(norm):
+        filepath = os.path.join(norm, filename)
+        if not os.path.isfile(filepath):
+            continue
+        if hide and not filename.startswith('.'):
+            # Ocultar: añadir prefijo punto
+            os.rename(filepath, os.path.join(norm, '.' + filename))
+        elif not hide and filename.startswith('.') and filename != '.':
+            # Mostrar: quitar prefijo punto
+            new_name = filename[1:]  # Quitar el punto inicial
+            os.rename(filepath, os.path.join(norm, new_name))

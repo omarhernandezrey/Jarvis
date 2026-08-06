@@ -36,7 +36,7 @@
   - **Tests a crear**: Casos en `test/test_files.py` con nombres maliciosos
   - **Verificar**: `python -m pytest test/test_files* -q`
 
-- [ ] **1.3 Guard `IS_WINDOWS` en `hidden_files.py`**
+- [x] **1.3 Guard `IS_WINDOWS` en `hidden_files.py`**
   - **Archivo**: `jarvis_local/tools/hidden_files.py:51`
   - **Problema**: Usa `attrib` (solo Windows) sin verificar plataforma. En Linux falla con `FileNotFoundError`.
   - **Acciones**:
