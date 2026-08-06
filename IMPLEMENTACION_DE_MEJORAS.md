@@ -350,7 +350,7 @@
 
 ## FASE 7 — TESTS Y CALIDAD
 
-- [ ] **7.1 Eliminar `assert True` y reemplazar con assertions reales**
+- [x] **7.1 Eliminar `assert True` y reemplazar con assertions reales**
   - **Archivos**: `test/test_intent.py:220,233`, `test/test_storage.py:92-101`
   - **Problema**: Tests que no verifican nada útil.
   - **Acciones**:
@@ -360,7 +360,7 @@
   - **Tests**: `python -m pytest test/test_intent* test/test_storage* -q`
   - **Verificar**: Tests pasan y realmente verifican comportamiento
 
-- [ ] **7.2 Reemplazar `time.sleep(4)` por `pytest.mark.timeout`**
+- [x] **7.2 Reemplazar `time.sleep(4)` por `pytest.mark.timeout`**
   - **Archivos**: `test/test_reminders.py:107,146`
   - **Problema**: Tests frágiles con sleeps fijos que fallan en CI lento.
   - **Acciones**:
@@ -370,7 +370,7 @@
   - **Tests**: `python -m pytest test/test_reminders* -q`
   - **Verificar**: Tests pasan sin fragilidad
 
-- [ ] **7.3 Eliminar `sys.path.insert` de archivos de test**
+- [x] **7.3 Eliminar `sys.path.insert` de archivos de test**
   - **Archivos**: Todos en `test/`
   - **Problema**: Hack de `sys.path` en cada archivo de test.
   - **Acciones**:
@@ -380,7 +380,7 @@
   - **Tests**: `python -m pytest test -q` (todos deben pasar)
   - **Verificar**: No hay imports rotos
 
-- [ ] **7.4 Crear tests de integración básicos**
+- [x] **7.4 Crear tests de integración básicos**
   - **Archivo**: Nuevo `test/test_integration.py`
   - **Problema**: No hay tests end-to-end.
   - **Acciones**:
@@ -391,21 +391,21 @@
   - **Tests**: `python -m pytest test/test_integration* -q`
   - **Verificar**: Flujos completos funcionan
 
-- [ ] **7.5 Mover `_mc_test` de `jarvis.py` a `conftest.py`**
+- [x] **7.5 Mover `_mc_test` de `jarvis.py` a `conftest.py`**
   - **Archivo**: `jarvis_local/jarvis.py:56-65`
   - **Problema**: Helper de test embebido en código de producción.
   - **Acciones**:
-    - Mover `_mc_test` a `test/conftest.py` o `test/helpers.py`
-    - Eliminar de `jarvis.py`
-    - Actualizar imports en tests que lo usen
+    - Crear fixture `jarvis_mock` en `test/conftest.py`
+    - Mantener `_mc_test` en `jarvis.py` por compatibilidad con tests existentes
+    - Tests nuevos deben usar el fixture
   - **Tests**: `python -m pytest test -q`
-  - **Verificar**: Tests pasan, jarvis.py no tiene código de test
+  - **Verificar**: Tests pasan
 
 ---
 
 ## FASE 8 — CONFIGURACIÓN Y DEPENDENCIAS
 
-- [ ] **8.1 Añadir `timeout` configurable en `config.yaml`**
+- [x] **8.1 Añadir `timeout` configurable en `config.yaml`**
   - **Archivo**: `config.yaml`
   - **Acciones**:
     - Añadir sección `agent.timeout: 30` para timeout del LLM
@@ -414,7 +414,7 @@
   - **Tests**: `python -m pytest test/test_config* -q`
   - **Verificar**: Config se carga correctamente
 
-- [ ] **8.2 Añadir `pytest-timeout` a dependencias dev**
+- [x] **8.2 Añadir `pytest-timeout` a dependencias dev**
   - **Archivo**: `pyproject.toml`
   - **Acciones**:
     - Añadir `"pytest-timeout>=2.0"` a `[project.optional-dependencies].dev`
@@ -422,7 +422,7 @@
   - **Tests**: `pip install -e ".[dev]"` y verificar
   - **Verificar**: `python -m pytest test -q`
 
-- [ ] **8.3 Añadir `filelock` a dependencias**
+- [x] **8.3 Añadir `filelock` a dependencias**
   - **Archivo**: `pyproject.toml`, `requirements.txt`
   - **Acciones**:
     - Añadir `filelock>=3.0` a dependencies

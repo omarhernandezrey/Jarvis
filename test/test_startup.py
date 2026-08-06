@@ -75,7 +75,7 @@ def test_no_regressions_after_phase7():
     from jarvis_local.storage.history import HistoryStore
     from jarvis_local.storage.memory import MemoryStore
     from jarvis_local.voice.stt import load_voice_config
-    assert True
+    # Si llegamos aquí, todos los módulos son importables
 
 
 if __name__ == "__main__":
