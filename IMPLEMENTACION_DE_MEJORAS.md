@@ -249,7 +249,7 @@
   - **Tests**: Test que verifique que herramientas riesgosas no se ejecutan sin confirmación
   - **Verificar**: `python -m pytest test/test_agent* test/test_policy* -q`
 
-- [ ] **4.4 Limpiar import muerto en `loop.py:213`**
+- [x] **4.4 Limpiar import muerto en `loop.py:213`**
   - **Archivo**: `jarvis_local/agent/loop.py:213`
   - **Problema**: `from jarvis_local.intent.parser import es_multi_accion  # noqa: F401` no se usa.
   - **Acciones**:

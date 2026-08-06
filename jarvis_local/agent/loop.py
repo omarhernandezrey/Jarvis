@@ -213,8 +213,6 @@ def _run_encadenado(client, clausulas: list[str],
 
 def _run_simple(client, user_message: str, history: list[dict] | None,
                 max_steps: int) -> AgentResult:
-    from jarvis_local.intent.parser import es_multi_accion  # noqa: F401
-
     # Para RECUPERAR herramientas, una frase anaforica no se sostiene sola:
     # "y en Bogota?" no se parece a ninguna herramienta, asi que el retriever
     # devolvia lista vacia y la peticion moria en conversacion. Se recupera con
