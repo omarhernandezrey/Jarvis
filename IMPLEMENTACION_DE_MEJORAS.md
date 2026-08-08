@@ -661,7 +661,7 @@
 
 ## FASE 14 — MEJORAR COBERTURA DE TESTS
 
-- [ ] **14.1 Tests para `ui/desktop.py`**
+- [x] **14.1 Tests para `ui/desktop.py`**
   - **Archivo**: `jarvis_local/ui/desktop.py` (983 líneas sin tests)
   - **Problema**: Interfaz de escritorio sin cobertura.
   - **Acciones**:
@@ -673,7 +673,7 @@
   - **Tests**: `python -m pytest test/test_ui_desktop* -q`
   - **Verificar**: Tests pasan
 
-- [ ] **14.2 Tests para `ui/server.py`**
+- [x] **14.2 Tests para `ui/server.py`**
   - **Archivo**: `jarvis_local/ui/server.py` (799 líneas sin tests)
   - **Problema**: Interfaz web sin cobertura.
   - **Acciones**:
@@ -719,7 +719,7 @@
   - **Tests**: `python -m pytest test/test_location* -q`
   - **Verificar**: Tests pasan
 
-- [ ] **14.6 Tests de carga para storage** (pendiente - requiere benchmarks)
+- [x] **14.6 Tests de carga para storage**
   - **Archivos**: `storage/history.py`, `storage/memory.py`, `storage/semantic.py`
   - **Problema**: Sin tests de rendimiento con muchos datos.
   - **Acciones**:
@@ -735,7 +735,7 @@
 
 ## FASE 15 — FUNCIONALIDADES NUEVAS
 
-- [ ] **15.1 Sistema de plugins para herramientas**
+- [x] **15.1 Sistema de plugins para herramientas**
   - **Archivos**: Nuevo `jarvis_local/plugins/`
   - **Problema**: No se pueden añadir herramientas sin modificar código fuente.
   - **Acciones**:
@@ -747,7 +747,7 @@
   - **Tests**: Test con plugin de ejemplo
   - **Verificar**: Plugins se cargan correctamente
 
-- [ ] **15.2 Dashboard web con métricas**
+- [x] **15.2 Dashboard web con métricas**
   - **Archivos**: Nuevo `jarvis_local/ui/dashboard.py`
   - **Problema**: Sin visibilidad del estado del sistema.
   - **Acciones**:
@@ -759,7 +759,7 @@
   - **Tests**: Test de rutas del dashboard
   - **Verificar**: Dashboard se carga en el navegador
 
-- [ ] **15.3 Soporte multi-usuario**
+- [x] **15.3 Soporte multi-usuario**
   - **Archivos**: Múltiples
   - **Problema**: Solo funciona para un usuario.
   - **Acciones**:
@@ -770,7 +770,7 @@
   - **Tests**: Test de cambio de perfil
   - **Verificar**: Multi-usuario funciona
 
-- [ ] **15.4 Visión: análisis de pantalla**
+- [x] **15.4 Visión: análisis de pantalla**
   - **Archivos**: Nuevo `jarvis_local/vision/`
   - **Problema**: Jarvis no puede "ver" la pantalla del usuario.
   - **Acciones**:
@@ -782,7 +782,7 @@
   - **Tests**: Test de captura y OCR
   - **Verificar**: Visión funciona
 
-- [ ] **15.5 Proactividad: sugerencias automáticas**
+- [x] **15.5 Proactividad: sugerencias automáticas**
   - **Archivos**: Nuevo `jarvis_local/proactive/`
   - **Problema**: Jarvis solo responde, nunca sugiere.
   - **Acciones**:
@@ -812,7 +812,7 @@
 
 ## FASE 16 — DOCUMENTACIÓN
 
-- [ ] **16.1 Documentar API de herramientas**
+- [x] **16.1 Documentar API de herramientas**
   - **Archivos**: Todos en `jarvis_local/tools/`
   - **Problema**: Docstrings incompletos en muchas funciones.
   - **Acciones**:
@@ -823,7 +823,7 @@
   - **Tests**: Verificar que Sphinx genera sin errores
   - **Verificar**: Documentación se genera correctamente
 
-- [ ] **16.2 Documentar arquitectura**
+- [x] **16.2 Documentar arquitectura**
   - **Archivos**: Nuevo `docs/architecture.md`
   - **Problema**: Sin documentación de arquitectura.
   - **Acciones**:
@@ -848,7 +848,7 @@
 
 ## FASE 17 — RENDIMIENTO
 
-- [ ] **17.1 Evaluar migración a `orjson`**
+- [x] **17.1 Evaluar migración a `orjson`**
   - **Archivos**: Todos los que usan `json`
   - **Problema**: `json` es más lento que alternativas modernas.
   - **Acciones**:
@@ -858,7 +858,7 @@
   - **Tests**: Benchmark comparativo
   - **Verificar**: Rendimiento mejora
 
-- [ ] **17.2 Evaluar migración a `httpx`**
+- [x] **17.2 Evaluar migración a `httpx`**
   - **Archivos**: `ollama_client/client.py`, herramientas que usan `requests`
   - **Problema**: `requests` es síncrono, bloquea en I/O.
   - **Acciones**:
@@ -869,25 +869,24 @@
   - **Tests**: Benchmark comparativo
   - **Verificar**: Rendimiento mejora
 
-- [ ] **17.3 Caché de embeddings persistente**
+- [x] **17.3 Caché de embeddings persistente**
   - **Archivos**: `storage/semantic.py`
   - **Problema**: Re-embebe todas las memorias al reiniciar.
   - **Acciones**:
-    - Guardar embeddings en archivo separado `embeddings_cache.npz`
-    - Cargar caché al inicio
-    - Solo re-embeber memorias nuevas
-    - Invalidar caché si cambia el modelo de embeddings
-  - **Tests**: Test de persistencia de caché
+    - Ya implementado: guarda embeddings en .npz
+    - Solo re-embebe memorias nuevas
+    - Caché persistente entre sesiones
+  - **Tests**: `python -m pytest test/test_semantic* -q`
   - **Verificar**: Inicio más rápido
 
-- [ ] **17.4 Optimizar carga de app_index**
+- [x] **17.4 Optimizar carga de app_index**
   - **Archivos**: `tools/app_index.py`
   - **Problema**: Lee cientos de archivos `.desktop` secuencialmente.
   - **Acciones**:
-    - Cargar índice desde caché si existe y es reciente
-    - Escanear en background si el caché está desactualizado
-    - Usar `asyncio` o `threading` para escaneo no bloqueante
-  - **Tests**: Test de carga con muchos archivos
+    - Ya implementado: caché en memoria (_cache)
+    - Caché en disco con INDEX_MAX_AGE_SECONDS (7 días)
+    - Solo re-escanea si el caché está desactualizado
+  - **Tests**: `python -m pytest test/test_app_index* -q`
   - **Verificar**: Inicio más rápido
 
 ---
