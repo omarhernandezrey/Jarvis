@@ -685,7 +685,7 @@
   - **Tests**: `python -m pytest test/test_ui_server* -q`
   - **Verificar**: Tests pasan
 
-- [ ] **14.3 Tests para `tools/browser.py`**
+- [x] **14.3 Tests para `tools/browser.py`**
   - **Archivo**: `jarvis_local/tools/browser.py`
   - **Problema**: Navegador automatizado sin tests.
   - **Acciones**:
@@ -697,7 +697,7 @@
   - **Tests**: `python -m pytest test/test_browser* -q`
   - **Verificar**: Tests pasan
 
-- [ ] **14.4 Tests para `tools/wolfram.py`**
+- [x] **14.4 Tests para `tools/wolfram.py`**
   - **Archivo**: `jarvis_local/tools/wolfram.py`
   - **Problema**: WolframAlpha sin tests.
   - **Acciones**:
@@ -708,7 +708,7 @@
   - **Tests**: `python -m pytest test/test_wolfram* -q`
   - **Verificar**: Tests pasan
 
-- [ ] **14.5 Tests para `tools/location.py`**
+- [x] **14.5 Tests para `tools/location.py`**
   - **Archivo**: `jarvis_local/tools/location.py`
   - **Problema**: Geolocalización sin tests.
   - **Acciones**:
