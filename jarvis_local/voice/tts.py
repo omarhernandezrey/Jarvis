@@ -2,20 +2,37 @@
 JARVIS Local - Text-to-Speech (Fase 3C)
 Primario  : edge-tts + PyAV + sounddevice (voz neural masculina latina).
             Sin API key. Solo requiere internet.
-Fallback  : pyttsx3/SAPI5 (offline).
+Cache     : las frases generadas se guardan en data/tts_cache, asi que las
+            respuestas repetidas ("Te escucho.", saludos) suenan al instante
+            y siguen sonando con voz neural aunque no haya internet.
+Fallback  : Linux: espeak-ng por subprocess (pyttsx3+espeak es un no-op
+            silencioso en varias distros). Windows: pyttsx3/SAPI5.
 """
 import asyncio
+import contextlib
+import hashlib
 import io
+import shutil as _shutil
+import subprocess
 import threading
 
 import numpy as np
 import sounddevice as sd
 
+from jarvis_local.config import BASE_DIR, IS_WINDOWS, get_config
+
 # Voz principal: hombre mexicano (la mas usada en proyectos JARVIS en espanol)
+# Configurable en config.yaml -> voice.tts_voice
 # Otras opciones: es-AR-TomasNeural, es-CO-GonzaloNeural, es-US-AlonsoNeural
-_EDGE_VOICE = "es-MX-JorgeNeural"
+_EDGE_VOICE = str(
+    (get_config().get("voice") or {}).get("tts_voice", "es-MX-JorgeNeural")
+)
 _EDGE_RATE = "+0%"
 _EDGE_VOLUME = "+0%"
+
+# Cache de audio generado (para modo offline y latencia cero en repetidas)
+_CACHE_DIR = BASE_DIR / "data" / "tts_cache"
+_CACHE_MAX_FILES = 300
 
 # Estado numerico (para get_voice_state compatible con CLI)
 _rate_wpm = 175
@@ -49,15 +66,51 @@ def _run_async(coro):
 async def _edge_generate_async(text: str) -> bytes:
     try:
         import edge_tts
-        mp3_bytes = b""
-        communicate = edge_tts.Communicate(text, _EDGE_VOICE,
-                                           rate=_EDGE_RATE, volume=_EDGE_VOLUME)
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                mp3_bytes += chunk["data"]
-        return mp3_bytes
+
+        async def _gen() -> bytes:
+            mp3 = b""
+            communicate = edge_tts.Communicate(text, _EDGE_VOICE,
+                                               rate=_EDGE_RATE, volume=_EDGE_VOLUME)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    mp3 += chunk["data"]
+            return mp3
+
+        # Sin internet, el stream puede colgarse en vez de fallar rapido:
+        # con timeout caemos al fallback offline en vez de dejar mudo a Jarvis.
+        return await asyncio.wait_for(_gen(), timeout=15)
     except Exception:
         return b""
+
+
+# ---------------------------------------------------------------------------
+# Cache en disco de MP3 generados
+# ---------------------------------------------------------------------------
+
+def _cache_path(text: str):
+    key = f"{_EDGE_VOICE}|{_EDGE_RATE}|{_EDGE_VOLUME}|{text}"
+    return _CACHE_DIR / (hashlib.sha1(key.encode("utf-8")).hexdigest() + ".mp3")
+
+
+def _cache_get(text: str) -> bytes:
+    try:
+        p = _cache_path(text)
+        if p.exists():
+            return p.read_bytes()
+    except Exception:
+        pass
+    return b""
+
+
+def _cache_put(text: str, mp3_bytes: bytes) -> None:
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _cache_path(text).write_bytes(mp3_bytes)
+        files = sorted(_CACHE_DIR.glob("*.mp3"), key=lambda f: f.stat().st_mtime)
+        for old in files[:-_CACHE_MAX_FILES]:
+            old.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +196,37 @@ def _pyttsx3_speak(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Fallback Linux: espeak-ng por subprocess. pyttsx3 con el driver espeak
+# retorna OK sin emitir sonido en varias distros; el binario si funciona.
+# ---------------------------------------------------------------------------
+
+def _espeak_binary() -> str | None:
+    return _shutil.which("espeak-ng") or _shutil.which("espeak")
+
+
+def _espeak_speak(text: str) -> bool:
+    binary = _espeak_binary()
+    if not binary:
+        return False
+    try:
+        amp = max(0, min(200, int(_volume_float * 200)))
+        subprocess.run(
+            [binary, "-v", "es-419", "-s", str(_rate_wpm), "-a", str(amp), text],
+            capture_output=True, timeout=120, check=True,
+        )
+        return True
+    except Exception as e:
+        print(f"[TTS Fallback Error] espeak: {e}")
+        return False
+
+
+def _offline_speak(text: str) -> bool:
+    if IS_WINDOWS:
+        return _pyttsx3_speak(text)
+    return _espeak_speak(text) or _pyttsx3_speak(text)
+
+
+# ---------------------------------------------------------------------------
 # API publica
 # ---------------------------------------------------------------------------
 
@@ -152,13 +236,24 @@ def speak(text: str) -> bool:
         return False
     _is_speaking = True
     try:
-        mp3_bytes = _run_async(_edge_generate_async(text))
+        mp3_bytes = _cache_get(text)
+        from_cache = bool(mp3_bytes)
+        if not mp3_bytes:
+            # Un reintento: edge-tts falla transitoriamente (DNS, 403 de
+            # Microsoft) y a la segunda suele responder.
+            for _ in range(2):
+                mp3_bytes = _run_async(_edge_generate_async(text))
+                if mp3_bytes:
+                    break
         if mp3_bytes:
             audio, sr = _mp3_bytes_to_numpy(mp3_bytes)
             if audio is not None and sr > 0:
+                if not from_cache:
+                    _cache_put(text, mp3_bytes)
                 return _play_numpy(audio, sr)
-        # Fallback: pyttsx3 SAPI5
-        return _pyttsx3_speak(text)
+        # Fallback offline: espeak-ng (Linux) / pyttsx3 SAPI5 (Windows)
+        print("[TTS] Voz neural no disponible (sin internet?); uso la voz de respaldo.")
+        return _offline_speak(text)
     except Exception as e:
         print(f"[TTS Error] {e}")
         return False
@@ -166,15 +261,31 @@ def speak(text: str) -> bool:
         _is_speaking = False
 
 
+def stop_speaking() -> None:
+    """Interrumpe la reproduccion en curso (edge-tts/sounddevice)."""
+    with contextlib.suppress(Exception):
+        sd.stop()
+
+
 def is_speaking() -> bool:
     return _is_speaking
 
 
 def is_available() -> bool:
+    """Hay ALGUNA forma de hablar: fallback offline instalado, o edge-tts
+    (que solo necesita internet y sounddevice, ya presentes)."""
+    if not IS_WINDOWS and _espeak_binary():
+        return True
     try:
         import pyttsx3
         e = pyttsx3.init()
-        return len(e.getProperty("voices")) > 0
+        if len(e.getProperty("voices")) > 0:
+            return True
+    except Exception:
+        pass
+    try:
+        import edge_tts  # noqa: F401
+        return True
     except Exception:
         return False
 
@@ -192,7 +303,7 @@ def list_voices() -> list[dict]:
                 "index": i,
                 "name": v.name,
                 "id": v.id[:80],
-                "languages": [str(l) for l in (v.languages or [])],
+                "languages": [str(lang) for lang in (v.languages or [])],
             })
         return result
     except Exception as e:
@@ -237,11 +348,24 @@ def set_volume(vol: float) -> bool:
     return False
 
 
+def set_edge_voice(voice_name: str) -> bool:
+    """Cambia la voz neural principal (ej. es-CO-GonzaloNeural) en caliente.
+    Para hacerlo permanente: config.yaml -> voice.tts_voice."""
+    global _EDGE_VOICE
+    if voice_name and voice_name.count("-") >= 2:
+        _EDGE_VOICE = voice_name
+        return True
+    return False
+
+
 def get_voice_state() -> dict:
+    fallback = "pyttsx3/SAPI5" if IS_WINDOWS else (
+        _espeak_binary() or "sin fallback offline")
     return {
         "voice_index": _voice_index_pyttsx3,
         "rate": _rate_wpm,
         "volume": _volume_float,
-        "engine": f"edge-tts ({_EDGE_VOICE}) | fallback pyttsx3",
+        "engine": f"edge-tts ({_EDGE_VOICE}) | fallback {fallback}",
         "edge_voice": _EDGE_VOICE,
+        "cache_dir": str(_CACHE_DIR),
     }

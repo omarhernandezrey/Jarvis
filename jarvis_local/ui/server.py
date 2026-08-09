@@ -51,10 +51,8 @@ def _get_status() -> dict:
     try:
         j = _get_jarvis()
         ollama_ok = j.client.is_running()
-        models = j.client.list_models() if ollama_ok else []
     except Exception:
         ollama_ok = False
-        models = []
 
     try:
         from jarvis_local.voice.stt import load_voice_config

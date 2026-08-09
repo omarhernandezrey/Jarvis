@@ -10,7 +10,6 @@ import yaml
 
 from jarvis_local.config import CONFIG_FILE
 from jarvis_local.logging_config import get_logger
-from jarvis_local.safety.logger import logger
 
 logger = get_logger("voice.stt")
 

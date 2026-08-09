@@ -74,3 +74,7 @@ ignore = [
 # La UI de Tkinter usa el estilo compacto habitual (widget.pack() en la misma
 # linea que su creacion). Es legible aqui y reformatearlo no aporta nada.
 "jarvis_local/ui/*" = ["E701", "E702"]
+# cli.py necesita sys.path.insert antes de imports (E402)
+"jarvis_local/cli.py" = ["E402"]
+# semantic.py tiene import condicional después de inicialización
+"jarvis_local/storage/semantic.py" = ["E402"]

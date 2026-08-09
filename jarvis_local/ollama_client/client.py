@@ -71,10 +71,7 @@ class OllamaClient:
     def model_exists(self, model_name: str) -> bool:
         """Verifica si un modelo especifico esta instalado."""
         models = self.list_models()
-        for m in models:
-            if m.get("name", "").startswith(model_name):
-                return True
-        return False
+        return any(m.get("name", "").startswith(model_name) for m in models)
 
     def pull_model(self, model_name: str) -> bool:
         """Descarga un modelo de Ollama. Bloquea hasta terminar."""

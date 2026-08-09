@@ -3,6 +3,7 @@ JARVIS Local — Interfaz de Escritorio Holográfica Ultra-Moderna
 GUI tkinter con estética HUD / arc-reactor / "tecnología de otro mundo".
 Sin dependencias externas.
 """
+import contextlib
 import math
 import os
 import queue
@@ -643,10 +644,8 @@ class JarvisDesktop:
         mem = random.randint(28, 41)
         lat = random.randint(8, 46)
         txt = f"CPU {cpu:>2}%   MEM {mem:>2}%   LAT {lat:>3}ms"
-        try:
+        with contextlib.suppress(Exception):
             self.telemetry.config(text=txt)
-        except Exception:
-            pass
         self.root.after(1400, self._animate_telemetry)
 
     # ═══════════════════════════════════════════════════════
@@ -743,10 +742,8 @@ class JarvisDesktop:
 
     def _typing_hide(self):
         self.chat.config(state=tk.NORMAL)
-        try:
+        with contextlib.suppress(tk.TclError):
             self.chat.delete("typing_start", "end-1c")
-        except tk.TclError:
-            pass
         self.chat.config(state=tk.DISABLED)
 
     def _cursor_add(self):
@@ -794,10 +791,8 @@ class JarvisDesktop:
     def _animate_live_dot(self):
         self._live_on = not getattr(self, '_live_on', True)
         col = C["danger"] if self._live_on else self._dim(C["danger"], 0.2)
-        try:
+        with contextlib.suppress(Exception):
             self._live_dot.config(fg=col)
-        except Exception:
-            pass
         self.root.after(650, self._animate_live_dot)
 
     # ═══════════════════════════════════════════════════════

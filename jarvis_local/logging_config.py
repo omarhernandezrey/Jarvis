@@ -4,7 +4,6 @@ Proporciona loggers consistentes para todo el proyecto.
 """
 import logging
 import logging.handlers
-from pathlib import Path
 
 from jarvis_local.config import BASE_DIR, get_config
 

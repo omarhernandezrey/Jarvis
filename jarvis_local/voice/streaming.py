@@ -9,6 +9,7 @@ mientras el modelo sigue escribiendo las siguientes.
 La latencia hasta la primera palabra baja de ~40 s a ~5 s. El modelo no es mas
 rapido; simplemente deja de hacer esperar al usuario.
 """
+import contextlib
 import queue
 import re
 import threading
@@ -75,10 +76,8 @@ def speak_stream(token_iter: Iterator[str],
             frase = cola.get()
             if frase is None:  # centinela de fin
                 break
-            try:
+            with contextlib.suppress(Exception):
                 speak_fn(frase)
-            except Exception:
-                pass  # que un fallo de audio no tumbe la conversacion
 
     hilo = threading.Thread(target=_hablador, daemon=True)
     hilo.start()

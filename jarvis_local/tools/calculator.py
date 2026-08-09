@@ -62,6 +62,11 @@ _WORDS = sorted([
 ], key=lambda par: -len(par[0].split()))
 
 
+# Articulos que la gente intercala al dictar ("el 15 por ciento de 2000").
+# Se descartan solo si ninguna frase de _WORDS los consumio antes.
+_FILLERS = {"el", "la", "los", "las", "un", "una"}
+
+
 def normalize_expression(text: str) -> str:
     """Convierte expresion en lenguaje natural a expresion matematica."""
     t = text.lower().strip()
@@ -82,7 +87,8 @@ def normalize_expression(text: str) -> str:
                 matched = True
                 break
         if not matched:
-            out.append(tokens[i])
+            if tokens[i] not in _FILLERS:
+                out.append(tokens[i])
             i += 1
     expr = " ".join(out)
     # "raiz 25" -> "raiz(25)" para funciones dichas en lenguaje natural

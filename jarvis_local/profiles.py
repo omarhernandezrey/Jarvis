@@ -2,7 +2,6 @@
 JARVIS Local - Sistema de Perfiles Multi-Usuario
 Permite múltiples usuarios con sus propias configuraciones.
 """
-import json
 from pathlib import Path
 
 from jarvis_local.config import BASE_DIR

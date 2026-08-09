@@ -3,7 +3,6 @@ JARVIS Local - Sistema de Plugins
 Permite añadir herramientas sin modificar el código fuente.
 """
 import importlib.util
-import os
 from pathlib import Path
 
 from jarvis_local.logging_config import get_logger
