@@ -4,7 +4,7 @@ Tests de conexion a Ollama - Fase 1
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.ollama_client.client import OllamaClient
 

@@ -6,7 +6,7 @@ ni lanzar ninguna aplicacion real.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.tools import app_index
 from jarvis_local.tools.app_index import _is_launchable, _normalize, find_app

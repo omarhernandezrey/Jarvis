@@ -4,7 +4,7 @@ Tests de permisos y whitelists - Fase 2
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.safety.permissions import (

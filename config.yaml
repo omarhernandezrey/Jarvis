@@ -3,6 +3,10 @@ agent:
   # deterministico no reconoce la frase. false = solo parser (mas rapido,
   # menos flexible).
   enabled: true
+  # Timeout en segundos para llamadas al LLM en modo agente
+  timeout: 30
+  # Máximo de pasos encadenados por petición
+  max_steps: 3
 jarvis:
   language: es
   max_history: 20

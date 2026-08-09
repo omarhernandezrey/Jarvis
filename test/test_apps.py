@@ -4,7 +4,7 @@ Tests de herramientas de apps - Fase 2
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.safety.policy import ActionStatus
 from jarvis_local.tools.apps import (

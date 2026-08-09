@@ -4,7 +4,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import jarvis_local.tools.reminders as rem
 from jarvis_local.intent.parser import parse_intent
@@ -107,7 +107,7 @@ def test_alarma_suena():
         plan = rem.set_reminder("probar la alarma", minutes=0.03)  # ~1.8 s
         assert plan.status == ActionStatus.EXECUTED
         assert len(rem._load_store()) == 1
-        time.sleep(4)
+        time.sleep(2)
         assert avisos, "la alarma nunca disparo"
         assert "probar la alarma" in avisos[0]
         assert rem._load_store() == []  # se limpia al disparar
@@ -147,7 +147,7 @@ def test_rearme_tras_reinicio():
                           "when": (datetime.now() - timedelta(minutes=5)).isoformat()}])
         rem._loaded = False
         rem.ensure_loaded()
-        time.sleep(4)
+        time.sleep(3)
         assert avisos, "el recordatorio vencido no se aviso al reiniciar"
         assert "pendiente viejo" in avisos[0]
     _con_store_limpio(caso)

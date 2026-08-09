@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.config import IS_WINDOWS, user_dir
 from jarvis_local.safety.permissions import is_within_allowed
@@ -128,6 +128,81 @@ def test_metadata():
     teardown(p)
 
 
+# --- Tests de seguridad para rename_file ---
+
+def test_rename_blocked_path_traversal_slash():
+    """Bloquea nombres con / (path traversal)."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "../../etc/passwd")
+    assert plan.status == ActionStatus.BLOCKED
+    teardown(p)
+
+
+def test_rename_blocked_path_traversal_backslash():
+    """Bloquea nombres con \\ (path traversal Windows)."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "..\\..\\Windows\\evil.txt")
+    assert plan.status == ActionStatus.BLOCKED
+    teardown(p)
+
+
+def test_rename_blocked_reserved_name_con():
+    """Bloquea nombre reservado CON."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "CON")
+    assert plan.status == ActionStatus.BLOCKED
+    teardown(p)
+
+
+def test_rename_blocked_reserved_name_nul():
+    """Bloquea nombre reservado NUL."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "NUL.txt")
+    assert plan.status == ActionStatus.BLOCKED
+    teardown(p)
+
+
+def test_rename_blocked_reserved_name_aux():
+    """Bloquea nombre reservado AUX."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "AUX")
+    assert plan.status == ActionStatus.BLOCKED
+    teardown(p)
+
+
+def test_rename_blocked_invalid_chars():
+    """Bloquea caracteres inválidos en nombre."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "archivo<>.txt")
+    assert plan.status == ActionStatus.BLOCKED
+    teardown(p)
+
+
+def test_rename_blocked_empty_name():
+    """Bloquea nombre vacío."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "")
+    assert plan.status == ActionStatus.BLOCKED
+    teardown(p)
+
+
+def test_rename_allowed_valid_name():
+    """Permite nombres válidos."""
+    p = setup()
+    (p / "archivo.txt").write_text("data")
+    plan = rename_file(str(p / "archivo.txt"), "nuevo_nombre.txt")
+    assert plan.status == ActionStatus.EXECUTED
+    assert (p / "nuevo_nombre.txt").exists()
+    teardown(p)
+
+
 if __name__ == "__main__":
     test_list_files_allowed()
     test_search_files()
@@ -139,4 +214,12 @@ if __name__ == "__main__":
     test_list_blocked_outside()
     test_create_blocked_outside()
     test_metadata()
+    test_rename_blocked_path_traversal_slash()
+    test_rename_blocked_path_traversal_backslash()
+    test_rename_blocked_reserved_name_con()
+    test_rename_blocked_reserved_name_nul()
+    test_rename_blocked_reserved_name_aux()
+    test_rename_blocked_invalid_chars()
+    test_rename_blocked_empty_name()
+    test_rename_allowed_valid_name()
     print("OK: Todos los tests de archivos pasaron.")

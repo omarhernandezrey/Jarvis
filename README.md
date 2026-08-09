@@ -11,6 +11,14 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 ---
 
+## 📋 Plan de Mejoras en Curso
+
+> **Si eres un agente IA o desarrollador**, lee obligatoriamente [`IMPLEMENTACION_DE_MEJORAS.md`](IMPLEMENTACION_DE_MEJORAS.md) antes de hacer cualquier cambio. Contiene el plan maestro con tareas en orden específico.
+
+Rama activa: `implementacion-de-mejoras` | Tareas: 38 | Fases: 8
+
+---
+
 ## ✨ Qué lo hace distinto
 
 No es un menú de comandos con voz: es un **agente**. El modelo de lenguaje (que corre en tu propia máquina) recibe el catálogo de herramientas y **decide cuál usar**, así que entiende frases que nadie programó:
@@ -154,18 +162,18 @@ Un agente que puede ejecutar acciones en tu PC necesita límites reales, no buen
 ### Windows
 
 ```powershell
-# 1. Clonar (la carpeta DEBE llamarse jarvis_local: es el nombre del paquete)
-mkdir workspace; cd workspace
-git clone https://github.com/omarhernandezrey/Jarvis.git jarvis_local
+# 1. Clonar (la carpeta puede llamarse como quieras)
+git clone https://github.com/omarhernandezrey/Jarvis.git
+cd Jarvis
 
 # 2. Dependencias
-pip install -r jarvis_local\requirements.txt
+pip install -r requirements.txt
 
 # 3. Modelos locales
 ollama pull qwen2.5:3b        # el cerebro (1.9 GB)
 ollama pull bge-m3            # memoria semántica (1.2 GB, opcional)
 
-# 4. Arrancar (desde la carpeta padre)
+# 4. Arrancar (desde la raíz del proyecto)
 $env:PYTHONIOENCODING = "utf-8"
 python -m jarvis_local.cli
 ```
@@ -182,20 +190,18 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5:3b        # el cerebro (1.9 GB)
 ollama pull bge-m3            # memoria semantica (1.2 GB, opcional)
 
-# 3. Clonar (la carpeta DEBE llamarse jarvis_local: es el nombre del paquete)
-mkdir -p ~/workspace && cd ~/workspace
-git clone https://github.com/omarhernandezrey/Jarvis.git jarvis_local
+# 3. Clonar (la carpeta puede llamarse como quieras)
+git clone https://github.com/omarhernandezrey/Jarvis.git
+cd Jarvis
 
 # 4. Entorno virtual (con acceso a los paquetes de sistema: Tkinter y
 #    PyGObject no se pueden instalar con pip, vienen del SO) y dependencias
-cd jarvis_local
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -r requirements.txt
 
-# 5. Arrancar (desde la carpeta padre, jarvis_local es un paquete Python)
-cd ~/workspace
-jarvis_local/.venv/bin/python -m jarvis_local.cli          # consola
-jarvis_local/.venv/bin/python -m jarvis_local.ui.desktop    # interfaz de escritorio
+# 5. Arrancar (desde la raíz del proyecto)
+.venv/bin/python -m jarvis_local.cli          # consola
+.venv/bin/python -m jarvis_local.ui.desktop   # interfaz de escritorio
 ```
 
 > La primera carga del modelo tarda 2–5 min en CPU modesta. JARVIS lo precalienta en segundo plano, así que puedes usar los comandos rápidos de inmediato.
@@ -233,29 +239,30 @@ salir
 ## 🏗️ Estructura
 
 ```
-jarvis_local/
-├── cli.py               Punto de entrada
-├── jarvis.py            Orquestador: la cascada de 4 capas
-├── agent/               🆕 Tool calling
-│   ├── registry.py        31 herramientas: esquema JSON + ejecutor
-│   ├── selector.py        Preselección: qué herramientas ofrecer al LLM
-│   └── loop.py            Bucle agéntico
-├── intent/parser.py     Parser determinista (camino rápido)
-├── fast_response.py     Respuestas instantáneas sin LLM
-├── tools/               17 herramientas: apps, archivos, web, clima, empleo…
-├── safety/              Políticas, permisos, secretos, auditoría
-├── voice/               STT · TTS · wake word · streaming
-├── storage/             Historial, memorias y 🆕 índice semántico
-├── memory_context/      Memorias activas y 🆕 recuerdo automático
-├── ui/                  Interfaz web y de escritorio
-└── test/                455 tests
+Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, data/, logs/)
+├── jarvis_local/            El paquete Python
+│   ├── cli.py               Punto de entrada
+│   ├── jarvis.py            Orquestador: la cascada de 4 capas
+│   ├── agent/               🆕 Tool calling
+│   │   ├── registry.py        31 herramientas: esquema JSON + ejecutor
+│   │   ├── selector.py        Preselección: qué herramientas ofrecer al LLM
+│   │   └── loop.py            Bucle agéntico
+│   ├── intent/parser.py     Parser determinista (camino rápido)
+│   ├── fast_response.py     Respuestas instantáneas sin LLM
+│   ├── tools/               17 herramientas: apps, archivos, web, clima, empleo…
+│   ├── safety/              Políticas, permisos, secretos, auditoría
+│   ├── voice/               STT · TTS · wake word · streaming
+│   ├── storage/             Historial, memorias y 🆕 índice semántico
+│   ├── memory_context/      Memorias activas y 🆕 recuerdo automático
+│   └── ui/                  Interfaz web y de escritorio
+└── test/                    455 tests
 ```
 
 ## 🧪 Tests y calidad
 
 ```bash
-python -m pytest jarvis_local/test -q     # 455 tests (Windows y Linux)
-ruff check jarvis_local                   # lint
+python -m pytest test -q     # 455 tests (Windows y Linux)
+ruff check .                 # lint
 ```
 
 Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `loginctl`/Wayland en Linux) se saltan solos en el SO que no les corresponde — no hace falta nada especial para correr la suite en cualquiera de los dos.

@@ -19,11 +19,12 @@ dependencies = [
     "sounddevice>=0.5",
     "edge-tts>=6.1",
     "selenium>=4.20",
+    "filelock>=3.0",
 ]
 
 [project.optional-dependencies]
 calendar = ["google-api-python-client>=2.100", "google-auth-oauthlib>=1.2"]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "pytest-timeout>=2.0", "ruff>=0.6"]
 
 [project.scripts]
 jarvis = "jarvis_local.cli:main"
@@ -45,6 +46,7 @@ packages = [
     "jarvis_local.memory_context",
     "jarvis_local.ollama_client",
     "jarvis_local.ui",
+    "jarvis_local.eval",
 ]
 
 [tool.pytest.ini_options]
@@ -71,4 +73,8 @@ ignore = [
 "test/*" = ["E402", "F401", "E701", "E702", "B011", "F841", "SIM115"]
 # La UI de Tkinter usa el estilo compacto habitual (widget.pack() en la misma
 # linea que su creacion). Es legible aqui y reformatearlo no aporta nada.
-"ui/*" = ["E701", "E702"]
+"jarvis_local/ui/*" = ["E701", "E702"]
+# cli.py necesita sys.path.insert antes de imports (E402)
+"jarvis_local/cli.py" = ["E402"]
+# semantic.py tiene import condicional después de inicialización
+"jarvis_local/storage/semantic.py" = ["E402"]

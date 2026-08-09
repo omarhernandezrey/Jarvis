@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.memory_context.recall import AutoRecall
 from jarvis_local.storage.memory import MemoryStore
@@ -144,6 +144,7 @@ def test_busqueda_por_significado(tmp_dir):
     store.add("Mi perro se llama Rocky y es un labrador")
     store.add("Trabajo como desarrollador frontend en Bogota")
     idx = SemanticIndex(tmp_dir)
+    idx.sync(store.list())
 
     hits = idx.search("puedo comer camarones?", store.list(), top_k=1)
     assert hits and "mariscos" in hits[0][0]["text"]

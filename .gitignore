@@ -18,8 +18,6 @@ venv/
 .venv/
 jarvis_venv/
 
-# Configuracion local
-jarvis_local/config.yaml
 
 # IDE
 .vscode/
@@ -38,3 +36,7 @@ Thumbs.db
 secrets.yaml
 credentials.json
 token.json
+
+# Estado interno de herramientas de Claude Code (no es parte del proyecto)
+managed_context/
+test_suite_analysis/

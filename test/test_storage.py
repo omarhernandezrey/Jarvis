@@ -5,7 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.storage.history import MAX_CONTENT_LENGTH, MAX_MESSAGES, HistoryStore
 from jarvis_local.storage.memory import MAX_MEMORIES, MAX_MEMORY_LENGTH, MemoryStore

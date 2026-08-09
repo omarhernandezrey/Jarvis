@@ -7,7 +7,7 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.agent.loop import _arguments, _clean_text, run_agent
 from jarvis_local.agent.registry import (
@@ -188,6 +188,24 @@ def test_arguments_parsea_dict_y_string():
     assert _arguments({"function": {"arguments": '{"a": 1}'}}) == {"a": 1}
     assert _arguments({"function": {"arguments": "no es json"}}) == {}
     assert _arguments({}) == {}
+
+
+def test_run_command_blocked():
+    """Verifica que comandos bloqueados son rechazados desde el agente."""
+    from jarvis_local.agent.registry import execute
+    # Comando con keyword bloqueada
+    texto, pendiente = execute("ejecutar_comando", {"command": "rm -rf /"})
+    assert "bloqueado" in texto.lower()
+    assert pendiente is False
+
+
+def test_run_command_injection_blocked():
+    """Verifica que inyección de comandos es rechazada desde el agente."""
+    from jarvis_local.agent.registry import execute
+    # Intento de inyección
+    texto, pendiente = execute("ejecutar_comando", {"command": "echo hola; rm -rf /"})
+    assert "bloqueado" in texto.lower() or "inyeccion" in texto.lower()
+    assert pendiente is False
 
 
 if __name__ == "__main__":
