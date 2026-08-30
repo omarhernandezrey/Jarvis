@@ -32,6 +32,9 @@ Thumbs.db
 *.wav
 *.mp3
 
+# Lock files
+*.lock
+
 # Secretos y credenciales (NUNCA subir)
 secrets.yaml
 credentials.json
