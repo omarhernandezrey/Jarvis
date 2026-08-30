@@ -1,6 +1,7 @@
 """Tests de almacenamiento - Fase 5"""
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -27,7 +28,7 @@ def test_history_persists():
         assert msgs[0]["role"] == "user"
         assert msgs[1]["role"] == "assistant"
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_history_max_messages():
@@ -39,7 +40,7 @@ def test_history_max_messages():
         msgs = h.load()
         assert len(msgs) == MAX_MESSAGES
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_history_max_content():
@@ -51,7 +52,7 @@ def test_history_max_content():
         msgs = h.load()
         assert len(msgs[0]["content"]) <= MAX_CONTENT_LENGTH
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_history_sanitize_terminal():
@@ -62,7 +63,7 @@ def test_history_sanitize_terminal():
         msgs = h.load()
         assert "omitido" in msgs[0]["content"]
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_history_sanitize_secrets():
@@ -73,7 +74,7 @@ def test_history_sanitize_secrets():
         msgs = h.load()
         assert "omitida" in msgs[0]["content"].lower()
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_history_corrupt_json():
@@ -86,7 +87,7 @@ def test_history_corrupt_json():
         corrupt = list(d.glob("history.corrupt-*.json"))
         assert len(corrupt) == 1
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_history_atomic_write():
@@ -98,7 +99,7 @@ def test_history_atomic_write():
         tmps = list(d.glob("*.json"))
         assert any("tmp" in t.name.lower() or not t.name.startswith("history") for t in tmps) or (d / "history.json").exists()
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_history_clear():
@@ -110,7 +111,7 @@ def test_history_clear():
         assert h.load() == []
         assert not (d / "history.json").exists()
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_memory_add_list():
@@ -123,7 +124,7 @@ def test_memory_add_list():
         assert len(items) == 1
         assert items[0]["text"] == "recuerda comprar leche"
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_memory_max_length():
@@ -134,7 +135,7 @@ def test_memory_max_length():
         item = m.add(long_text)
         assert len(item["text"]) <= MAX_MEMORY_LENGTH
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_memory_max_items():
@@ -147,7 +148,7 @@ def test_memory_max_items():
         assert len(items) == MAX_MEMORIES
         assert m.add("una mas") is None
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_memory_delete():
@@ -159,7 +160,7 @@ def test_memory_delete():
         assert m.delete("fake-id") is False
         assert m.list() == []
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_memory_clear():
@@ -171,7 +172,7 @@ def test_memory_clear():
         assert m.list() == []
         assert not (d / "memory.json").exists()
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_memory_corrupt_json():
@@ -183,7 +184,7 @@ def test_memory_corrupt_json():
         corrupt = list(d.glob("memory.corrupt-*.json"))
         assert len(corrupt) == 1
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 def test_memory_reject_empty():
@@ -193,7 +194,7 @@ def test_memory_reject_empty():
         assert m.add("") is None
         assert m.add("   ") is None
     finally:
-        import shutil; shutil.rmtree(d)
+        shutil.rmtree(d)
 
 
 if __name__ == "__main__":

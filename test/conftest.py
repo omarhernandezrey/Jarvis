@@ -15,6 +15,7 @@ import pytest
 def jarvis_mock():
     """Fixture que proporciona Jarvis con cliente mockeado."""
     from unittest.mock import MagicMock
+
     from jarvis_local.jarvis import Jarvis
     j = Jarvis()
     mc = MagicMock()

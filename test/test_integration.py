@@ -48,6 +48,7 @@ def test_memory_flow():
     """Test de integración: memoria → add → list → found."""
     import tempfile
     from pathlib import Path
+
     from jarvis_local.storage.memory import MemoryStore
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -63,6 +64,7 @@ def test_history_flow():
     """Test de integración: historial → append → load → persisted."""
     import tempfile
     from pathlib import Path
+
     from jarvis_local.storage.history import HistoryStore
 
     with tempfile.TemporaryDirectory() as tmp_dir:
