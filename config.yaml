@@ -7,6 +7,16 @@ agent:
   timeout: 30
   # Máximo de pasos encadenados por petición
   max_steps: 3
+hud:
+  # Ventana sin marco del SO (chrome propio, esquinas redondeadas, sombra).
+  # En algunas sesiones Wayland/GNOME una ventana sin marco + transparente
+  # deja de recibir foco de teclado (no se puede escribir). Por defecto OFF:
+  # ventana normal decorada por el SO, que funciona en todas partes.
+  frameless: false
+  # Modo agente (tool calling del LLM) dentro del HUD. Añade decenas de
+  # segundos por turno en CPU. El parser determinista (abrir apps, clima,
+  # volumen, recordatorios…) sigue activo con esto en false.
+  agent: false
 jarvis:
   language: es
   max_history: 20

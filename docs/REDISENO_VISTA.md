@@ -737,3 +737,52 @@ Para chat conversacional rápido (fuera del alcance de la vista): modelo más
 pequeño (`ollama.model: qwen2.5:1.5b`), offload a la iGPU en Ollama, o recortar
 `data/history.json` (50 mensajes). `Turn.qml` muestra "procesando… (modelo en
 CPU)" en el turno vacío hasta el primer token.
+
+### P0 · seguimiento 2 — "no puedo ingresar texto" + voz
+
+Dos problemas reportados por el usuario tras la Fase 8.1:
+
+**1. No se podía escribir.** La ventana sin marco de 8.1
+(`Qt.FramelessWindowHint` + `color: "transparent"`) **deja de recibir foco de
+teclado en la sesión Wayland/GNOME del usuario** — regresión conocida de Qt en
+ese compositor. Los tests headless de teclado pasan (el problema es del
+compositor, no del código). **Fix:** el modo sin marco pasa a ser **opcional**
+tras `config.yaml → hud:\n  frameless: true`. Por defecto (`false`) la ventana
+es **normal, decorada por el SO**, que funciona en todas partes.
+`app.bind_context` expone `Frameless` (context property); `Main.qml`:
+`frameless` gobierna `color`, `flags`, `gutter`, la `MultiEffect` de sombra, el
+`cornerRadius` de la atmósfera y la visibilidad de `WindowChrome`.
+
+**2. La voz no daba señal de vida cuando fallaba.** `VoiceService._transcribe`
+tenía `except Exception: pass` — si el STT petaba (modelo ausente, audio
+corrupto) o no reconocía nada, el usuario **no veía nada**. **Fix:** señal
+`notice(str)` → `chat.errorTurn` (visible en la columna de conversación):
+"grabación demasiado corta", "no se entendió el audio",
+"voz no disponible: …". El camino feliz no cambia.
+
+### E2E real de esta sesión (evidencia, no "los tests pasan")
+
+**Chat** — `Runtime` real contra Ollama, 3 mensajes de usuario → 3 respuestas
+reales (6 mensajes en `ConversationModel`):
+
+| # | Usuario | JARVIS | meta |
+|---|---------|--------|------|
+| 0-1 | "Hola, ¿quién eres?…" | "Soy JARVIS, su asistente… Opero localmente…" | `904 ms` (respuesta rápida) |
+| 2-3 | "¿Cuánto es 17 por 23?" | "391" | `80837 ms · 5.8 tok/s` |
+| 4-5 | "Dime tres planetas…" | "Mercurio, Venus y Marte…" | `48276 ms · 6.0 tok/s` |
+
+Estado del núcleo: `thinking → idle` en cada turno, final `idle`. Métricas
+(`latencyMs`, `tokensPerSecond`) pobladas y moviéndose en el HUD. El primer
+token del 2.º turno llegó a los 81 s — **prefill de qwen2.5:3b en CPU**, límite
+de hardware ya documentado, no un fallo de la vista.
+
+**Voz** — test `test_voice_path_end_to_end_stt_to_chat_send`: sintetiza "abre la
+calculadora" con el TTS del proyecto, la inyecta como frames del micrófono,
+`VoiceService._transcribe()` real (whisper `small` local) → `"Abre la
+calculadora."` → señal `transcribed` → `chat.send` → turno de usuario. Cadena
+completa verde.
+
+### Tests
+
+Suite de vista: **21 verde** (nuevo: el E2E de voz). Suite completa:
+**587 passed, 7 skipped**. `ruff check .` limpio.

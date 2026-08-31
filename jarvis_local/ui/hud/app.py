@@ -42,6 +42,8 @@ class Runtime:
         self._alive = True
 
         self.voice.transcribed.connect(self.chat.send)
+        # fallo/aviso de voz → visible en la columna de conversación (no callar)
+        self.voice.notice.connect(self.chat.errorTurn)
         self.chat.assistantEnd.connect(
             lambda text, meta, kind: _maybe_speak(self.voice, text, kind))
 
@@ -65,6 +67,9 @@ class Runtime:
         self.timers.append(timer)
 
     def bind_context(self, engine) -> None:
+        from jarvis_local.config import get_config
+        hud_cfg = get_config().get("hud", {})
+
         ctx = engine.rootContext()
         ctx.setContextProperty("Vm", self.vm)
         # OJO: no llamarlo "Conversation" — colisiona con el tipo Conversation.qml
@@ -73,6 +78,10 @@ class Runtime:
         ctx.setContextProperty("Chat", self.chat)
         ctx.setContextProperty("Voice", self.voice)
         ctx.setContextProperty("ReducedMotion", self.reduced_motion)
+        # Ventana sin marco (addendum §8.1): en algunas sesiones Wayland/GNOME
+        # deja de recibir foco de teclado. Por defecto OFF (ventana normal, que
+        # funciona en todas partes). Activar con  config.yaml → hud:\n  frameless: true
+        ctx.setContextProperty("Frameless", bool(hud_cfg.get("frameless", False)))
 
     def start(self) -> None:
         self.metrics.start()

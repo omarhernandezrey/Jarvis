@@ -23,6 +23,7 @@ _BINS = 64
 class VoiceService(QObject):
     micStateChanged = Signal(str)              # inactive | listening | denied
     transcribed = Signal(str)                  # texto reconocido, listo para chat
+    notice = Signal(str)                       # aviso al usuario (fallo/soft)
     audio = Signal(float, list)                # -> Vm.push_audio (nivel, espectro)
     wantState = Signal(str)
     speakingChanged = Signal(bool)
@@ -128,7 +129,8 @@ class VoiceService(QObject):
             if not frames:
                 return
             audio = np.concatenate(frames, axis=0).flatten().astype("float32") / 32768.0
-            if len(audio) < 8000:
+            if len(audio) < 8000:                       # < 0.5 s: botón soltado enseguida
+                self.notice.emit("grabación demasiado corta")
                 return
             from jarvis_local.voice.stt import _get_whisper_model, load_voice_config
             cfg = load_voice_config()
@@ -140,8 +142,10 @@ class VoiceService(QObject):
             text = " ".join(s.text.strip() for s in segs).strip()
             if len(text) >= 2:
                 self.transcribed.emit(text)
-        except Exception:
-            pass
+            else:
+                self.notice.emit("no se entendió el audio")
+        except Exception as e:                          # STT roto: NO callar
+            self.notice.emit(f"voz no disponible: {e}")
 
     # ── salida hablada con envolvente real ─────────────────────────────
     @Slot(str)

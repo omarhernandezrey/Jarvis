@@ -260,6 +260,76 @@ def test_voice_service_state_machine_no_audio():
     assert v.micState == "inactive"
 
 
+def test_voice_path_end_to_end_stt_to_chat_send():
+    """Fase 9 P0 (voz): audio real → STT → señal `transcribed` → `chat.send`.
+
+    Sintetiza una orden hablada con el propio TTS del proyecto, la inyecta como
+    lo haría la captura del micrófono (frames int16 @16k en `_frames`), corre
+    `_transcribe` de verdad (whisper local) y comprueba que el texto reconocido
+    dispara un turno de usuario en el chat — el mismo cableado que usa Runtime
+    (`voice.transcribed.connect(chat.send)`).
+
+    Se salta si no hay red para sintetizar el clip o falta el modelo whisper;
+    en la máquina de desarrollo se ejecuta y pasa.
+    """
+    import numpy as np
+
+    try:
+        from jarvis_local.voice import tts
+        mp3 = tts._run_async(tts._edge_generate_async("abre la calculadora"))
+        if not mp3:
+            pytest.skip("TTS no disponible (sin red) — no se puede sintetizar el clip")
+        samples, sr = tts._mp3_bytes_to_numpy(mp3)
+        if samples is None or sr <= 0:
+            pytest.skip("no se pudo decodificar el clip de voz")
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"TTS no disponible: {e}")
+
+    # resamplea a 16 kHz (lo que entrega la captura) y pásalo a int16 mono
+    if sr != 16000:
+        idx = (np.arange(int(len(samples) * 16000 / sr)) * sr / 16000).astype(int)
+        samples = samples[idx[idx < len(samples)]]
+    frames_i16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("int16").reshape(-1, 1)
+
+    from jarvis_local.ui.hud.chat_service import ChatService
+    from jarvis_local.ui.hud.conversation_model import ConversationModel
+    from jarvis_local.ui.hud.voice_service import VoiceService
+
+    vm = ViewModel()
+    cm = ConversationModel()
+    chat = ChatService(vm, cm)
+    voice = VoiceService(vm)
+
+    heard = []
+    voice.transcribed.connect(heard.append)
+    sent = []
+    chat.userTurn.connect(sent.append)
+    voice.transcribed.connect(chat.send)   # el cableado real de Runtime
+
+    try:
+        from jarvis_local.voice.stt import _get_whisper_model
+        _get_whisper_model("small", "int8")
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"modelo whisper no disponible: {e}")
+
+    # inyecta el audio como si viniera del callback de PortAudio y transcribe
+    voice._frames = [frames_i16]           # noqa: SLF001
+    voice._transcribe()                    # noqa: SLF001  (síncrono en el test)
+
+    import time
+    t0 = time.monotonic()
+    while not heard and time.monotonic() - t0 < 20:
+        _app.processEvents()
+        time.sleep(0.02)
+    _app.processEvents()
+
+    assert heard, "STT no produjo texto para un clip de voz claro"
+    assert "calculadora" in heard[0].lower()
+    assert sent and "calculadora" in sent[0].lower(), \
+        "el texto transcrito no llegó a chat.send()"
+    chat.cancel()
+
+
 def test_qml_engine_loads_without_warnings():
     from jarvis_local.ui.hud.app import create_engine
 

@@ -17,12 +17,18 @@ Window {
     minimumWidth: 380
     minimumHeight: 360
     visible: true
-    color: "transparent"
-    flags: Qt.Window | Qt.FramelessWindowHint
     title: "J.A.R.V.I.S"
 
+    // Sin marco sólo si se pide explícitamente (context `Frameless`). En algunas
+    // sesiones Wayland/GNOME una ventana FramelessWindowHint + transparente
+    // deja de recibir foco de teclado → no se puede escribir. Por defecto:
+    // ventana normal decorada por el SO (funciona en todas partes).
+    readonly property bool frameless: (typeof Frameless !== "undefined") && Frameless === true
+    color: frameless ? "transparent" : Design.bgVoid
+    flags: frameless ? (Qt.Window | Qt.FramelessWindowHint) : Qt.Window
+
     readonly property bool maxed: visibility === Window.Maximized
-    readonly property int gutter: maxed ? 0 : Design.windowShadowGutter
+    readonly property int gutter: (frameless && !maxed) ? Design.windowShadowGutter : 0
 
     property real pointerX: 0
     property real pointerY: 0
@@ -31,7 +37,7 @@ Window {
     MultiEffect {
         anchors.fill: rootItem
         source: rootItem
-        visible: !win.maxed
+        visible: win.frameless && !win.maxed
         shadowEnabled: true
         shadowColor: "#000000"
         shadowOpacity: 0.5
@@ -105,7 +111,7 @@ Window {
         layer.enabled: true
         layer.effect: Atmosphere {
             time: rootItem.grainTick
-            cornerRadius: win.maxed ? 0 : Design.radiusWindow
+            cornerRadius: (win.frameless && !win.maxed) ? Design.radiusWindow : 0
             grainAmt: rootItem.atmosphereOn ? 0.026 : 0.0
             aberration: rootItem.atmosphereOn ? 1.2 : 0.0
             vignette: rootItem.atmosphereOn ? 0.30 : 0.10
@@ -355,11 +361,14 @@ Window {
         }
     }
 
-    // chrome propio: arrastre, controles, redimensionado por el compositor
+    // chrome propio: arrastre, controles, redimensionado por el compositor.
+    // Sólo en modo sin marco; con ventana normal, el compositor pone el suyo.
     WindowChrome {
         win: win
         anchors.fill: parent
         z: 500
+        visible: win.frameless
+        enabled: win.frameless
     }
 
     Component.onCompleted: win.requestActivate()
