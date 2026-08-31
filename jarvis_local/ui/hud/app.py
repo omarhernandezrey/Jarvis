@@ -30,16 +30,23 @@ def create_engine(app, view_model=None):
     from jarvis_local.ui.hud.chat_service import ChatService
     from jarvis_local.ui.hud.conversation_model import ConversationModel
     from jarvis_local.ui.hud.viewmodel import ViewModel
+    from jarvis_local.ui.hud.voice_service import VoiceService
 
     vm = view_model or ViewModel()
     conversation = ConversationModel()
     chat = ChatService(vm, conversation)
+    voice = VoiceService(vm)
+
+    # voz → chat, y respuesta hablada si config.voice.tts_enabled
+    voice.transcribed.connect(chat.send)
+    chat.assistantEnd.connect(lambda text, meta, kind: _maybe_speak(voice, text, kind))
 
     engine = QQmlApplicationEngine()
     ctx = engine.rootContext()
     ctx.setContextProperty("Vm", vm)
     ctx.setContextProperty("Conversation", conversation)
     ctx.setContextProperty("Chat", chat)
+    ctx.setContextProperty("Voice", voice)
     engine.addImportPath(str(_QML_DIR))
     engine.load(QUrl.fromLocalFile(str(_QML_DIR / "Main.qml")))
 
@@ -47,6 +54,7 @@ def create_engine(app, view_model=None):
     engine._vm = vm            # noqa: SLF001
     engine._conversation = conversation  # noqa: SLF001
     engine._chat = chat        # noqa: SLF001
+    engine._voice = voice      # noqa: SLF001
 
     # ALERT vuelve a IDLE tras 2.5 s si nadie cambió el estado entretanto
     _wire_alert_autoclear(vm)
@@ -60,6 +68,17 @@ def create_engine(app, view_model=None):
             app.aboutToQuit.connect(metrics.stop)
     engine._metrics = metrics  # noqa: SLF001
     return engine
+
+
+def _maybe_speak(voice, text: str, kind: str) -> None:
+    if kind != "chat" or not text:
+        return
+    try:
+        from jarvis_local.config import get_config
+        if get_config().get("voice", {}).get("tts_enabled", False):
+            voice.speak(text)
+    except Exception:
+        pass
 
 
 def _wire_alert_autoclear(vm) -> None:

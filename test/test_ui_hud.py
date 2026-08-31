@@ -105,10 +105,12 @@ class _FakeInner:
 
 
 def test_tap_client_taps_stream_tokens():
+    import threading
+
     from jarvis_local.ui.hud.chat_service import _TapClient
 
     seen = []
-    tap = _TapClient(_FakeInner(), seen.append)
+    tap = _TapClient(_FakeInner(), seen.append, threading.Event())
     out = "".join(tap.chat([{"role": "user", "content": "x"}], stream=True))
     assert out == "Python es un lenguaje."
     assert seen == ["Py", "thon ", "es ", "un ", "lenguaje."]
@@ -155,6 +157,33 @@ def test_chat_service_full_turn_with_fake_core(monkeypatch):
     assert cm.data(i, ROLE_TEXT) == "Python es un lenguaje."
     assert vm.metrics.get("latencyMs") is not None
     assert vm.state in ("idle", "thinking")
+
+
+def test_tap_client_cancel_stops_stream():
+    import threading
+
+    from jarvis_local.ui.hud.chat_service import _TapClient
+
+    ev = threading.Event()
+    seen = []
+    tap = _TapClient(_FakeInner(), seen.append, ev)
+    gen = tap.chat([], stream=True)
+    assert next(gen) == "Py"          # primer token pasa
+    ev.set()                          # cancelado
+    assert list(gen) == []            # no se emiten más
+    assert seen == ["Py"]
+
+
+def test_voice_service_state_machine_no_audio():
+    from jarvis_local.ui.hud.voice_service import VoiceService
+
+    vm = ViewModel()
+    v = VoiceService(vm)
+    assert v.micState == "inactive"
+    assert v.speaking is False
+    # stop sin estar grabando: no-op
+    v.stop_recording()
+    assert v.micState == "inactive"
 
 
 def test_qml_engine_loads_without_warnings():

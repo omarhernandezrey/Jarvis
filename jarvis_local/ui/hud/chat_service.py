@@ -20,11 +20,14 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 class _TapClient:
     """Delega todo en el cliente real; en `chat(stream=True)` envuelve el
-    iterador para chivar cada token vía `on_token`."""
+    iterador para chivar cada token vía `on_token` y para poder cortar la
+    generación en curso: si `cancelled` está activo, deja de consumir el stream
+    y el núcleo devuelve lo que llevara (sin matar hilos)."""
 
-    def __init__(self, inner, on_token) -> None:
+    def __init__(self, inner, on_token, cancelled: threading.Event) -> None:
         self._inner = inner
         self._on_token = on_token
+        self._cancelled = cancelled
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
@@ -36,6 +39,8 @@ class _TapClient:
 
         def _gen():
             for tok in result:
+                if self._cancelled.is_set():
+                    return
                 if tok:
                     self._on_token(tok)
                 yield tok
@@ -54,6 +59,7 @@ class ChatService(QObject):
     metrics = Signal(dict)
 
     busyChanged = Signal(bool)
+    lastCommandChanged = Signal()
 
     def __init__(self, view_model, conversation, parent=None) -> None:
         super().__init__(parent)
@@ -62,6 +68,8 @@ class ChatService(QObject):
         self._jarvis = None
         self._jarvis_err: str | None = None
         self._busy = False
+        self._cancelled = threading.Event()
+        self._last_command = ""
         self._lock = threading.Lock()
 
         self.userTurn.connect(conversation.add_user)
@@ -89,12 +97,26 @@ class ChatService(QObject):
 
     busy = Property(bool, _get_busy, notify=busyChanged)
 
+    def _get_last_command(self) -> str:
+        return self._last_command
+
+    lastCommand = Property(str, _get_last_command, notify=lastCommandChanged)
+
+    @Slot()
+    def cancel(self) -> None:
+        """Esc: corta la generación en curso. El núcleo devuelve lo generado."""
+        if self._busy:
+            self._cancelled.set()
+
     # ── envío ───────────────────────────────────────────────────────────
     @Slot(str)
     def send(self, text: str) -> None:
         text = (text or "").strip()
         if not text or self._busy:
             return
+        self._cancelled.clear()
+        self._last_command = text
+        self.lastCommandChanged.emit()
         self._busy = True
         self.busyChanged.emit(True)
         self.userTurn.emit(text)
@@ -122,11 +144,16 @@ class ChatService(QObject):
                 raise RuntimeError(self._jarvis_err or "Núcleo no disponible")
 
             original = self._jarvis.client
-            self._jarvis.client = _TapClient(original, on_token)
+            self._jarvis.client = _TapClient(original, on_token, self._cancelled)
             try:
                 reply = self._jarvis.chat(text)
             finally:
                 self._jarvis.client = original
+
+            if self._cancelled.is_set():
+                self.assistantEnd.emit((reply or "") + "  ⏹ cancelado",
+                                       "cancelado", "chat")
+                return
 
             latency = round((time.monotonic() - t_start) * 1000)
             tps = None

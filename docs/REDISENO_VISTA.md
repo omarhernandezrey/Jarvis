@@ -213,3 +213,55 @@ con núcleo falso: 2 turnos, texto ensamblado, `latencyMs` fijada, vuelta a
 `idle`) cubiertos en `test/test_ui_hud.py` (8 tests, verde). El turno real
 contra Ollama en CPU tarda >2 min (construcción de `Jarvis` + generación):
 pendiente de prueba en pantalla por el usuario.
+
+---
+
+## FASE 5 — Barra de comando y voz
+
+### `voice_service.py` — `VoiceService`
+
+- **Captura**: `sd.InputStream` (16 kHz, bloques de 1024). Cada bloque →
+  RMS (nivel) + **FFT real** (`np.fft.rfft` con ventana Hann, 256 bins de
+  0–4 kHz plegados a 64) → `Vm.push_audio(level, spectrum)`. Estado
+  `listening`.
+- **Tres estados de micrófono reales**: `inactive` · `listening` · `denied`
+  (`denied` si `InputStream()` / `.start()` lanzan, o si falta
+  numpy/sounddevice).
+- **Transcripción**: al parar, hilo aparte con `voice.stt._get_whisper_model`
+  (núcleo sin tocar) → `transcribed(text)` → `Chat.send`.
+- **Salida hablada con envolvente real**: reutiliza la generación/decodificación
+  de `voice.tts` (`_cache_get/_edge_generate_async/_mp3_bytes_to_numpy`) y sólo
+  reproduce con un `sd.OutputStream` con callback que mide RMS + bandas por
+  bloque → `Vm.push_audio` alimenta el estado `speaking`. `stop_speech()` corta.
+  Sólo habla si `config.voice.tts_enabled`.
+
+### `chat_service.py` — cancelación y recall
+
+- `cancel()` (Esc): activa un `threading.Event`; `_TapClient` deja de consumir
+  el stream y el núcleo devuelve lo generado. Sin matar hilos. El turno se
+  cierra con "⏹ cancelado".
+- `lastCommand` (Q_PROPERTY): último texto enviado, para el recall con ↑.
+
+### `qml/CommandBar.qml` + `qml/MicButton.qml`
+
+- Prompt `❯` persistente. Editor `TextEdit` multilínea en `Flickable`:
+  autoexpansión de 1 a 6 líneas y luego scroll interno.
+- **Enter** envía · **Shift+Enter** salto · **Esc** cancela la generación ·
+  **↑** (con el campo vacío) recupera `Chat.lastCommand`.
+- Estados con feedback distinto: `hover` (borde gris tenue), `focus` (borde
+  cyan), `disabled`/`generating` (borde azul + barrido azul lento en el borde
+  inferior, editor atenuado).
+- `MicButton`: icono vectorial trazado a 1.5px (sin emojis), tres estados;
+  `denied` no responde y muestra tooltip "Micrófono sin permiso".
+- **Coherencia**: mientras se graba, el borde de la barra se sustituye por un
+  `Canvas` que dibuja el espectro (`Vm.audio.spectrum`) a lo largo del
+  perímetro con el mismo trazo cyan del anillo del núcleo — un lenguaje visual,
+  dos escalas.
+
+### Verificación
+
+QML compila con **0 warnings**. `test/test_ui_hud.py` (11 tests, verde) cubre:
+cancelación del `_TapClient`, máquina de estados del micrófono sin audio, y el
+resto de fases. En esta máquina `start_recording()` abre el micrófono real y
+pasa a `listening`. Prueba de voz punta a punta (STT/TTS con audio real):
+pendiente en pantalla por el usuario.

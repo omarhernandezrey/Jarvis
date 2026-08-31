@@ -127,45 +127,13 @@ Window {
                 Conversation {
                     id: convo
                     anchors { left: parent.left; right: parent.right; top: parent.top
-                              bottom: inputBar.top; bottomMargin: Design.sp(3) }
+                              bottom: cmdBar.top; bottomMargin: Design.sp(3) }
                     measure: 560
                 }
 
-                // barra de entrada provisional — la definitiva es la Fase 5
-                Rectangle {
-                    id: inputBar
+                CommandBar {
+                    id: cmdBar
                     anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                    height: Math.max(Design.sp(9), field.implicitHeight + Design.sp(4))
-                    color: Design.surfaceColor
-                    radius: Design.radiusSurface
-                    border.width: 1
-                    border.color: field.activeFocus ? Design.glow(Design.cyan, 0.5)
-                                                    : Design.hairline
-
-                    Text {
-                        id: prompt
-                        anchors { left: parent.left; leftMargin: Design.sp(3)
-                                  verticalCenter: parent.verticalCenter }
-                        text: "❯"
-                        color: Design.cyan
-                        font.family: Design.fontMono
-                        font.pixelSize: Design.fsBody
-                    }
-                    TextInput {
-                        id: field
-                        anchors { left: prompt.right; right: parent.right
-                                  leftMargin: Design.sp(2); rightMargin: Design.sp(3)
-                                  verticalCenter: parent.verticalCenter }
-                        color: Design.textPrimary
-                        font.family: Design.fontSans
-                        font.pixelSize: Design.fsBody
-                        selectByMouse: true
-                        clip: true
-                        enabled: Chat ? !Chat.busy : true
-                        onAccepted: {
-                            if (Chat && text.trim().length) { Chat.send(text); text = "" }
-                        }
-                    }
                 }
             }
         }
