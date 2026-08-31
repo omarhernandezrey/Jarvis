@@ -73,12 +73,27 @@ def test_intent_musica_de_artista_va_a_spotify():
     assert r.arguments["song"] == "queen"
 
 
-def test_intent_musica_descriptiva_sigue_siendo_local():
-    """Sin nombrar un artista ('de X'), 'musica <adjetivo>' sigue siendo un
-    filtro sobre la musica local, no una busqueda de artista."""
-    r = _t("pon musica relajante")
+def test_intent_musica_con_cualquier_descriptor_va_a_spotify():
+    """Toda musica con un descriptor -- artista, genero, idioma, estado de
+    animo -- va a Spotify, no solo cuando se usa la palabra 'de'.
+    Caso real reportado: 'reproduce musica en ingles' caia a la carpeta
+    local de Musica (vacia) en vez de buscar en Spotify."""
+    for frase, esperado in [
+        ("reproduce musica en ingles", "en ingles"),
+        ("pon musica relajante", "relajante"),
+        ("pon algo de musica de rock", "rock"),
+    ]:
+        r = _t(frase)
+        assert r.tool == "spotify_play", frase
+        assert r.arguments["song"] == esperado, frase
+
+
+def test_intent_musica_a_secas_sigue_siendo_local():
+    """'pon musica' sin nada mas que buscar no tiene con que armar una
+    consulta a Spotify: se queda en la carpeta local."""
+    r = _t("pon musica")
     assert r.tool == "play_music"
-    assert r.arguments["song"] == "relajante"
+    assert r.arguments["song"] == ""
 
 
 def test_intent_cadena_musica_y_volumen_se_divide():

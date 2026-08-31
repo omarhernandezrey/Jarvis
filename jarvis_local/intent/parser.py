@@ -454,17 +454,18 @@ def _parse_fase4(m: str) -> IntentResult | None:
                             arguments={"query": m_yt.group(1).strip()},
                             reason="Reproducir en YouTube")
     if re.search(r'\b(?:pon|toca|reproduce)\s+(?:algo de\s+)?musica\b', low):
-        m_artista = re.search(r'musica\s+de\s+(.+)', low)
-        if m_artista:
-            # "musica de X" nombra un artista: Spotify tiene mucho mas
-            # catalogo que la carpeta local de Musica.
+        m_descriptor = re.search(r'musica\s+(?:de\s+)?(.+)', low)
+        descriptor = m_descriptor.group(1).strip().rstrip('.!?') if m_descriptor else ""
+        if descriptor:
+            # Cualquier musica con un descriptor -- artista, genero, idioma,
+            # estado de animo -- va a Spotify: tiene mucho mas catalogo que
+            # la carpeta local de Musica. Solo "pon musica" a secas, sin
+            # nada mas que buscar, se queda en lo local.
             return IntentResult(kind="tool_execute", tool="spotify_play",
-                                arguments={"song": m_artista.group(1).strip().rstrip('.!?')},
+                                arguments={"song": descriptor},
                                 reason="Reproducir en Spotify")
-        m_song = re.search(r'musica\s+(.+)', low)
-        song = m_song.group(1).strip().rstrip('.!?') if m_song else ""
         return IntentResult(kind="tool_execute", tool="play_music",
-                            arguments={"song": song},
+                            arguments={"song": ""},
                             reason="Reproducir musica local")
     m_play = re.search(r'(?:reproduce|reproducir|toca|tocar|reproduceme)\s+(?:la\s+cancion\s+|el\s+video\s+)?(.+)', low)
     if m_play:

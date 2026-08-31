@@ -19,6 +19,7 @@ Configuracion en secrets.yaml:
 La primera reproduccion abre el navegador para autorizar la cuenta; el token
 queda cacheado en data/.spotify_cache y se refresca solo despues.
 """
+import re
 import shutil
 import subprocess
 import time
@@ -35,6 +36,12 @@ DEFAULT_REDIRECT_URI = "http://127.0.0.1:8888/callback"
 # dispositivo Connect. Con menos, la primera peticion del dia falla por
 # pura carrera con el arranque de la app.
 ESPERA_APERTURA_SEGUNDOS = 15
+# Candidatos a pedir en la busqueda de texto libre (ultimo recurso, ver
+# _buscar_track): con varios se puede preferir una coincidencia EXACTA de
+# nombre sobre lo que Spotify puso primero por relevancia.
+CANDIDATOS_BUSQUEDA = 5
+
+_TITULO_ARTISTA = re.compile(r'^(.+)\s+de\s+(.+)$', re.IGNORECASE)
 
 
 def has_credentials() -> bool:
@@ -119,6 +126,114 @@ def _device_id(sp) -> str | None:
     return (activo or devices[0])["id"]
 
 
+_PALABRAS_VACIAS_MIN = 2  # ignora "el", "la", "de", "yo"... al comparar titulos
+
+
+def _resolver_artista(sp, nombre: str) -> dict | None:
+    """Busca un artista por nombre libre. Tolera tildes/mayusculas distintas
+    (la busqueda de artista de Spotify es mucho mas permisiva que su filtro
+    de campo `artist:`, que exige coincidencia casi exacta con tildes)."""
+    items = sp.search(q=nombre, type="artist", limit=1).get("artists", {}).get("items", [])
+    return items[0] if items else None
+
+
+def _mejor_por_palabras(titulo: str, tracks: list[dict]) -> dict | None:
+    """De una lista de canciones candidatas, la que mas se parece al titulo
+    pedido por solapamiento de palabras (Jaccard: interseccion / union).
+    None si ninguna comparte nada -- mejor no inventar una coincidencia sin
+    ninguna relacion.
+
+    Existe porque los pedidos de cancion suelen ser una PARAFRASIS de la
+    letra, no el titulo exacto ("yo soy el rey" por "El Rey"): exigir texto
+    exacto (via `track:"..."`) falla justo en el caso mas comun.
+
+    Se usa la proporcion (Jaccard), no el conteo simple de palabras en
+    comun: contar a secas empataba "El Rey" (comparte "rey") con "Soy
+    Mexico" (comparte "soy") en 1 palabra cada una, y el desempate quedaba
+    a merced del orden de iteracion de un set (no determinista entre
+    ejecuciones). El titulo mas CORTO y mas parecido en proporcion al
+    pedido gana ese empate porque "el rey" es una porcion mayor de "yo soy
+    el rey" que "soy mexico".
+    """
+    palabras_pedido = set(titulo.lower().split())
+    if not palabras_pedido or not tracks:
+        return None
+    mejor, mejor_puntaje = None, 0.0
+    for t in tracks:
+        palabras_track = set(t.get("name", "").lower().split())
+        interseccion = palabras_pedido & palabras_track
+        if not interseccion:
+            continue
+        puntaje = len(interseccion) / len(palabras_pedido | palabras_track)
+        if puntaje > mejor_puntaje:
+            mejor, mejor_puntaje = t, puntaje
+    return mejor
+
+
+# Cuantas palabras del titulo probar, combinadas con el filtro de artista.
+# "artist-top-tracks" esta bloqueado para apps nuevas (403, restriccion de
+# Spotify) y `artist:"X" <varias palabras>` falla si el titulo es una
+# parafrasis de la letra en vez del titulo exacto (measured: "artist:X yo
+# soy el rey" -> 0 resultados). Probar UNA palabra significativa a la vez
+# si funciona, y varias palabras cortas ("yo", "soy", "el") no distinguen
+# nada -- se descartan.
+_PALABRAS_A_PROBAR = 3
+
+
+def _buscar_por_artista(sp, query: str) -> dict | None:
+    """Si el usuario dijo '<cancion> de <artista>' (patron muy comun en
+    espanol): resuelve el artista primero (tolera tildes) y prueba, una por
+    una, las palabras mas significativas del titulo combinadas con el
+    filtro exacto de artista -- acumula candidatos y se queda con el que
+    mas palabras comparte con lo pedido. None si el patron no aplica, el
+    artista no existe en Spotify, o ninguna palabra encontro nada.
+    """
+    m = _TITULO_ARTISTA.match(query.strip())
+    if not m:
+        return None
+    titulo, nombre_artista = m.group(1).strip(), m.group(2).strip()
+    if not titulo or not nombre_artista:
+        return None
+    artista = _resolver_artista(sp, nombre_artista)
+    if artista is None:
+        return None
+    nombre_canonico = artista["name"].replace('"', "")
+
+    palabras = sorted({w for w in titulo.lower().split()
+                       if len(w) > _PALABRAS_VACIAS_MIN},
+                      key=len, reverse=True)
+    candidatos: dict[str, dict] = {}
+    for palabra in palabras[:_PALABRAS_A_PROBAR]:
+        items = sp.search(q=f'artist:"{nombre_canonico}" {palabra}',
+                          type="track", limit=5).get("tracks", {}).get("items", [])
+        for it in items:
+            candidatos[it["uri"]] = it
+    return _mejor_por_palabras(titulo, list(candidatos.values()))
+
+
+def _buscar_track(sp, query: str) -> dict | None:
+    """Busca una cancion. Si el patron '<cancion> de <artista>' aplica y
+    encuentra algo entre lo mas popular de ese artista, se usa eso (mucho
+    mas preciso); si no, se cae a la busqueda de texto libre de Spotify.
+    """
+    track = _buscar_por_artista(sp, query)
+    if track:
+        return track
+    items = sp.search(q=query, type="track",
+                      limit=CANDIDATOS_BUSQUEDA).get("tracks", {}).get("items", [])
+    if not items:
+        return None
+    # El ranking de relevancia de Spotify a veces pone una version poco
+    # conocida antes que la cancion exacta que se pidio (ver "I Wanna Be
+    # Yours" -> "I WANNA BE YOUR SLAVE" de Maneskin). Sin "popularity"
+    # disponible, una coincidencia EXACTA de nombre (sin importar mayusculas)
+    # es la mejor senal barata que queda para desempatar a favor de la
+    # version que el usuario realmente pidio.
+    exacta = next((t for t in items
+                   if t.get("name", "").lower() == query.strip().lower()), None)
+    return exacta or items[0]
+
+
 def play_song(query: str) -> ActionPlan:
     """Busca una cancion (o artista) por nombre y la reproduce en Spotify."""
     query = (query or "").strip()
@@ -146,14 +261,12 @@ def play_song(query: str) -> ActionPlan:
         return plan
 
     try:
-        resultados = sp.search(q=query, type="track", limit=1)
-        items = resultados.get("tracks", {}).get("items", [])
-        if not items:
+        track = _buscar_track(sp, query)
+        if track is None:
             plan.status = ActionStatus.ERROR
             plan.result = f"No encontre '{query}' en Spotify, senor."
             return plan
 
-        track = items[0]
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR

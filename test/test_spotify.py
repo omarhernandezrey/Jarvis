@@ -139,6 +139,132 @@ def test_play_song_success():
             device_id="dev1", uris=["spotify:track:1"])
 
 
+def test_play_song_prefiere_coincidencia_exacta_de_nombre():
+    """Caso real reportado: 'reproduce I Wanna Be Yours' devolvia 'I WANNA
+    BE YOUR SLAVE' de Maneskin (primer resultado de relevancia de Spotify)
+    en vez de la cancion exacta pedida. Sin campo de popularidad disponible
+    (restriccion de la API para apps nuevas), la coincidencia EXACTA de
+    nombre es la señal que queda para desempatar a favor de lo pedido."""
+    mock_sp = MagicMock()
+    mock_sp.search.return_value = {"tracks": {"items": [
+        {"name": "I WANNA BE YOUR SLAVE", "uri": "spotify:track:otra",
+         "artists": [{"name": "Maneskin"}]},
+        {"name": "I Wanna Be Yours", "uri": "spotify:track:pedida",
+         "artists": [{"name": "Arctic Monkeys"}]},
+    ]}}
+    mock_sp.devices.return_value = {"devices": [
+        {"id": "dev1", "is_active": True, "type": "Computer"},
+    ]}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = play_song("I Wanna Be Yours")
+        assert plan.status == ActionStatus.EXECUTED
+        assert "Arctic Monkeys" in plan.result
+        mock_sp.start_playback.assert_called_once_with(
+            device_id="dev1", uris=["spotify:track:pedida"])
+
+
+def test_play_song_de_artista_resuelve_artista_y_compara_por_palabras():
+    """Caso real reportado: 'reproduce yo soy el rey de vicente fernandez'
+    devolvia 'La Morocha' de Luck Ra, sin ninguna relacion -- porque el
+    titulo real es solo 'El Rey' (la gente parafrasea, no cita el titulo
+    exacto) y ademas "artist-top-tracks" esta bloqueado para apps nuevas
+    (403). Se resuelve el artista primero (tolera "vicente fernandez" sin
+    tilde) y se prueban palabras del titulo combinadas con el filtro exacto
+    de artista, comparando por proporcion de palabras en vez de texto
+    exacto.
+
+    Ambas palabras probadas ("soy" y "rey") devuelven una cancion real del
+    artista para forzar el caso de desempate que fallaba: contar palabras a
+    secas empataba 'El Rey' (comparte "rey") con 'Soy Mexico' (comparte
+    "soy") en 1 cada una, y el orden de un set en Python no es
+    determinista entre ejecuciones. Por proporcion, 'El Rey' debe ganar
+    siempre: comparte una porcion mayor de "yo soy el rey".
+    """
+    mock_sp = MagicMock()
+
+    def fake_search(q, type, limit=10):  # noqa: A002 - nombre del parametro real de spotipy
+        if type == "artist":
+            return {"artists": {"items": [{"id": "artist123", "name": "Vicente Fernández"}]}}
+        if "rey" in q.lower():
+            return {"tracks": {"items": [
+                {"name": "El Rey", "uri": "spotify:track:correcta",
+                 "artists": [{"name": "Vicente Fernández"}]},
+            ]}}
+        if "soy" in q.lower():
+            return {"tracks": {"items": [
+                {"name": "Soy México", "uri": "spotify:track:falso_positivo",
+                 "artists": [{"name": "Vicente Fernández"}]},
+            ]}}
+        return {"tracks": {"items": []}}
+
+    mock_sp.search.side_effect = fake_search
+    mock_sp.devices.return_value = {"devices": [
+        {"id": "dev1", "is_active": True, "type": "Computer"},
+    ]}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = play_song("yo soy el rey de vicente fernandez")
+        assert plan.status == ActionStatus.EXECUTED
+        assert "El Rey" in plan.result
+        mock_sp.artist_top_tracks.assert_not_called()
+        mock_sp.start_playback.assert_called_once_with(
+            device_id="dev1", uris=["spotify:track:correcta"])
+
+
+def test_play_song_de_artista_sin_coincidencia_cae_a_texto_libre():
+    """Si ninguna palabra del titulo, combinada con el filtro de artista,
+    encuentra algo que comparta palabras con lo pedido, no se inventa una
+    coincidencia: se cae a la busqueda de texto libre de Spotify."""
+    mock_sp = MagicMock()
+
+    def fake_search(q, type, limit=10):  # noqa: A002
+        if type == "artist":
+            return {"artists": {"items": [{"id": "artist123", "name": "Un Artista"}]}}
+        if 'artist:"Un Artista"' in q:
+            return {"tracks": {"items": [
+                {"name": "Totalmente Distinto", "uri": "spotify:track:otra",
+                 "artists": [{"name": "Un Artista"}]},
+            ]}}
+        return {"tracks": {"items": [
+            {"name": "Cancion Encontrada Por Texto Libre", "uri": "spotify:track:1",
+             "artists": [{"name": "Un Artista"}]},
+        ]}}
+
+    mock_sp.search.side_effect = fake_search
+    mock_sp.devices.return_value = {"devices": [
+        {"id": "dev1", "is_active": True, "type": "Computer"},
+    ]}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = play_song("algo muy especifico de un artista")
+        assert plan.status == ActionStatus.EXECUTED
+        assert "Cancion Encontrada Por Texto Libre" in plan.result
+
+
+def test_play_song_artista_no_resuelve_cae_a_texto_libre():
+    """Si el nombre despues de 'de' no es un artista real de Spotify
+    (o el patron 'X de Y' aplica por casualidad a otra cosa), se cae a la
+    busqueda de texto libre en vez de fallar."""
+    mock_sp = MagicMock()
+    mock_sp.search.side_effect = [
+        {"artists": {"items": []}},
+        {"tracks": {"items": [
+            {"name": "Resultado De Texto Libre", "uri": "spotify:track:1",
+             "artists": [{"name": "Alguien"}]},
+        ]}},
+    ]
+    mock_sp.devices.return_value = {"devices": [
+        {"id": "dev1", "is_active": True, "type": "Computer"},
+    ]}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = play_song("cancion rara de algo que no es un artista")
+        assert plan.status == ActionStatus.EXECUTED
+        assert "Resultado De Texto Libre" in plan.result
+        mock_sp.artist_top_tracks.assert_not_called()
+
+
 def test_play_song_prefers_active_device():
     """Sin ningun dispositivo tipo Computer y sin poder abrir Spotify: cae
     al dispositivo activo entre los que ya hay."""
@@ -287,6 +413,10 @@ if __name__ == "__main__":
     test_play_song_opens_spotify_when_not_running()
     test_play_song_gives_up_after_timeout_opening_spotify()
     test_play_song_success()
+    test_play_song_prefiere_coincidencia_exacta_de_nombre()
+    test_play_song_de_artista_resuelve_artista_y_compara_por_palabras()
+    test_play_song_de_artista_sin_coincidencia_cae_a_texto_libre()
+    test_play_song_artista_no_resuelve_cae_a_texto_libre()
     test_play_song_prefers_active_device()
     test_play_song_prefers_this_pc_over_active_phone()
     test_play_song_requires_premium()
