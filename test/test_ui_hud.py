@@ -235,12 +235,12 @@ def test_loop_pauses_when_not_running():
     engine = create_engine(_app, ViewModel())
     try:
         win = engine.rootObjects()[0]
-        core = win.findChild(QQuickItem, "coreZone").childItems()[0]
+        root = win.findChild(QQuickItem, "rootItem")
         loop = _core_loop(win)
-        core.setProperty("loopRunning", True)
+        root.setProperty("paused", False)
         _app.processEvents()
         assert loop.property("running") is True
-        core.setProperty("loopRunning", False)
+        root.setProperty("paused", True)          # sin foco / minimizada
         _app.processEvents()
         assert loop.property("running") is False
     finally:

@@ -80,10 +80,10 @@ def main() -> int:
         app.quit()
 
     def _set_inactive(w):
-        for o in w.findChildren(QObject):
-            if "CoreField" in o.metaObject().className():
-                o.setProperty("loopRunning", False)
-                return
+        from PySide6.QtQuick import QQuickItem
+        root = w.findChild(QQuickItem, "rootItem")
+        if root is not None:
+            root.setProperty("paused", True)
 
     QTimer.singleShot(200, phase_focused)
     app.exec()

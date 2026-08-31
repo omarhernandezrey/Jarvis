@@ -1,14 +1,21 @@
 import QtQuick
 import "."
 
-// Ventana aislada del núcleo para validar la dirección visual del shader
-// (addendum, fase 2). La conduce scripts/core_preview.py.
+// Ventana aislada del núcleo para validar la dirección visual (addendum).
+// Incluye el pipeline completo: bloom (dentro de Core) + atmósfera global.
+// La conduce scripts/core_preview.py.
 Rectangle {
     id: root
     width: 760
     height: 760
     color: Design.bgVoid
     property string coreState: "idle"
+
+    property real tick: 0
+    FrameAnimation { running: true; onTriggered: root.tick += frameTime }
+
+    layer.enabled: true
+    layer.effect: Atmosphere { time: Math.floor(root.tick * 24) / 24 }
 
     Core {
         anchors.centerIn: parent
@@ -17,6 +24,7 @@ Rectangle {
         coreState: root.coreState
         audioLevel: (coreState === "listening" || coreState === "speaking") ? 0.55 : 0
         tokensPerSecond: coreState === "thinking" ? 12 : 0
+        time: root.tick
         loopRunning: true
     }
 

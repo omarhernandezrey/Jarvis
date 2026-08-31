@@ -108,29 +108,33 @@ Item {
         return [ka ? a / ka : 0, kb ? b / kb : 0, kc ? c / kc : 0]
     }
 
-    FrameAnimation {
-        objectName: "coreLoop"          // único bucle; hud_perfcheck lo cuenta
-        running: root.loopActive
-        onTriggered: {
-            var dt = Math.min(frameTime, 0.05)
-            root._t += (root.reducedMotion ? 0 : dt)
-            var e = root._targetEnergy()
-            var k = Math.min(1, dt * 9)
-            var prev = root._energy
-            root._energy += (e - prev) * k
-            root._flux += (Math.min(1, Math.abs(e - prev) * 7
-                           + (root.coreState === "thinking"
-                              ? root.tokensPerSecond / 40 : 0)) - root._flux) * 0.15
-            var bands = root._bands()
-            root._bLow  += (bands[0] - root._bLow) * k
-            root._bMid  += (bands[1] - root._bMid) * k
-            root._bHigh += (bands[2] - root._bHigh) * k
-        }
+    // El único FrameAnimation vive en Main.qml y alimenta `time`; aquí sólo se
+    // suaviza la traducción datos-reales → uniforms en cada avance de reloj.
+    property real time: 0
+    property real _prevT: 0
+    onTimeChanged: {
+        var dt = Math.min(Math.max(time - _prevT, 0.0), 0.05)
+        _prevT = time
+        if (dt <= 0) return
+        root._t += (root.reducedMotion ? 0 : dt)
+        var e = root._targetEnergy()
+        var k = Math.min(1, dt * 9)
+        var prev = root._energy
+        root._energy += (e - prev) * k
+        root._flux += (Math.min(1, Math.abs(e - prev) * 7
+                       + (root.coreState === "thinking"
+                          ? root.tokensPerSecond / 40 : 0)) - root._flux) * 0.15
+        var bands = root._bands()
+        root._bLow  += (bands[0] - root._bLow) * k
+        root._bMid  += (bands[1] - root._bMid) * k
+        root._bHigh += (bands[2] - root._bHigh) * k
     }
 
-    CoreShader {
+    CoreBloom {
         id: shader
+        // margen para que el bloom pueda extenderse más allá del orbe
         anchors.fill: parent
+        anchors.margins: -Math.round(Math.min(parent.width, parent.height) * 0.16)
         time: root._t
         energy: root._energy
         flux: root._flux
@@ -144,6 +148,6 @@ Item {
         reduced: root.reducedMotion ? 1 : 0
         compact: root.compact ? 1 : 0
         tint: root.pTint
-        layer.live: root.loopActive
+        live: root.loopActive
     }
 }

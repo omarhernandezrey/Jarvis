@@ -450,3 +450,42 @@ menor y la Fase 7 (addendum) trae bloom, presupuesto real y ruta de degradación
 Sin bloom todavía (es la Fase 3).
 
 Tests de vista: 16/16 verde. `ruff check .` limpio.
+
+## Fase 3 (addendum) — pipeline de post-proceso
+
+Cadena (addendum §2), toda en GPU:
+
+```
+CoreShader  →  layer (texture)
+   ↓ bloom_extract.frag  (umbral de altas luces)
+   ↓ MultiEffect ×2      (blur estrecho r≈20 · blur ancho r≈64)
+   ↓ bloom_composite.frag (núcleo + b0·k0 + b1·k1, aditivo)
+CoreBloom.qml
+   ↑ montado en Core.qml con margen negativo para que el glow no se recorte
+   ↓
+Atmosphere.frag  (viñeta + grano temporal + aberración cromática ≤1.2 px)
+   ↑ aplicado como `layer.effect` de TODA la escena (rootItem), sólo con foco
+```
+
+- `shaders/bloom_extract.frag`, `bloom_composite.frag`, `atmosphere.frag`
+  (+ `.qsb`), compilados con `pyside6-qsb`.
+- `qml/CoreBloom.qml` — `CoreShader` + extracción + 2× `MultiEffect` +
+  composición aditiva, con `ShaderEffectSource(hideSource)` entre etapas;
+  `live` congela toda la cadena sin foco.
+- `qml/Atmosphere.qml` — `ShaderEffect` usado como `layer.effect`; `time`
+  cuantizado a ~24 fps para el grano.
+- `qml/Main.qml` — **un único `FrameAnimation`** (`objectName: coreLoop`) en
+  `rootItem` mueve `tick`; `Core` lo consume vía `time` (ya no tiene bucle
+  propio). `rootItem.layer.enabled: motionActive` + `layer.effect: Atmosphere`.
+  `motionActive` = foco ∧ no minimizada ∧ no `paused` ∧ (¬reduced ∨
+  listening/speaking). Sin foco / reduced-motion en reposo → sin atmósfera,
+  render normal e interactivo.
+
+**Medición (GPU real, HD 520, ventana 1360×820, pipeline completo):**
+**60 fps** estables · **CPU ~24 %** · RSS plana (+0.3 MB en reposo). Sigue por
+encima del ≤5 % de la §7 — el recompositado de la atmósfera a ventana completa
+es el grueso; el presupuesto y la **ruta de degradación** (software o <40 fps →
+sin bloom/atmósfera, sólo el shader del núcleo) son la Fase 7.
+
+Preview: `python scripts/core_preview.py` incluye ya bloom + atmósfera.
+16 tests de vista en verde · `ruff check .` limpio.

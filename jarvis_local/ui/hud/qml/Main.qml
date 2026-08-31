@@ -2,13 +2,13 @@ import QtQuick
 import QtQuick.Window
 import "."
 
-// FASE 6 — responsive por reorganización (no por encogimiento). Cuatro modos:
-//   wide   ≥1600           HUD lateral | núcleo | conversación (3 zonas)
-//   mid    1100–1599       HUD en banda superior; núcleo reducido
-//   narrow <1100           una columna: conversación prioritaria; núcleo insignia
-//   badge  alto <720       núcleo insignia; el visualizador vive en la barra
-// La barra de comando queda SIEMPRE anclada abajo y alcanzable; cero
-// solapamientos, cero overflow.
+// Composición del HUD.
+//  · Responsive por reorganización (4 modos): wide ≥1600 (HUD lateral | núcleo
+//    | conversación) · mid 1100–1599 (HUD en banda) · narrow <1100 (una
+//    columna) · badge alto <720 (núcleo insignia). Cero solapes / overflow;
+//    la barra de comando siempre alcanzable.
+//  · Addendum §3/§7: un ÚNICO FrameAnimation global mueve `tick`; la atmósfera
+//    (viñeta/grano/aberración) se aplica como `layer.effect` de toda la escena.
 Window {
     id: win
     width: 1360
@@ -24,8 +24,34 @@ Window {
 
     Item {
         id: rootItem
+        objectName: "rootItem"
         anchors.fill: parent
         focus: true
+
+        // ── reloj y actividad (addendum §3 y §7) ─────────────────────────
+        property bool paused: false          // hook de tests
+        readonly property bool reducedMotion:
+            (typeof ReducedMotion !== "undefined") && ReducedMotion === true
+        readonly property bool motionActive:
+            win.active
+            && win.visibility !== Window.Minimized
+            && win.visibility !== Window.Hidden
+            && !paused
+            && (!reducedMotion || (Vm && (Vm.state === "listening"
+                                          || Vm.state === "speaking")))
+        property real tick: 0
+        readonly property real grainTick: Math.floor(tick * 24) / 24
+
+        // ÚNICO FrameAnimation de todo el sistema
+        FrameAnimation {
+            objectName: "coreLoop"
+            running: rootItem.motionActive
+            onTriggered: rootItem.tick += frameTime
+        }
+
+        // atmósfera global: sólo con foco + movimiento; si no, render normal
+        layer.enabled: rootItem.motionActive
+        layer.effect: Atmosphere { time: rootItem.grainTick }
 
         readonly property int pad: Design.sp(5)
         readonly property string mode: win.height < 720 ? "badge"
@@ -120,7 +146,7 @@ Window {
                 id: core
                 anchors.centerIn: parent
                 width: Math.min(coreZone.width, coreZone.height)
-                       * (rootItem.singleCol ? 1.0 : 0.92)
+                       * (rootItem.singleCol ? 1.15 : 1.10)
                 height: width
                 compact: rootItem.singleCol
                 coreState: Vm ? Vm.state : "idle"
@@ -129,11 +155,9 @@ Window {
                 tokensPerSecond: (Vm && Vm.metrics.tokensPerSecond !== undefined)
                                  ? Vm.metrics.tokensPerSecond : 0
                 pointer: Qt.point(win.pointerX, win.pointerY)
-                // 0 fps sin foco o minimizada (Fase 7)
-                loopRunning: win.active
-                             && win.visibility !== Window.Minimized
-                             && win.visibility !== Window.Hidden
-                reducedMotion: (typeof ReducedMotion !== "undefined") && ReducedMotion === true
+                time: rootItem.tick
+                loopRunning: rootItem.motionActive       // 0 fps sin foco / minimizada
+                reducedMotion: rootItem.reducedMotion
             }
 
             Row {
