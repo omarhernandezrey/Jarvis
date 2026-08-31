@@ -63,7 +63,6 @@ Item {
 
     // ── estado interno del bucle (acumuladores, no bindings) ───────────────
     property real _t: 0                   // segundos de simulación acumulados
-    property real _acc: 0                 // acumulador para el techo de 30 fps
     property real _angle: 0               // rotación acumulada (grados)
     property real _sweepAt: -99
     property real _sweepPeriod: 7

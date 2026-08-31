@@ -70,7 +70,6 @@ class ChatService(QObject):
         self._busy = False
         self._cancelled = threading.Event()
         self._last_command = ""
-        self._lock = threading.Lock()
 
         self.userTurn.connect(conversation.add_user)
         self.assistantBegin.connect(conversation.begin_assistant)

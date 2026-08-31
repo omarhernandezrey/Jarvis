@@ -38,8 +38,6 @@ class VoiceService(QObject):
         self._stop_speech = threading.Event()
 
         self.audio.connect(view_model.push_audio)
-        self.micStateChanged.connect(
-            lambda _s: None)  # el HUD lo lee de Vm.metrics.voice.mic; esto es extra
         self.wantState.connect(view_model.set_state)
 
     # ── propiedades para QML ────────────────────────────────────────────

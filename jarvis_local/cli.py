@@ -55,7 +55,7 @@ Chat (prefijo /):
   /estado                Estado de Ollama
   /limpiar               Borrar historial
   /ui                    Abrir Interfaz Web de JARVIS
-  /desktop               Abrir Interfaz de Escritorio nativa
+  /desktop               Abrir Interfaz de Escritorio (HUD Qt; /desktop-clasica para la Tkinter)
 
 Voz (/voz):
   /voz                   Capturar voz, transcribir, enviar a Ollama
@@ -709,8 +709,23 @@ def main():
                         print("\nInterfaz web detenida.")
                     except Exception as e:
                         logger.error(f"Error en interfaz web: {e}")
-                elif sub == "desktop":
+                elif sub in ("desktop", "hud"):
                     print("Iniciando JARVIS Desktop...")
+                    try:
+                        try:
+                            from jarvis_local.ui.hud import main as desktop_main
+                        except Exception as imp_err:
+                            # Sin PySide6/Qt: se cae a la interfaz Tkinter clasica
+                            logger.warning(f"HUD Qt no disponible ({imp_err}); "
+                                           "usando la interfaz clasica")
+                            from jarvis_local.ui.desktop import main as desktop_main
+                        desktop_main()
+                    except KeyboardInterrupt:
+                        print("\nInterfaz desktop cerrada.")
+                    except Exception as e:
+                        logger.error(f"Error en interfaz desktop: {e}")
+                elif sub == "desktop-clasica":
+                    print("Iniciando JARVIS Desktop (Tkinter)...")
                     try:
                         from jarvis_local.ui.desktop import main as desktop_main
                         desktop_main()

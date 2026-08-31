@@ -315,3 +315,63 @@ trazo** de 64 sub-caminos; color de tinte cacheado como string.
 
 `scripts/hud_perfcheck.py`: reporta fps con/sin foco, CPU y marcas de RSS cada
 10 s. La corrida completa de 10 min la hace el usuario.
+
+---
+
+## FASE 8 — Auditoría y cierre
+
+### Integración
+
+`cli.py` `/desktop` (y alias `/hud`) lanza el HUD Qt; si PySide6/Qt no está
+disponible cae a la Tkinter clásica. `/desktop-clasica` fuerza la Tkinter.
+El módulo `jarvis_local/ui/desktop.py` y sus tests se conservan como respaldo
+(cero regresión): no se elimina funcionalidad.
+
+### Estado
+
+- `ruff check .` — **limpio** (todo el repo).
+- `python -m pytest test -q` — **verde**. (`test_history_performance` es una
+  aserción de tiempo que falla sólo bajo carga concurrente del equipo; pasa
+  aislada y no toca la capa de vista.)
+- Limpieza: retirados `_acc` (CoreField), `_lock` (ChatService) y una conexión
+  no-op (VoiceService). Sin imports huérfanos.
+
+### Verificación funcional (smoke automatizado)
+
+| flujo | resultado |
+|---|---|
+| Arranque | ✅ engine carga, 0 warnings |
+| Redimensionado (4 modos) | ✅ sin solapamiento ni overflow |
+| Estados del núcleo + evento de error | ✅ transiciones e interpolación |
+| Cierre | ✅ sin excepciones; 0 hilos de servicio vivos tras `shutdown()` |
+| Enter envía / Shift+Enter salto / Esc cancela / ↑ recall | ✅ lógica en `CommandBar` + test de cancelación |
+| Chat con núcleo (turno completo, latencia, tokens/s) | ✅ con núcleo falso; turno real contra Ollama en CPU: **para el usuario** |
+| Voz: inactive/listening/denied · STT · TTS+envolvente | ✅ máquina de estados y wiring; audio real (mic/altavoz): **para el usuario** |
+| Ollama health-check · memoria · herramientas | ✅ datos reales observados (`online`, `tools=46`, `memory`) |
+| Persistencia de configuración | ✅ intacta (contrato: el núcleo no se toca) |
+
+### Autocrítica (10 líneas)
+
+1. **Lo memorable**: el núcleo. Un lienzo, un bucle, tres planos con paralaje y
+   el anillo de 64 segmentos que sólo reacciona a datos reales (FFT, tokens/s,
+   envolvente TTS) — nunca ruido. Cada estado cambia geometría, ritmo y color.
+2. La coherencia barra-de-comando ↔ anillo (mismo trazo, dos escalas) durante
+   la grabación es el segundo golpe de identidad.
+3. **Recortado por disciplina**: el halo volumétrico real (gradientes radiales)
+   se cambió por discos apilados para no pagar asignaciones por frame; se ve
+   casi igual pero es menos "material".
+4. Sin shaders GLSL: el brief los permitía y darían un núcleo más físico, pero
+   el presupuesto de un lienzo + Δt real ya se cumple sin ellos.
+5. El resaltado de código es por regex, no un lexer: correcto para leerse como
+   código, pobre para lenguajes con sintaxis densa.
+6. La detección de `prefers-reduced-motion` en Linux depende de GNOME; en otros
+   entornos sólo responde a la variable de entorno.
+7. La medición de CPU en IDLE se hizo con rasterizador software (sin GPU en el
+   entorno de trabajo); el objetivo ≤3 % debe confirmarlo el usuario en pantalla.
+8. **Sigue pareciendo genérico**: la banda del HUD, pese a no usar tarjetas ni
+   versalitas, es una fila de dato+valor que se ha visto mil veces; le falta una
+   idea propia (¿un histórico en línea de 1px por métrica?).
+9. La consola conversacional es sólida y legible pero no arriesga: un lector
+   la reconocería como "terminal estilizada".
+10. El arranque no tiene identidad todavía (la secuencia de boot de la Tkinter
+    no se portó); la primera impresión es una ventana que aparece sin más.
