@@ -39,6 +39,7 @@ Thumbs.db
 secrets.yaml
 credentials.json
 token.json
+data/.spotify_cache
 
 # Estado interno de herramientas de Claude Code (no es parte del proyecto)
 managed_context/

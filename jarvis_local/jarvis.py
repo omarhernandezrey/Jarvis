@@ -96,6 +96,7 @@ _WRITE_TOOLS: dict[str, Callable[[dict], Any]] = {
     "open_website": lambda args: __import__("jarvis_local.tools.web", fromlist=["open_website"]).open_website(args.get("site", "")),
     "google_search": lambda args: __import__("jarvis_local.tools.web", fromlist=["google_search"]).google_search(args.get("query", "")),
     "youtube_play": lambda args: __import__("jarvis_local.tools.web", fromlist=["youtube_play"]).youtube_play(args.get("query", "")),
+    "spotify_play": lambda args: __import__("jarvis_local.tools.spotify", fromlist=["play_song"]).play_song(args.get("song", "")),
     "play_music": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["play_music"]).play_music(args.get("song", "")),
     "take_note": lambda args: __import__("jarvis_local.tools.notes", fromlist=["take_note"]).take_note(args.get("text", "")),
     "switch_window": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["switch_window"]).switch_window(),

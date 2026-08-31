@@ -56,7 +56,41 @@ def test_intent_youtube_y_musica():
     r2 = _t("pon musica")
     assert r2.tool == "play_music"
     r3 = _t("reproduce la cancion bohemian rhapsody")
-    assert r3.tool == "youtube_play"
+    assert r3.tool == "spotify_play"
+
+
+def test_intent_spotify_variantes_de_verbo():
+    """'toca' y 'reproduceme' deben reconocerse igual que 'reproduce'."""
+    assert _t("toca bohemian rhapsody").tool == "spotify_play"
+    assert _t("reproduceme bohemian rhapsody").tool == "spotify_play"
+
+
+def test_intent_musica_de_artista_va_a_spotify():
+    """'musica de <artista>' tiene mucho mas catalogo en Spotify que en la
+    carpeta local de Musica."""
+    r = _t("pon musica de queen")
+    assert r.tool == "spotify_play"
+    assert r.arguments["song"] == "queen"
+
+
+def test_intent_musica_descriptiva_sigue_siendo_local():
+    """Sin nombrar un artista ('de X'), 'musica <adjetivo>' sigue siendo un
+    filtro sobre la musica local, no una busqueda de artista."""
+    r = _t("pon musica relajante")
+    assert r.tool == "play_music"
+    assert r.arguments["song"] == "relajante"
+
+
+def test_intent_cadena_musica_y_volumen_se_divide():
+    """Antes, combinar un comando de volumen con uno de musica no se
+    detectaba como multi-accion y se perdia una de las dos ordenes en
+    silencio (ver es_multi_accion / _VERBO_ACCION)."""
+    from jarvis_local.intent.parser import dividir_acciones, es_multi_accion
+    for frase in ("sube el volumen y pon bohemian rhapsody",
+                  "pon bohemian rhapsody y sube el volumen",
+                  "pausa la musica y baja el volumen"):
+        assert es_multi_accion(frase), frase
+        assert len(dividir_acciones(frase)) == 2, frase
 
 
 def test_intent_noticias():

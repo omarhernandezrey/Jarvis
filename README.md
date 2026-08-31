@@ -115,6 +115,7 @@ Cada mensaje baja por esta cascada y se detiene en la primera capa que lo resuel
 - **Noticias**: titulares del día.
 - **Calculadora segura** (AST, sin `eval`) con lenguaje natural, y **WolframAlpha** para ecuaciones: *"calcula x + 135 - 234 = 345"* → *x = 444*.
 - **Navegador automatizado** (Selenium): JARVIS controla su propia ventana de Chrome.
+- **Spotify**: *"pon bohemian rhapsody"* → la busca y reproduce con tu cuenta (Premium) en cualquier dispositivo Spotify Connect activo. Setup en [`docs/spotify.md`](docs/spotify.md).
 </details>
 
 <details open>
@@ -244,7 +245,7 @@ Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, dat
 │   ├── cli.py               Punto de entrada
 │   ├── jarvis.py            Orquestador: la cascada de 4 capas
 │   ├── agent/               🆕 Tool calling
-│   │   ├── registry.py        31 herramientas: esquema JSON + ejecutor
+│   │   ├── registry.py        32 herramientas: esquema JSON + ejecutor
 │   │   ├── selector.py        Preselección: qué herramientas ofrecer al LLM
 │   │   └── loop.py            Bucle agéntico
 │   ├── intent/parser.py     Parser determinista (camino rápido)

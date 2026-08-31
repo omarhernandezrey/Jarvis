@@ -153,6 +153,7 @@ _ALIAS = {
     "open_website": "abrir_sitio_web",
     "google_search": "buscar_en_google",
     "youtube_play": "reproducir_en_youtube",
+    "spotify_play": "reproducir_en_spotify",
     "play_music": "reproducir_musica_local",
     "take_note": "tomar_nota",
     "screenshot": "captura_de_pantalla",

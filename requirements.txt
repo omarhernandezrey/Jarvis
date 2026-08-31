@@ -12,3 +12,4 @@ psutil>=5.9
 pillow>=10.0
 selenium>=4.20
 filelock>=3.0
+spotipy>=2.24

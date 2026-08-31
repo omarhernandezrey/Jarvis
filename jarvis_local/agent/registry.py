@@ -276,6 +276,11 @@ def _youtube(query: str):
     return youtube_play(query)
 
 
+def _spotify(song: str):
+    from jarvis_local.tools.spotify import play_song
+    return play_song(song)
+
+
 def _play_music(song: str = ""):
     from jarvis_local.tools.desktop_actions import play_music
     return play_music(song)
@@ -548,8 +553,17 @@ TOOLS: list[Tool] = [
          _obj({"query": _str("Lo que se quiere buscar")}),
          _google),
 
+    Tool("reproducir_en_spotify",
+         "Busca y reproduce cualquier cancion o artista en Spotify, usando la "
+         "cuenta del usuario. Es la forma preferida de poner musica cuando el "
+         "usuario pide una cancion o artista especifico, salvo que pida "
+         "explicitamente YouTube o musica local.",
+         _obj({"song": _str("Cancion o artista a reproducir, ej: 'bohemian rhapsody'")}),
+         _spotify),
+
     Tool("reproducir_en_youtube",
-         "Busca y reproduce una cancion o video en YouTube.",
+         "Busca y reproduce un video en YouTube. Usar solo cuando el usuario "
+         "pida YouTube explicitamente, no para pedidos genericos de musica.",
          _obj({"query": _str("Cancion, artista o video a reproducir")}),
          _youtube),
 

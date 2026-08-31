@@ -454,16 +454,25 @@ def _parse_fase4(m: str) -> IntentResult | None:
                             arguments={"query": m_yt.group(1).strip()},
                             reason="Reproducir en YouTube")
     if re.search(r'\b(?:pon|toca|reproduce)\s+(?:algo de\s+)?musica\b', low):
-        m_song = re.search(r'musica\s+(?:de\s+)?(.+)', low)
+        m_artista = re.search(r'musica\s+de\s+(.+)', low)
+        if m_artista:
+            # "musica de X" nombra un artista: Spotify tiene mucho mas
+            # catalogo que la carpeta local de Musica.
+            return IntentResult(kind="tool_execute", tool="spotify_play",
+                                arguments={"song": m_artista.group(1).strip().rstrip('.!?')},
+                                reason="Reproducir en Spotify")
+        m_song = re.search(r'musica\s+(.+)', low)
         song = m_song.group(1).strip().rstrip('.!?') if m_song else ""
         return IntentResult(kind="tool_execute", tool="play_music",
                             arguments={"song": song},
                             reason="Reproducir musica local")
-    m_play = re.search(r'(?:reproduce|reproducir)\s+(?:la\s+cancion\s+|el\s+video\s+)?(.+)', low)
+    m_play = re.search(r'(?:reproduce|reproducir|toca|tocar|reproduceme)\s+(?:la\s+cancion\s+|el\s+video\s+)?(.+)', low)
     if m_play:
-        return IntentResult(kind="tool_execute", tool="youtube_play",
-                            arguments={"query": m_play.group(1).strip().rstrip('.!?')},
-                            reason="Reproducir en YouTube")
+        # Pedido generico de una cancion (sin "en youtube" explicito): se
+        # prefiere Spotify, que es donde el usuario tiene su cuenta paga.
+        return IntentResult(kind="tool_execute", tool="spotify_play",
+                            arguments={"song": m_play.group(1).strip().rstrip('.!?')},
+                            reason="Reproducir en Spotify")
 
     # --- NOTICIAS ---
     if re.search(r'\b(noticias|titulares)\b', low):
@@ -581,7 +590,8 @@ _VERBO_ACCION = re.compile(
     r'\b(?:abre|abreme|abrir|cierra|cerrar|busca|buscame|buscar|pon|ponme|'
     r'reproduce|toma|tomame|manda|mandame|envia|enviame|lanza|inicia|muestra|'
     r'muestrame|dime|dame|ejecuta|corre|borra|elimina|crea|apunta|anota|'
-    r'calcula|navega|listar|lista)\b',
+    r'calcula|navega|listar|lista|sube(?:le|me)?|baja(?:le|me)?|'
+    r'silencia(?:r|te|me)?|pausa(?:r)?|reanuda|continua)\b',
     re.IGNORECASE)
 
 # Conectores secuenciales inequivocos: "y luego", "y despues", "y tambien"...
@@ -612,7 +622,8 @@ _CORTE = re.compile(
     r'\s*\b(?:y\s+(?:luego|despues|tambien|ademas|de\s+paso|acto\s+seguido)\s+|'
     r'y\s+(?=(?:abre|abreme|cierra|busca|buscame|pon|ponme|reproduce|toma|'
     r'manda|envia|lanza|inicia|muestra|muestrame|dime|dame|ejecuta|corre|'
-    r'borra|elimina|crea|apunta|anota|calcula|navega)\b)|'
+    r'borra|elimina|crea|apunta|anota|calcula|navega|sube(?:le|me)?|'
+    r'baja(?:le|me)?|silencia(?:r|te|me)?|pausa(?:r)?|reanuda|continua)\b)|'
     r'(?:luego|despues|acto\s+seguido)\s+(?=\w))\s*',
     re.IGNORECASE)
 

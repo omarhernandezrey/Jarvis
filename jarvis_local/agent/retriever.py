@@ -168,9 +168,14 @@ _EJEMPLOS: dict[str, list[str]] = {
         "abre github.com", "entra a youtube", "llevame a la pagina de gmail",
         "necesito abrir el correo web", "navega a wikipedia",
     ],
+    "reproducir_en_spotify": [
+        "pon bohemian rhapsody", "reproduce hotel california",
+        "quiero escuchar imagine dragons", "ponme musica de bad bunny",
+        "reproduce la cancion here comes the sun", "pon algo de rock en spotify",
+    ],
     "reproducir_en_youtube": [
-        "pon musica en youtube", "reproduce hotel california",
-        "ponme un video de", "quiero escuchar una cancion en youtube",
+        "pon musica en youtube", "ponme un video de",
+        "quiero escuchar una cancion en youtube", "busca ese video en youtube",
     ],
     "reproducir_musica_local": [
         "pon musica", "se me antoja escuchar algo", "reproduce mi playlist",
