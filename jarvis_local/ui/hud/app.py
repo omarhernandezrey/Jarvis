@@ -27,15 +27,29 @@ def create_engine(app, view_model=None):
     from PySide6.QtCore import QUrl
     from PySide6.QtQml import QQmlApplicationEngine
 
+    from jarvis_local.ui.hud.chat_service import ChatService
+    from jarvis_local.ui.hud.conversation_model import ConversationModel
     from jarvis_local.ui.hud.viewmodel import ViewModel
 
     vm = view_model or ViewModel()
+    conversation = ConversationModel()
+    chat = ChatService(vm, conversation)
+
     engine = QQmlApplicationEngine()
-    engine.rootContext().setContextProperty("Vm", vm)
+    ctx = engine.rootContext()
+    ctx.setContextProperty("Vm", vm)
+    ctx.setContextProperty("Conversation", conversation)
+    ctx.setContextProperty("Chat", chat)
     engine.addImportPath(str(_QML_DIR))
     engine.load(QUrl.fromLocalFile(str(_QML_DIR / "Main.qml")))
-    # el engine no es dueño del vm: que sobreviva al scope
-    engine._vm = vm  # noqa: SLF001
+
+    # el engine no es dueño de estos objetos: que sobrevivan al scope
+    engine._vm = vm            # noqa: SLF001
+    engine._conversation = conversation  # noqa: SLF001
+    engine._chat = chat        # noqa: SLF001
+
+    # ALERT vuelve a IDLE tras 2.5 s si nadie cambió el estado entretanto
+    _wire_alert_autoclear(vm)
 
     # muestreo real de sistema / Ollama / voz / memoria / tools (cada 2 s)
     from jarvis_local.ui.hud.services import MetricsService
@@ -46,6 +60,16 @@ def create_engine(app, view_model=None):
             app.aboutToQuit.connect(metrics.stop)
     engine._metrics = metrics  # noqa: SLF001
     return engine
+
+
+def _wire_alert_autoclear(vm) -> None:
+    from PySide6.QtCore import QTimer
+
+    timer = QTimer(vm)
+    timer.setSingleShot(True)
+    timer.setInterval(2500)
+    timer.timeout.connect(lambda: vm.set_state("idle") if vm.state == "alert" else None)
+    vm.stateChanged.connect(lambda s: timer.start() if s == "alert" else timer.stop())
 
 
 def main() -> int:

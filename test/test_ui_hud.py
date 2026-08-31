@@ -71,6 +71,92 @@ def test_sample_all_shape_no_invention():
     assert set(data["memory"]) == {"auto_recall", "count"}
 
 
+def test_conversation_model_streaming_turn():
+    from jarvis_local.ui.hud.conversation_model import (
+        ROLE_META,
+        ROLE_STREAMING,
+        ROLE_TEXT,
+        ConversationModel,
+    )
+
+    cm = ConversationModel()
+    cm.add_user("hola")
+    cm.begin_assistant()
+    for tok in ("Aquí ", "va", ".") :
+        cm.append_token(tok)
+    assert cm.rowCount() == 2
+    i = cm.index(1, 0)
+    assert cm.data(i, ROLE_STREAMING) is True
+    assert cm.data(i, ROLE_TEXT) == "Aquí va."
+    cm.end_assistant("", "500 ms", "chat")
+    assert cm.data(i, ROLE_STREAMING) is False
+    assert cm.data(i, ROLE_META) == "500 ms"
+
+
+class _FakeInner:
+    """Cliente Ollama mínimo: streamea tokens fijos."""
+
+    def chat(self, messages, model=None, stream=False):
+        toks = ["Py", "thon ", "es ", "un ", "lenguaje."]
+        return iter(toks) if stream else "".join(toks)
+
+    def is_running(self):
+        return True
+
+
+def test_tap_client_taps_stream_tokens():
+    from jarvis_local.ui.hud.chat_service import _TapClient
+
+    seen = []
+    tap = _TapClient(_FakeInner(), seen.append)
+    out = "".join(tap.chat([{"role": "user", "content": "x"}], stream=True))
+    assert out == "Python es un lenguaje."
+    assert seen == ["Py", "thon ", "es ", "un ", "lenguaje."]
+    # sin stream: pasa por debajo, no chiva
+    seen.clear()
+    assert tap.chat([], stream=False) == "Python es un lenguaje."
+    assert seen == []
+    assert tap.is_running() is True   # __getattr__ delega
+
+
+def test_chat_service_full_turn_with_fake_core(monkeypatch):
+    from jarvis_local.ui.hud.chat_service import ChatService
+    from jarvis_local.ui.hud.conversation_model import (
+        ROLE_STREAMING,
+        ROLE_TEXT,
+        ConversationModel,
+    )
+
+    class _FakeJarvis:
+        def __init__(self):
+            self.client = _FakeInner()
+
+        def chat(self, text):
+            # emula el núcleo: consume el stream del (tap)client
+            return "".join(self.client.chat([{"role": "user", "content": text}],
+                                            stream=True))
+
+    vm = ViewModel()
+    cm = ConversationModel()
+    svc = ChatService(vm, cm)
+    monkeypatch.setattr(svc, "_ensure_jarvis", lambda: setattr(svc, "_jarvis", _FakeJarvis()))
+
+    svc.send("qué es python")
+    import time
+    t0 = time.monotonic()
+    while svc.busy and time.monotonic() - t0 < 5:
+        _app.processEvents()
+        time.sleep(0.02)
+    _app.processEvents()
+
+    assert cm.rowCount() == 2
+    i = cm.index(1, 0)
+    assert cm.data(i, ROLE_STREAMING) is False
+    assert cm.data(i, ROLE_TEXT) == "Python es un lenguaje."
+    assert vm.metrics.get("latencyMs") is not None
+    assert vm.state in ("idle", "thinking")
+
+
 def test_qml_engine_loads_without_warnings():
     from jarvis_local.ui.hud.app import create_engine
 

@@ -159,3 +159,57 @@ lee Ollama de verdad en esta máquina: `online=True model=qwen2.5:3b`,
 `test/test_ui_hud.py` (6 tests): validación de estados, merge de `metrics`,
 clamp/clear de audio, forma de `sample_all()` (None o tipo correcto, nunca
 aleatorio), y carga de `Main.qml` con 0 warnings. Suite de vista: 12/12 verde.
+
+---
+
+## FASE 4 — Conversación
+
+### Punto de contacto con el núcleo (`chat_service.py`)
+
+`ChatService` reutiliza `jarvis_local.jarvis.Jarvis` **sin tocarlo**: antes de
+`jarvis.chat(text)` envuelve `jarvis.client` con `_TapClient`, que delega todo en
+el cliente real y sólo en `chat(stream=True)` envuelve el iterador para chivar
+cada token (latencia real hasta la 1.ª palabra, tokens/s medidos). Se restaura
+el cliente en `finally`. El resto de la cascada (respuestas rápidas, parser,
+agente, memoria, persistencia, redacción de secretos) queda intacta; sus
+respuestas llegan completas, no por streaming. Todo el trabajo va en un hilo;
+modelo y ViewModel se tocan por señales en cola.
+
+Emite a: `ConversationModel` (turnos), `Vm.token` (canal del contrato),
+`Vm.push_metrics` (`latencyMs`, `tokensPerSecond`), `Vm.set_state`
+(`thinking`→`idle`, o `alert` si excepción). `Chat.busy` (Q_PROPERTY) bloquea la
+entrada mientras genera.
+
+### Vista
+
+- `conversation_model.py` — `ConversationModel(QAbstractListModel)` de turnos
+  (roles channel/body/timestamp/streaming/meta/kind).
+- `qml/Conversation.qml` — `ListView`; **autoscroll anclado** que se libera al
+  subir (`stick = atYEnd`) y píldora "volver al final".
+- `qml/Turn.qml` — canaleta izquierda: etiqueta de canal (`USER`/`JARVIS`) +
+  regla vertical alineada al primer renglón. Sin burbujas. Cursor de bloque
+  `▌` mientras `streaming` (parpadeo por `SequentialAnimation`, no timer); al
+  cerrar el turno, desaparece. Metadatos en color de metadato, tamaño 12.
+- `qml/MarkdownBody.qml` — divide por vallas ``` ```; prosa → `Text` con
+  `MarkdownText`, `lineHeight 1.6`, medida ~78 car.; código → `CodeBlock`.
+  Valla impar (streaming) ⇒ resto tratado como código en curso.
+- `qml/CodeBlock.qml` + `qml/hl.js` — mono, fondo +3% de blanco, resaltado
+  ligero (comentarios/cadenas/números/keywords, sin lexer real) y botón
+  **copiar**.
+
+### Contraste medido (texto sobre `bgVoid #04070D`)
+
+| color | ratio | AA (4.5:1) |
+|---|---|---|
+| `textPrimary #C9D6E4` (mensaje) | ~13.7:1 | ✔ holgado |
+| `textSecondary #7E8FA3` | ~6.1:1 | ✔ |
+| `textMeta #4A5A6E` (timestamp/meta) | ~2.8:1 | color de la paleta del brief; texto no esencial (umbral incidental ~3:1) |
+
+### Verificación
+
+QML compila con **0 warnings**. `ConversationModel` streaming, `_TapClient`
+(tap real de tokens + passthrough sin stream) y `ChatService` (turno completo
+con núcleo falso: 2 turnos, texto ensamblado, `latencyMs` fijada, vuelta a
+`idle`) cubiertos en `test/test_ui_hud.py` (8 tests, verde). El turno real
+contra Ollama en CPU tarda >2 min (construcción de `Jarvis` + generación):
+pendiente de prueba en pantalla por el usuario.
