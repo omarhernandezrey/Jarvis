@@ -17,7 +17,7 @@ import tkinter.font as tkfont
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from jarvis_local.config import BASE_DIR  # noqa: E402
+from jarvis_local.config import BASE_DIR, get_config  # noqa: E402
 
 # ═══════════════════════════════════════════════════════════
 # PALETA — HOLOGRAMA / ARC REACTOR
@@ -98,33 +98,79 @@ def _rand_hex(n=4):
 # BACKEND
 # ═══════════════════════════════════════════════════════════
 _jarvis = None
+_backend_ready = False        # True solo tras conectar de verdad con Ollama
+_last_latency_ms = None       # latencia REAL de la ultima respuesta del LLM
+                               # (None hasta que exista una: nunca se simula)
+_live_mic_level = [0.0]       # nivel RMS 0..1 real del microfono mientras
+                               # se graba; lista de 1 elemento para poder
+                               # mutarlo desde el callback de audio sin 'global'
 _result_queue = queue.Queue()
 _voice_buffer, _voice_stream, _voice_lock = [], None, threading.Lock()
 
 
 def _get_jarvis():
-    global _jarvis
+    global _jarvis, _backend_ready
     if _jarvis is None:
         from jarvis_local.jarvis import Jarvis
         _jarvis = Jarvis()
+        _backend_ready = True
     return _jarvis
 
 
 def _chat_async(message: str):
+    global _last_latency_ms
+    t0 = time.monotonic()
     try:
         resp = _get_jarvis().chat(message)
+        _last_latency_ms = round((time.monotonic() - t0) * 1000)
         _result_queue.put(("ok", resp))
     except Exception as e:
+        _last_latency_ms = round((time.monotonic() - t0) * 1000)
         _result_queue.put(("error", str(e)))
+
+
+def _mic_available() -> bool:
+    """Hay un microfono real disponible (no asumido)."""
+    try:
+        import sounddevice as sd
+        return sd.query_devices(kind="input") is not None
+    except Exception:
+        return False
+
+
+def _read_cpu_mem():
+    """(cpu%, mem%) reales via psutil (ya es dependencia del proyecto, ver
+    tools/system_info.py), o (None, None) si no hay forma de leerlos --
+    nunca se simulan valores como si fueran reales."""
+    try:
+        import psutil
+        return psutil.cpu_percent(interval=0), psutil.virtual_memory().percent
+    except Exception:
+        return None, None
+
+
+def _count_tools() -> int:
+    """Cantidad real de herramientas registradas en el agente."""
+    try:
+        from jarvis_local.agent.registry import TOOLS
+        return len(TOOLS)
+    except Exception:
+        return 0
 
 
 def _voice_start(sr=16000):
     global _voice_buffer, _voice_stream
     with _voice_lock:
         _voice_buffer = []
+        _live_mic_level[0] = 0.0
+        import numpy as np
         import sounddevice as sd
         def _cb(indata, frames, time_info, status):
             _voice_buffer.append(indata.copy())
+            # RMS real del bloque (0..1) para que el visualizador reaccione
+            # a la voz de verdad en vez de simular una onda.
+            rms = float(np.sqrt(np.mean(indata.astype("float32") ** 2))) / 32768.0
+            _live_mic_level[0] = min(1.0, rms * 6.0)  # ganancia visual
         _voice_stream = sd.InputStream(samplerate=sr, channels=1, dtype="int16", callback=_cb, blocksize=1024)
         _voice_stream.start()
 
@@ -135,6 +181,7 @@ def _voice_stop():
         if _voice_stream is None:
             return None
         _voice_stream.stop(); _voice_stream.close(); _voice_stream = None
+        _live_mic_level[0] = 0.0
         if not _voice_buffer:
             return None
         import numpy as np
@@ -200,7 +247,10 @@ class JarvisDesktop:
         self._resize_after = None
         self._quick_cols = 0
         self._typewriter_job = None
+        self._minimized = False   # pausa animaciones pesadas si la ventana esta minimizada
 
+        self.root.bind("<Unmap>", self._on_unmap)
+        self.root.bind("<Map>", self._on_map)
         self.root.bind("<KeyPress-space>", self._on_space_press)
         self.root.bind("<KeyRelease-space>", self._on_space_release)
         self.root.bind("<KeyRelease-Control_L>", self._on_ctrl_release)
@@ -269,6 +319,16 @@ class JarvisDesktop:
 
     def _on_ctrl_wheel(self, event):
         self._zoom_by(0.1 if event.delta > 0 else -0.1)
+
+    def _on_unmap(self, event):
+        # <Unmap> tambien llega para sub-widgets al ocultarse; solo importa
+        # la ventana raiz (minimizada) para pausar animaciones de verdad.
+        if event.widget is self.root:
+            self._minimized = True
+
+    def _on_map(self, event):
+        if event.widget is self.root:
+            self._minimized = False
 
     # ═══════════════════════════════════════════════════════
     # SECUENCIA DE ARRANQUE
@@ -352,10 +412,16 @@ class JarvisDesktop:
         self.wave_canvas.pack(side=tk.LEFT, padx=(10, 0))
 
         right_sb = tk.Frame(self.status_bar, bg=C["titlebar"]); right_sb.pack(side=tk.RIGHT, fill=tk.Y, padx=(0,12))
-        self._dot(right_sb, "OLLAMA", True).pack(side=tk.LEFT, padx=(0,10))
-        self._dot(right_sb, "MIC", True).pack(side=tk.LEFT, padx=(0,10))
+        # Los tres puntos reflejan estado real, no un "on" fijo: OLLAMA solo
+        # se pone verde cuando _get_jarvis() conecto de verdad (ver
+        # _update_status), MIC solo si hay un dispositivo de entrada real.
+        self.st_ollama = self._dot(right_sb, "OLLAMA", _backend_ready)
+        self.st_ollama.pack(side=tk.LEFT, padx=(0,10))
+        self.st_mic = self._dot(right_sb, "MIC", _mic_available())
+        self.st_mic.pack(side=tk.LEFT, padx=(0,10))
         self.st_tts = self._dot(right_sb, "VOZ", True); self.st_tts.pack(side=tk.LEFT, padx=(0,10))
-        tk.Label(right_sb, text="qwen2.5:3b", font=self._F(8),
+        model_name = get_config().get("ollama", {}).get("model", "?")
+        tk.Label(right_sb, text=model_name, font=self._F(8),
                  bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT, padx=(0,12))
         self.tts_btn = tk.Button(right_sb, text="\U0001F50A VOZ ON", font=self._F(8, "bold", mono=False),
                                   bg=C["primary_dim"], fg=C["primary"], activebackground=C["primary_dim"],
@@ -372,6 +438,12 @@ class JarvisDesktop:
         self.zoom_label.bind("<Button-3>", lambda e: self._zoom_reset())
         self._add_tooltip(self.zoom_label,
                            "Zoom: Ctrl+ / Ctrl- / Ctrl+rueda · clic = acercar · clic-derecho = restablecer")
+
+        # Franja de estado secundaria — VOZ / MODELO / MEMORIA / HERRAMIENTAS
+        # / SISTEMA. Se empaqueta ANTES que self.pane (que se expande) para
+        # que el gestor pack le reserve su franja fija abajo del todo, igual
+        # que ya se hace con el input de chat dentro del panel derecho.
+        self._build_info_strip()
 
         # PanedWindow
         self.pane = tk.PanedWindow(self.root, bg=C["border"], sashwidth=2, sashrelief=tk.FLAT, orient=tk.HORIZONTAL)
@@ -516,8 +588,71 @@ class JarvisDesktop:
         c = C["success"] if on else C["danger"]
         d = tk.Canvas(f, width=8, height=8, bg=C["titlebar"], highlightthickness=0)
         d.create_oval(1, 1, 7, 7, fill=c, outline=""); d.pack(side=tk.LEFT, padx=(0,4))
-        tk.Label(f, text=text, font=self._F(8), bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT)
+        lbl = tk.Label(f, text=text, font=self._F(8), bg=C["titlebar"], fg=C["text_dim"])
+        lbl.pack(side=tk.LEFT)
+        f.dot_canvas, f.dot_label, f.label_on, f.label_off = d, lbl, text, text
         return f
+
+    def _set_dot(self, dot_frame, on, label_on=None, label_off=None):
+        """Actualiza un indicador creado con _dot() a estado real on/off."""
+        dot_frame.dot_canvas.delete("all")
+        dot_frame.dot_canvas.create_oval(1, 1, 7, 7, fill=C["success"] if on else C["danger"], outline="")
+        text = (label_on or dot_frame.label_on) if on else (label_off or dot_frame.label_off)
+        dot_frame.dot_label.config(text=text)
+
+    # ═══════════════════════════════════════════════════════
+    # FRANJA DE ESTADO — VOZ / MODELO / MEMORIA / HERRAMIENTAS / SISTEMA
+    # (todo dato mostrado aqui viene de una fuente real, ver _update_info_strip)
+    # ═══════════════════════════════════════════════════════
+    def _chip(self, parent, label):
+        f = tk.Frame(parent, bg=C["titlebar"])
+        tk.Label(f, text=label, font=self._F(7), bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT)
+        val = tk.Label(f, text="…", font=self._F(7, "bold"), bg=C["titlebar"], fg=C["text_dim"])
+        val.pack(side=tk.LEFT, padx=(4, 0))
+        f.val_label = val
+        return f
+
+    def _build_info_strip(self):
+        strip = tk.Frame(self.root, bg=C["titlebar"], height=26)
+        strip.pack(side=tk.BOTTOM, fill=tk.X)
+        strip.pack_propagate(False)
+        sep = tk.Canvas(strip, height=1, bg=C["titlebar"], highlightthickness=0)
+        sep.pack(side=tk.TOP, fill=tk.X)
+        row = tk.Frame(strip, bg=C["titlebar"]); row.pack(fill=tk.BOTH, expand=True, padx=14)
+        self.chip_voice = self._chip(row, "VOZ")
+        self.chip_model = self._chip(row, "MODELO")
+        self.chip_memory = self._chip(row, "MEMORIA")
+        self.chip_tools = self._chip(row, "HERRAMIENTAS")
+        self.chip_system = self._chip(row, "SISTEMA")
+        for chip in (self.chip_voice, self.chip_model, self.chip_memory,
+                     self.chip_tools, self.chip_system):
+            chip.pack(side=tk.LEFT, padx=(0, 22), pady=4)
+
+    def _update_info_strip(self):
+        if not hasattr(self, "chip_voice"):
+            return
+        cfg = get_config()
+        on_col, off_col = C["success"], C["text_dim"]
+
+        voice_on = self.tts_enabled
+        self.chip_voice.val_label.config(text="LISTA" if voice_on else "OFF",
+                                          fg=on_col if voice_on else off_col)
+
+        model = cfg.get("ollama", {}).get("model", "?")
+        self.chip_model.val_label.config(text=model, fg=C["text"])
+
+        mem_on = bool(cfg.get("memory", {}).get("auto_recall", False))
+        self.chip_memory.val_label.config(text="ACTIVA" if mem_on else "INACTIVA",
+                                           fg=on_col if mem_on else off_col)
+
+        n_tools = _count_tools()
+        agent_on = bool(cfg.get("agent", {}).get("enabled", False))
+        self.chip_tools.val_label.config(
+            text=f"{n_tools} LISTAS" if agent_on else f"{n_tools} (parser)",
+            fg=on_col if agent_on else off_col)
+
+        self.chip_system.val_label.config(text="ONLINE" if _backend_ready else "SIN CONEXIÓN",
+                                           fg=on_col if _backend_ready else C["danger"])
 
     def _hover(self, widget, normal_bg, hover_bg):
         widget.bind("<Enter>", lambda e: widget.config(bg=hover_bg))
@@ -573,6 +708,9 @@ class JarvisDesktop:
 
     def _animate_particles(self):
         if not hasattr(self, 'bg_canvas'):
+            return
+        if self._minimized:
+            self.root.after(400, self._animate_particles)
             return
         w = self.root.winfo_width(); h = self.root.winfo_height()
         if not self._particles:
@@ -664,6 +802,7 @@ class JarvisDesktop:
             "processing": C["gold"],
             "listening": C["danger"],
             "speaking": C["success"],
+            "error": C["danger"],
         }.get(self.orb_state, C["primary"])
 
     def _start_animations(self):
@@ -677,8 +816,18 @@ class JarvisDesktop:
         self._cursor_blink()
         self._redraw_huds()
 
+    # Multiplicador de velocidad de rotacion por estado: reposo debe ser
+    # "extremadamente sutil" (monitoreando), no agitado; procesando/error
+    # transmiten mas actividad computacional.
+    _ORB_SPEED = {"idle": 0.5, "processing": 1.35, "listening": 1.0,
+                  "speaking": 1.1, "error": 1.0}
+
     def _animate_orb(self):
-        self.orb_angle = (self.orb_angle + 1.6) % 360
+        if self._minimized:
+            self.root.after(200, self._animate_orb)
+            return
+        state = self.orb_state
+        self.orb_angle = (self.orb_angle + 1.6 * self._ORB_SPEED.get(state, 1.0)) % 360
         self._pulse_phase += 0.09
         oc = self.orb_canvas
         oc.delete("live")
@@ -722,15 +871,36 @@ class JarvisDesktop:
             oc.create_oval(ex-2.4, ey-2.4, ex+2.4, ey+2.4, fill=C["white"], outline="", tags="live")
             oc.create_oval(ex-4.5, ey-4.5, ex+4.5, ey+4.5, outline=self._dim(base,0.4), tags="live")
 
-        # Núcleo con respiración (breathing)
-        breathe = 1.0 + 0.10*math.sin(self._pulse_phase)
-        r4 = R * 0.22 * breathe
-        oc.create_oval(cx-r4*1.7, cy-r4*1.7, cx+r4*1.7, cy+r4*1.7,
-                        outline=self._dim(base, 0.25), tags="live")
-        oc.create_oval(cx-r4, cy-r4, cx+r4, cy+r4,
-                        fill=self._dim(base, 0.85), outline=base, width=1, tags="live")
-        oc.create_oval(cx-r4*0.45, cy-r4*0.45, cx+r4*0.45, cy+r4*0.45,
-                        fill=C["white"], outline="", tags="live")
+        if state == "error":
+            # Pulso duro tipo alarma (on/off), distinto de la respiracion
+            # suave del resto de estados: asi "escuchando" y "alerta" -que
+            # comparten el rojo de C['danger']- se distinguen a simple vista.
+            hard = int(self._pulse_phase * 3) % 2 == 0
+            r4 = R * (0.26 if hard else 0.18)
+            oc.create_oval(cx-r4*1.6, cy-r4*1.6, cx+r4*1.6, cy+r4*1.6,
+                            outline=base, width=2, tags="live")
+            oc.create_oval(cx-r4, cy-r4, cx+r4, cy+r4,
+                            fill=base if hard else self._dim(base, 0.35), outline=base, width=1, tags="live")
+            oc.create_text(cx, cy, text="!", fill=C["white"] if hard else base,
+                            font=self._F(int(max(10, R*0.32)), "bold", mono=False), tags="live")
+        else:
+            # Nucleo con respiracion (breathing). En "listening" reacciona al
+            # nivel real del microfono (ver _live_mic_level); en el resto usa
+            # un pulso suave por sinusoide -- sin aleatoriedad, deliberado.
+            if state == "listening":
+                target = 1.0 + _live_mic_level[0] * 0.55
+                self._mic_breathe = getattr(self, "_mic_breathe", 1.0) * 0.7 + target * 0.3
+                breathe = self._mic_breathe
+            else:
+                amp = 0.06 if state == "idle" else 0.10
+                breathe = 1.0 + amp * math.sin(self._pulse_phase)
+            r4 = R * 0.22 * breathe
+            oc.create_oval(cx-r4*1.7, cy-r4*1.7, cx+r4*1.7, cy+r4*1.7,
+                            outline=self._dim(base, 0.25), tags="live")
+            oc.create_oval(cx-r4, cy-r4, cx+r4, cy+r4,
+                            fill=self._dim(base, 0.85), outline=base, width=1, tags="live")
+            oc.create_oval(cx-r4*0.45, cy-r4*0.45, cx+r4*0.45, cy+r4*0.45,
+                            fill=C["white"], outline="", tags="live")
 
         self.root.after(33, self._animate_orb)
 
@@ -758,14 +928,29 @@ class JarvisDesktop:
     # VISUALIZADOR DE VOZ (barras animadas — sensación de vida)
     # ═══════════════════════════════════════════════════════
     def _animate_wave(self):
+        if self._minimized:
+            self.root.after(300, self._animate_wave)
+            return
         wc = self.wave_canvas
         wc.delete("all")
         w, h = 110, 26
         bars = 13
-        # Escala de amplitud por estado: JARVIS hablando > escuchándote > procesando > reposo
         state = self.orb_state
-        if state == "listening":       # tú hablas — el más grande y agitado
-            color, scale, speed, jitter = C["danger"], 0.98, 7.5, 4.0
+        if state == "error":
+            # Estrobo duro de alarma: todas las barras al mismo nivel,
+            # parpadeando juntas -- distinto a proposito del oleaje organico
+            # del resto de estados, para que un error se note de inmediato.
+            hard = int(self._pulse_phase * 3) % 2 == 0
+            amp = (h - 2) if hard else h * 0.15
+            for i in range(bars):
+                x = i * (w/bars) + 3
+                wc.create_line(x, h/2 - amp/2, x, h/2 + amp/2, fill=C["danger"], width=3, capstyle=tk.ROUND)
+            self.root.after(55, self._animate_wave)
+            return
+        # Escala de amplitud por estado: JARVIS hablando > escuchándote > procesando > reposo
+        if state == "listening":       # tú hablas — reacciona al nivel REAL del microfono
+            color, speed, jitter = C["danger"], 7.5, 4.0
+            scale = 0.25 + _live_mic_level[0] * 0.85
         elif state == "speaking":      # JARVIS habla — grande y fluido
             color, scale, speed, jitter = C["success"], 0.88, 5.2, 1.8
         elif state == "processing":
@@ -781,16 +966,18 @@ class JarvisDesktop:
         self.root.after(55, self._animate_wave)
 
     # ═══════════════════════════════════════════════════════
-    # TELEMETRÍA DECORATIVA (ambiente "sci-fi vivo")
+    # TELEMETRÍA — CPU/MEM reales (psutil) y latencia real del ultimo
+    # turno con el LLM. Nunca se simulan: si no hay dato, se muestra "--".
     # ═══════════════════════════════════════════════════════
     def _animate_telemetry(self):
-        cpu = random.randint(4, 18) if not self.is_processing else random.randint(35, 78)
-        mem = random.randint(28, 41)
-        lat = random.randint(8, 46)
-        txt = f"CPU {cpu:>2}%   MEM {mem:>2}%   LAT {lat:>3}ms"
+        cpu, mem = _read_cpu_mem()
+        cpu_s = f"{cpu:>2.0f}%" if cpu is not None else "--"
+        mem_s = f"{mem:>2.0f}%" if mem is not None else "--"
+        lat_s = f"{_last_latency_ms}ms" if _last_latency_ms is not None else "--"
+        txt = f"CPU {cpu_s}   MEM {mem_s}   LAT {lat_s}"
         with contextlib.suppress(Exception):
             self.telemetry.config(text=txt)
-        self.root.after(1400, self._animate_telemetry)
+        self.root.after(4000 if self._minimized else 1400, self._animate_telemetry)
 
     # ═══════════════════════════════════════════════════════
     # TERMINAL — enlace neural (chat estilo consola holográfica)
@@ -911,12 +1098,24 @@ class JarvisDesktop:
         self.root.after(500, self._cursor_blink)
 
     def _animate_termbar(self):
+        if self._minimized:
+            self.root.after(300, self._animate_termbar)
+            return
         tb = self.term_bar
         tb.delete("all")
         w, h, n = 130, 22, 20
         state = self.orb_state
-        if state == "listening":       # tú hablas
-            base, scale, speed, jitter = C["danger"], 1.0, 0.55, 0.18
+        if state == "error":
+            hard = int(self._pulse_phase * 3) % 2 == 0
+            hgt = (h - 2) if hard else 3
+            for k in range(n):
+                x = k * (w / n) + 1
+                tb.create_line(x, h - hgt, x, h, fill=C["danger"], width=3)
+            self.root.after(70, self._animate_termbar)
+            return
+        if state == "listening":       # tú hablas — nivel real del microfono
+            base, speed, jitter = C["danger"], 0.55, 0.18
+            scale = 0.2 + _live_mic_level[0] * 0.9
         elif state == "speaking":      # JARVIS habla
             base, scale, speed, jitter = C["success"], 0.9, 0.42, 0.1
         elif state == "processing":
@@ -1058,14 +1257,15 @@ class JarvisDesktop:
             self._hover(self.tts_btn, C["surface2"], C["border"])
 
     def _update_status(self):
-        try:
+        with contextlib.suppress(Exception):
             from jarvis_local.voice.tts import is_available as tts_ok
-            ok = tts_ok(); color = C["success"] if ok else C["danger"]
-            c = self.st_tts.winfo_children()[0]; c.delete("all")
-            c.create_oval(1, 1, 7, 7, fill=color, outline="")
-            self.st_tts.winfo_children()[1].config(text="VOZ" if ok else "VOZ OFF")
-        except Exception: pass
-        self.root.after(15000, self._update_status)
+            self._set_dot(self.st_tts, tts_ok(), "VOZ", "VOZ OFF")
+        with contextlib.suppress(Exception):
+            self._set_dot(self.st_ollama, _backend_ready)
+        with contextlib.suppress(Exception):
+            self._set_dot(self.st_mic, _mic_available())
+        self._update_info_strip()
+        self.root.after(4000 if self._minimized else 15000, self._update_status)
 
     def _poll_results(self):
         try:
@@ -1089,7 +1289,8 @@ class JarvisDesktop:
                         self._speaking = False
                         self.orb_state = "idle"
                 elif kind == "error":
-                    self._typing_hide(); self._sys(f"Error: {data}"); self._reset_ui()
+                    self._typing_hide(); self._sys(f"Error: {data}")
+                    self._reset_ui(); self._trigger_alert()
                 elif kind == "voice":
                     self._reset_voice()
                     if data: self._send_message(data)
@@ -1115,6 +1316,20 @@ class JarvisDesktop:
         self.voice_btn.config(state=tk.NORMAL, text="\U0001F399  HABLAR", fg=C["primary"], bg=C["primary_dim"])
         self.orb_label.config(text=spaced("LISTO"), fg=C["primary"])
         self.sb_status.config(text="   │  Sistema operativo", fg=C["text_dim"])
+
+    def _trigger_alert(self):
+        """Estado visual de ALERTA DEL SISTEMA (antes un error no cambiaba
+        nada visualmente, solo imprimia texto en el chat)."""
+        self.orb_state = "error"
+        self.orb_label.config(text=spaced("ALERTA"), fg=C["danger"])
+        self.sb_status.config(text="   │  Alerta del sistema", fg=C["danger"])
+        self.root.after(2500, self._clear_alert)
+
+    def _clear_alert(self):
+        if self.orb_state == "error":
+            self.orb_state = "idle"
+            self.orb_label.config(text=spaced("LISTO"), fg=C["primary"])
+            self.sb_status.config(text="   │  Sistema operativo", fg=C["text_dim"])
 
     def _on_close(self):
         self.root.destroy()
