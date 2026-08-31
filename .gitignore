@@ -44,3 +44,4 @@ data/.spotify_cache
 # Estado interno de herramientas de Claude Code (no es parte del proyecto)
 managed_context/
 test_suite_analysis/
+scratch_preview/

@@ -208,9 +208,9 @@ def _core_loop(root):
     return loops[0]
 
 
-def test_single_animation_loop_capped_at_30fps():
-    """Fase 7: un único bucle de animación del núcleo, con techo de 30 fps
-    (Timer a 33 ms). Nada de FrameAnimation a refresco de pantalla."""
+def test_single_frame_animation_driver():
+    """Addendum §7: un único FrameAnimation global mueve el núcleo; cero
+    Timers sueltos animando en el árbol del núcleo."""
     from PySide6.QtCore import QObject
 
     from jarvis_local.ui.hud.app import create_engine
@@ -218,12 +218,10 @@ def test_single_animation_loop_capped_at_30fps():
     engine = create_engine(_app, ViewModel())
     try:
         win = engine.rootObjects()[0]
-        loop = _core_loop(win)
-        assert loop.property("interval") in (33, 50)   # techo 30 fps; 20 en reposo
-        assert loop.property("repeat") is True
         fas = [o for o in win.findChildren(QObject)
                if "FrameAnimation" in o.metaObject().className()]
-        assert fas == [], "no debe haber FrameAnimation (techo 30 fps por Timer)"
+        assert len(fas) == 1, f"esperaba 1 FrameAnimation, hay {len(fas)}"
+        assert fas[0].objectName() == "coreLoop"
     finally:
         engine._runtime.shutdown()  # noqa: SLF001
         engine.deleteLater()
@@ -250,22 +248,27 @@ def test_loop_pauses_when_not_running():
         engine.deleteLater()
 
 
-def test_reduced_motion_zeros_particle_density():
+def test_reduced_motion_freezes_core_and_shader():
     from PySide6.QtCore import QObject
+    from PySide6.QtQuick import QQuickItem
 
     from jarvis_local.ui.hud.app import create_engine
 
     engine = create_engine(_app, ViewModel())
     try:
         win = engine.rootObjects()[0]
-        cf = next(o for o in win.findChildren(QObject)
-                  if "CoreField" in o.metaObject().className())
-        cf.setProperty("coreState", "thinking")
+        core = win.findChild(QQuickItem, "coreZone").childItems()[0]
+        shader = next(o for o in win.findChildren(QObject)
+                      if "CoreShader" in o.metaObject().className())
+        core.setProperty("coreState", "idle")
+        core.setProperty("reducedMotion", False)
         _app.processEvents()
-        assert cf.property("particleDensity") == 1.0
-        cf.setProperty("reducedMotion", True)
+        assert core.property("loopActive") is True
+        core.setProperty("reducedMotion", True)
         _app.processEvents()
-        assert cf.property("particleDensity") == 0.0
+        # en idle + reducido el bucle se detiene y el shader marca reduced=1
+        assert core.property("loopActive") is False
+        assert shader.property("reduced") == 1
     finally:
         engine._runtime.shutdown()  # noqa: SLF001
         engine.deleteLater()

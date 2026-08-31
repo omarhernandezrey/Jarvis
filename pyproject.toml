@@ -47,8 +47,14 @@ packages = [
     "jarvis_local.memory_context",
     "jarvis_local.ollama_client",
     "jarvis_local.ui",
+    "jarvis_local.ui.hud",
+    "jarvis_local.ui.hud.shaders",
     "jarvis_local.eval",
 ]
+
+[tool.setuptools.package-data]
+"jarvis_local.ui.hud" = ["qml/*.qml", "qml/*.js", "qml/qmldir"]
+"jarvis_local.ui.hud.shaders" = ["*.qsb", "*.frag", "*.vert"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

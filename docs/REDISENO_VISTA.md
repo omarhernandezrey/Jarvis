@@ -415,3 +415,38 @@ Plan de ejecución (una fase por sesión, commit + STOP al final de cada una):
   (`ui/server.py` y `ui/dashboard.py` son la interfaz web, intactas).
   `ruff check .` limpio. `test_ui_hud` + `test_ui_server` + `test_cli` +
   `test_startup` en verde (35 tests).
+
+## Fase 2 (addendum) — el núcleo a GPU (ShaderEffect)
+
+**Migrado de `Canvas` (raster CPU) a `ShaderEffect` + fragment shader compilado.**
+
+- `jarvis_local/ui/hud/shaders/core.frag` (+ `.qsb` versionado) — compilado con
+  `pyside6-qsb` vía `shaders/build.py`. Contenido del shader:
+  1. **Campo de interferencia**: dos espirales radiales contrarrotantes; su
+     superposición (moiré) *es* la visualización — el dato real modula la
+     **fase** (`energy`, `flux`, `bandLow-bandHigh`), no la amplitud. Sin dato →
+     estado base.
+  2. **Volumen interior por raymarch** de un SDF (esfera + desplazamiento por
+     ruido 3D), aditivo: es **luz**, no un objeto opaco. Fresnel en el borde +
+     centro caliente + plasma interno escalado por energía.
+  3. **Barrido especular anisótropo** (no glow uniforme): highlight estirado por
+     la tangente que recorre la superficie.
+  Uniforms por estado: `tint/ringOpen/emission/fragmented/dashed` + `reduced`,
+  `compact` (insignia, sin volumen).
+- `qml/CoreShader.qml` — envoltorio: `layer.enabled`, `layer.samples: 2`,
+  `layer.live: loopActive` (sin foco el layer se congela → 0 trabajo de GPU).
+- `qml/Core.qml` reescrito: máquina de estados (cross-fade 220 ms) + traducción
+  de datos reales del ViewModel a uniforms, movido por **un único
+  `FrameAnimation`** global (`objectName: coreLoop`). Borrado `CoreField.qml`.
+- `qml/Main.qml`: registra `GraphicsInfo.api` en el log y muestra un aviso en
+  pantalla si el backend cae en **software** (no se finge GPU).
+- `scripts/core_preview.py` + `qml/CorePreview.qml` — ventana aislada del núcleo
+  (teclas 1–6), `--grab` renderiza un PNG por estado. Usada para validar la
+  dirección antes de seguir.
+
+**Medición (GPU real, HD 520, núcleo 560 px aislado):** ~99 fps sin cap,
+**~27 % CPU**. Por encima del objetivo ≤5 % de la §7; en la app el núcleo es
+menor y la Fase 7 (addendum) trae bloom, presupuesto real y ruta de degradación.
+Sin bloom todavía (es la Fase 3).
+
+Tests de vista: 16/16 verde. `ruff check .` limpio.

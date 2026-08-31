@@ -197,6 +197,39 @@ Window {
                           "4": "speaking", "5": "alert", "6": "offline" }
             if (map[e.text] !== undefined && Vm) Vm.set_state(map[e.text])
         }
+
+        // aviso honesto si el backend de render cae en software (addendum §2)
+        Rectangle {
+            id: swBanner
+            visible: false
+            z: 999
+            anchors { top: parent.top; horizontalCenter: parent.horizontalCenter }
+            width: swText.implicitWidth + Design.sp(6)
+            height: swText.implicitHeight + Design.sp(3)
+            color: Qt.rgba(Design.warn.r, Design.warn.g, Design.warn.b, 0.14)
+            border.width: 1
+            border.color: Design.warn
+            Text {
+                id: swText
+                anchors.centerIn: parent
+                text: "render por software — sin GPU; el núcleo se verá degradado"
+                color: Design.warn
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMeta
+            }
+        }
+
+        Component.onCompleted: {
+            var api = GraphicsInfo.api
+            var name = api === GraphicsInfo.Software ? "Software"
+                : api === GraphicsInfo.OpenGL ? "OpenGL"
+                : api === GraphicsInfo.Direct3D11 ? "Direct3D11"
+                : api === GraphicsInfo.Vulkan ? "Vulkan"
+                : api === GraphicsInfo.Metal ? "Metal"
+                : api === GraphicsInfo.Null ? "Null" : ("api=" + api)
+            console.log("[hud] RHI backend:", name)
+            swBanner.visible = (api === GraphicsInfo.Software || api === GraphicsInfo.Null)
+        }
     }
 
     Component.onCompleted: win.requestActivate()
