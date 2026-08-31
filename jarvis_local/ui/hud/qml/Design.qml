@@ -135,9 +135,14 @@ QtObject {
     function sp(n) { return n * d.unit }
 
     // ── RADIOS ───────────────────────────────────────────────────────────────
-    // No hay un radio único para todo: 2px en HUD, 10px en superficies.
+    // No hay un radio único para todo: 2px en HUD, 10px en superficies,
+    // 12px en la propia ventana (sin marco del SO).
     readonly property int radiusHud:     2
     readonly property int radiusSurface: 10
+    readonly property int radiusWindow:  12
+
+    // Canaleta para la sombra proyectada de la ventana sin marco.
+    readonly property int windowShadowGutter: 22
 
     // ── MOTION ───────────────────────────────────────────────────────────────
     readonly property int durFast: 140

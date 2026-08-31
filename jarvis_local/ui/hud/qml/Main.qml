@@ -1,14 +1,15 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Effects
 import "."
 
 // Composición del HUD.
-//  · Responsive por reorganización (4 modos): wide ≥1600 (HUD lateral | núcleo
-//    | conversación) · mid 1100–1599 (HUD en banda) · narrow <1100 (una
-//    columna) · badge alto <720 (núcleo insignia). Cero solapes / overflow;
-//    la barra de comando siempre alcanzable.
-//  · Addendum §3/§7: un ÚNICO FrameAnimation global mueve `tick`; la atmósfera
-//    (viñeta/grano/aberración) se aplica como `layer.effect` de toda la escena.
+//  · Ventana SIN marco del SO (addendum §8.1): chrome propio, esquinas a 12px,
+//    sombra proyectada, redimensionado por el compositor.
+//  · Responsive por reorganización (4 modos): wide ≥1600 · mid 1100–1599 ·
+//    narrow <1100 · badge alto <720. Cero solapes / overflow.
+//  · Un ÚNICO FrameAnimation global mueve `tick`; la atmósfera se aplica como
+//    `layer.effect` de toda la escena (y redondea las esquinas).
 Window {
     id: win
     width: 1360
@@ -16,16 +17,35 @@ Window {
     minimumWidth: 380
     minimumHeight: 360
     visible: true
-    color: Design.bgVoid
+    color: "transparent"
+    flags: Qt.Window | Qt.FramelessWindowHint
     title: "J.A.R.V.I.S"
+
+    readonly property bool maxed: visibility === Window.Maximized
+    readonly property int gutter: maxed ? 0 : Design.windowShadowGutter
 
     property real pointerX: 0
     property real pointerY: 0
+
+    // sombra proyectada (el compositor no la da sin decoración del SO)
+    MultiEffect {
+        anchors.fill: rootItem
+        source: rootItem
+        visible: !win.maxed
+        shadowEnabled: true
+        shadowColor: "#000000"
+        shadowOpacity: 0.5
+        shadowBlur: 1.0
+        blurMax: 40
+        shadowVerticalOffset: 8
+        autoPaddingEnabled: true
+    }
 
     Item {
         id: rootItem
         objectName: "rootItem"
         anchors.fill: parent
+        anchors.margins: win.gutter
         focus: true
 
         // ── reloj y actividad (addendum §3 y §7) ─────────────────────────
@@ -80,8 +100,16 @@ Window {
 
         // atmósfera global: con foco + movimiento y sin degradar
         readonly property bool atmosphereOn: motionActive && !degraded
-        layer.enabled: rootItem.atmosphereOn
-        layer.effect: Atmosphere { time: rootItem.grainTick }
+        // el layer va SIEMPRE activo (redondea las esquinas de la ventana sin
+        // marco); cuando `atmosphereOn` es falso, el shader queda casi neutro.
+        layer.enabled: true
+        layer.effect: Atmosphere {
+            time: rootItem.grainTick
+            cornerRadius: win.maxed ? 0 : Design.radiusWindow
+            grainAmt: rootItem.atmosphereOn ? 0.026 : 0.0
+            aberration: rootItem.atmosphereOn ? 1.2 : 0.0
+            vignette: rootItem.atmosphereOn ? 0.30 : 0.10
+        }
 
         // alcance de la luz del núcleo, en función del tamaño de la ventana
         Binding {
@@ -325,6 +353,13 @@ Window {
                                          || api === GraphicsInfo.Null)
             swBanner.visible = rootItem._softwareBackend
         }
+    }
+
+    // chrome propio: arrastre, controles, redimensionado por el compositor
+    WindowChrome {
+        win: win
+        anchors.fill: parent
+        z: 500
     }
 
     Component.onCompleted: win.requestActivate()

@@ -14,6 +14,7 @@ layout(std140, binding = 0) uniform buf {
     float grainAmt;     // 0..~0.06
     float vignette;     // 0..~0.5
     float aberration;   // px máximos en la esquina
+    float cornerRadius; // px — esquinas de la ventana sin marco (0 = recta)
     vec2  texel;        // 1.0 / resolución
 };
 layout(binding = 1) uniform sampler2D source;
@@ -43,5 +44,15 @@ void main() {
     float g = (hash21(gl_FragCoord.xy + time * 411.0 + 0.5) - 0.5) * grainAmt;
     col += g;
 
-    fragColor = vec4(col, gg.a) * qt_Opacity;
+    // esquinas redondeadas de la ventana sin marco (SDF de caja redondeada)
+    float a = gg.a;
+    if (cornerRadius > 0.5) {
+        vec2 res = 1.0 / texel;
+        vec2 p = (uv - 0.5) * res;
+        vec2 q = abs(p) - (res * 0.5 - cornerRadius);
+        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - cornerRadius;
+        a *= 1.0 - smoothstep(-1.0, 1.0, d);
+    }
+
+    fragColor = vec4(col, a) * qt_Opacity;
 }

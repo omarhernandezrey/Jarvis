@@ -626,3 +626,29 @@ vsync (60) y la CPU baja en proporción (~40 %).
 paran el bucle en reposo y el shader recibe `reduced=1`.
 
 `ruff check .` limpio · **suite completa en verde** · 18 tests de vista.
+
+## Fase 8.1 (addendum) — ventana sin marco
+
+- `Window`: `flags: Qt.Window | Qt.FramelessWindowHint`, `color: "transparent"`.
+  Sin barra de título del SO.
+- `qml/WindowChrome.qml` — chrome propio:
+  · zona de arrastre en la banda del HUD → `win.startSystemMove()`; doble clic
+    alterna maximizar.
+  · controles de ventana (min / max·restore / close) trazados a **1.5px**, sin
+    relleno ni emojis (`qml/WinButton.qml`), alineados a la rejilla del HUD.
+  · 8 zonas en la canaleta → `win.startSystemResize(<Qt.Edges>)` (los 4 bordes
+    y las 4 esquinas), con `cursorShape` correcto. Inactivas al maximizar.
+- Esquinas del contenido a **12px** (`Design.radiusWindow`): la máscara la
+  aplica el shader de atmósfera (SDF de caja redondeada sobre el alpha), así
+  que el `layer` va siempre activo; cuando la atmósfera "está apagada"
+  (degradado/sin foco) el shader queda casi neutro (grano/aberración a 0).
+- Canaleta de sombra (`Design.windowShadowGutter = 22`) + `MultiEffect` de
+  sombra proyectada (el compositor no la da sin decoración del SO). 0 al
+  maximizar.
+
+Verificado: 0 warnings de QML · el flag frameless aplica · captura en GPU
+muestra sin barra de título, esquinas redondeadas y controles propios ·
+`ruff check .` limpio · 18 tests de vista en verde. (Suite completa: verde
+salvo `test_reminders.py::test_alarma_suena`, un test de temporización de
+alarma ajeno a la vista que falla sólo bajo carga concurrente del equipo y
+pasa aislado — no se ha tocado nada de reminders.)
