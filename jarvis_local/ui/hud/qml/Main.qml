@@ -56,15 +56,27 @@ Window {
         onExited: { win.pointerX = 0; win.pointerY = 0 }
     }
 
+    Hud {
+        id: hudBand
+        anchors { top: parent.top; left: parent.left; right: parent.right
+                  margins: Design.sp(5) }
+    }
+    Rectangle {
+        anchors { left: parent.left; right: parent.right; top: hudBand.bottom
+                  topMargin: Design.sp(3) }
+        height: 1
+        color: Design.hairline
+    }
+
     Core {
         id: core
         anchors.centerIn: parent
         width: Math.min(parent.width, parent.height) * 0.52
         height: width
-        coreState: Vm.state
-        audioLevel: Vm.audio.level
-        spectrum: Vm.audio.spectrum
-        tokensPerSecond: (Vm.metrics.tokensPerSecond !== undefined) ? Vm.metrics.tokensPerSecond : 0
+        coreState: Vm ? Vm.state : "idle"
+        audioLevel: Vm ? Vm.audio.level : 0
+        spectrum: Vm ? Vm.audio.spectrum : []
+        tokensPerSecond: (Vm && Vm.metrics.tokensPerSecond !== undefined) ? Vm.metrics.tokensPerSecond : 0
         pointer: Qt.point(win.pointerX, win.pointerY)
         loopRunning: win.active          // Fase 7 endurece esto (0 fps sin foco)
     }
@@ -73,11 +85,12 @@ Window {
     Row {
         anchors { left: parent.left; bottom: parent.bottom; margins: Design.sp(6) }
         spacing: Design.sp(2)
-        Rectangle { width: 1; height: label.height; color: core.state === "alert" ? Design.alert
-                    : core.state === "offline" ? Design.textMeta : Design.cyan }
+        Rectangle { width: 1; height: label.height
+                    color: label.text === "alert" ? Design.alert
+                    : label.text === "offline" ? Design.textMeta : Design.cyan }
         Text {
             id: label
-            text: Vm.state
+            text: Vm ? Vm.state : "idle"
             color: Design.textSecondary
             font.family: Design.fontMono
             font.pixelSize: Design.fsSmall

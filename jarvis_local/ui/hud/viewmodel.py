@@ -81,7 +81,13 @@ class ViewModel(QObject):
 
     @Slot(dict)
     def push_metrics(self, data: dict) -> None:
-        self._metrics = dict(data)
+        """Fusiona claves: cada productor (muestreo de sistema, driver de chat)
+        es dueño de las suyas y no pisa las de los demás. Un valor `None`
+        significa 'sin dato' y se conserva como tal (la vista lo pinta con
+        estilo de ausente, nunca lo rellena)."""
+        merged = dict(self._metrics)
+        merged.update(data)
+        self._metrics = merged
         self.metricsChanged.emit()
 
     # ── token / error ──────────────────────────────────────────────────────

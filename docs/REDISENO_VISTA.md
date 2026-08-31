@@ -127,3 +127,35 @@ Recorridos los seis estados en `offscreen` con espectro y `tokensPerSecond`
 simulados: **0 warnings del engine, 0 errores de runtime** en el bucle/`onPaint`.
 `ruff` limpio. Inspección visual en pantalla real: pendiente para el usuario
 (`python -m jarvis_local.ui.hud`).
+
+---
+
+## FASE 3 — HUD con datos reales
+
+`jarvis_local/ui/hud/services.py` — `MetricsService`: hilo propio (no el de la
+GUI: `is_running()` hace I/O de red) que muestrea **cada 2 s** y entrega al
+ViewModel por señal en cola. Además aplica la política **OFFLINE↔IDLE** del
+núcleo desde el health-check real, sin pisar listening/thinking/speaking.
+
+Datos, todos reales o ausentes (nunca inventados):
+
+| celda | fuente |
+|---|---|
+| SISTEMA | `OllamaClient.is_running()` |
+| MODELO | `config.ollama.model` |
+| CPU / RAM | `psutil` (`interval=None`, sin bloqueo) |
+| LATENCIA | turno real del LLM (lo fija el driver de chat, Fase 4) → ausente aquí |
+| TOKENS/S | medido en streaming (Fase 4) → ausente aquí |
+| VOZ | `edge_tts` importable + `sounddevice.query_devices(kind=input)` |
+| MEMORIA | `config.memory.auto_recall` + `len(MemoryStore.list())` |
+| HERRAMIENTAS | `len(registry.TOOLS)` + `config.agent.enabled` |
+
+`qml/HudCell.qml` + `qml/Hud.qml` — banda densa: cada dato = etiqueta pequeña +
+valor grande + regla de 1px, sin recuadro. `absent` ⇒ valor `—` en color de
+metadato. `vertical` reorganiza la banda como columna (Fase 6). `sample_all()`
+lee Ollama de verdad en esta máquina: `online=True model=qwen2.5:3b`,
+`tools=46`, `ping≈400 ms`.
+
+`test/test_ui_hud.py` (6 tests): validación de estados, merge de `metrics`,
+clamp/clear de audio, forma de `sample_all()` (None o tipo correcto, nunca
+aleatorio), y carga de `Main.qml` con 0 warnings. Suite de vista: 12/12 verde.

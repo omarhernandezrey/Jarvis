@@ -36,6 +36,15 @@ def create_engine(app, view_model=None):
     engine.load(QUrl.fromLocalFile(str(_QML_DIR / "Main.qml")))
     # el engine no es dueño del vm: que sobreviva al scope
     engine._vm = vm  # noqa: SLF001
+
+    # muestreo real de sistema / Ollama / voz / memoria / tools (cada 2 s)
+    from jarvis_local.ui.hud.services import MetricsService
+    metrics = MetricsService(vm)
+    if engine.rootObjects():
+        metrics.start()
+        if app is not None:
+            app.aboutToQuit.connect(metrics.stop)
+    engine._metrics = metrics  # noqa: SLF001
     return engine
 
 
@@ -53,7 +62,12 @@ def main() -> int:
         print("[hud] No se pudo cargar la interfaz QML.", file=sys.stderr)
         return 1
 
-    return app.exec()
+    rc = app.exec()
+    # teardown determinista: destruir el árbol QML mientras el ViewModel sigue
+    # vivo evita 'TypeError: property of null' en los bindings finales.
+    engine.deleteLater()
+    del engine
+    return rc
 
 
 if __name__ == "__main__":
