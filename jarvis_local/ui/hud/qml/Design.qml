@@ -63,6 +63,38 @@ QtObject {
                        a.a + (b.a - a.a) * t)
     }
 
+    // ── ILUMINACIÓN GLOBAL (addendum §4) ────────────────────────────────────
+    // El núcleo es la ÚNICA fuente de luz del sistema y esa luz está viva.
+    // Lo alimenta Core.qml (posición en coords de escena, energía real, color
+    // del estado). Cada hairline / borde / panel deriva su color y opacidad de
+    // aquí: nada tiene un color fijo.
+    property point corePos: Qt.point(0, 0)
+    property real  coreEnergy: 0.0          // 0..1 dato real (RMS mic / tok·s / TTS)
+    property color coreTint: azure          // color del estado actual
+    property real  lightRadius: 720         // px: alcance de la luz (lo fija Main)
+
+    // nivel de luz 0..1 en un punto de escena (sx, sy)
+    function lightLevel(sx, sy) {
+        var dx = sx - corePos.x, dy = sy - corePos.y
+        var dn = Math.sqrt(dx * dx + dy * dy) / Math.max(1.0, lightRadius)
+        var f = 1.0 / (1.0 + dn * dn * 2.6)          // caída suave
+        return Math.min(1.0, (0.20 + 0.80 * f) * (0.88 + 0.40 * coreEnergy))
+    }
+    // color de una hairline/borde en ese punto: la base, teñida hacia el núcleo
+    // y con la opacidad modulada por la luz (cerca = brilla, lejos = se apaga).
+    function litHairline(sx, sy) {
+        var l = lightLevel(sx, sy)
+        var t = Math.min(0.65, l * 0.55 + coreEnergy * 0.20)
+        var c = mix(hairline, coreTint, t)
+        return Qt.rgba(c.r, c.g, c.b, hairline.a * (0.62 + 0.95 * l))
+    }
+    // un color base que "respira" con el núcleo (para texto secundario/metadato)
+    function litText(base, sx, sy) {
+        var l = lightLevel(sx, sy)
+        var t = Math.max(0.0, Math.min(0.45, (l - 0.5) * 0.6 + coreEnergy * 0.35))
+        return mix(base, mix(base, coreTint, 0.4), t)
+    }
+
     // ── TIPOGRAFÍA ───────────────────────────────────────────────────────────
     // Verificadas con `fc-list` en la máquina objetivo:
     //   mono → "JetBrainsMono Nerd Font" (instalada)

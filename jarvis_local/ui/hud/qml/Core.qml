@@ -29,6 +29,19 @@ Item {
     readonly property bool loopActive: loopRunning
         && (!reducedMotion || coreState === "listening" || coreState === "speaking")
 
+    // ── iluminación global (addendum §4): el núcleo publica su luz ──────────
+    // Cada hairline/borde/panel del sistema deriva su color de aquí.
+    function _publishPos() {
+        Design.corePos = mapToItem(null, width / 2, height / 2)
+    }
+    onXChanged: _publishPos()
+    onYChanged: _publishPos()
+    onWidthChanged: _publishPos()
+    onHeightChanged: _publishPos()
+    Component.onCompleted: _publishPos()
+    Binding { target: Design; property: "coreEnergy"; value: root._energy }
+    Binding { target: Design; property: "coreTint";   value: root.pTint }
+
     // ── parámetros por estado (interpolados) ──────────────────────────────
     property color pTint: Design.azure
     property real  pRingOpen: 0.0
@@ -134,7 +147,7 @@ Item {
         id: shader
         // margen para que el bloom pueda extenderse más allá del orbe
         anchors.fill: parent
-        anchors.margins: -Math.round(Math.min(parent.width, parent.height) * 0.16)
+        anchors.margins: -Math.round(Math.min(parent.width, parent.height) * 0.13)
         time: root._t
         energy: root._energy
         flux: root._flux

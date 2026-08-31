@@ -133,11 +133,12 @@ void main() {
             float aniso = pow(ndh, 36.0) * exp(-tdh * tdh * 5.0);
             float sweep = pow(0.5 + 0.5 * sin(ang * 2.0 - tm * 0.7), 7.0);
 
-            vec3 glow = tint.rgb * (0.16 + 0.9 * energy) * (0.45 + 0.55 * thick);   // plasma interno
-            glow += mix(tint.rgb, vec3(1.0), 0.5) * fres * (0.7 + 1.6 * energy);     // borde encendido
-            glow += vec3(1.0) * aniso * sweep * (0.6 + energy);                      // material que barre
-            glow += tint.rgb * diff * 0.12;
-            glow += vec3(1.0) * smoothstep(0.12, 0.0, length(p)) * (0.5 + 0.7 * energy); // centro caliente
+            vec3 glow = tint.rgb * (0.14 + 0.7 * energy) * (0.45 + 0.55 * thick);   // plasma interno
+            glow += mix(tint.rgb, vec3(1.0), 0.35) * fres * (0.55 + 1.1 * energy);   // borde encendido
+            glow += vec3(1.0) * aniso * sweep * (0.45 + 0.7 * energy);               // material que barre
+            glow += tint.rgb * diff * 0.10;
+            glow += mix(tint.rgb, vec3(1.0), 0.6)
+                    * smoothstep(0.11, 0.0, length(p)) * (0.28 + 0.5 * energy);      // centro caliente
             glow *= em;
 
             col += glow;                                       // ADITIVO: emite

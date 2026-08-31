@@ -489,3 +489,33 @@ sin bloom/atmósfera, sólo el shader del núcleo) son la Fase 7.
 
 Preview: `python scripts/core_preview.py` incluye ya bloom + atmósfera.
 16 tests de vista en verde · `ruff check .` limpio.
+
+## Fase 4 (addendum) — iluminación global
+
+El núcleo es la **única fuente de luz** del sistema y esa luz está viva.
+
+- `Design.qml` expone: `corePos` (centro del núcleo en coords de escena),
+  `coreEnergy` (0..1, dato real), `coreTint` (color del estado), `lightRadius`
+  (alcance, lo fija Main según el tamaño de ventana). Y las funciones
+  `lightLevel(sx,sy)`, `litHairline(sx,sy)`, `litText(base,sx,sy)`.
+- `Core.qml` **publica** su posición / energía / tinte en `Design` (posición al
+  cambiar el layout; energía y tinte por `Binding`).
+- `qml/Hairline.qml` — línea de 1px cuyo color y opacidad derivan de la
+  distancia al núcleo: cerca brilla y tira a `coreTint`, lejos se apaga.
+  También respira con `coreEnergy`. Usada en las reglas de `Main` y `HudCell`.
+- `CommandBar` — la superficie base se tiñe hacia el núcleo por cercanía; el
+  borde por defecto es `litHairline` (los estados focus/busy/hover mantienen su
+  color propio).
+- `CodeBlock` — superficie que **recibe luz**: gradiente de un solo lado
+  orientado hacia `corePos` + borde `litHairline`.
+- La etiqueta de estado (texto secundario) respira con `coreEnergy` vía
+  `litText`.
+
+**Verificación:** 0 warnings de QML · 16 tests de vista en verde · `ruff check .`
+limpio · capturas en GPU: el núcleo actúa de fuente, las hairlines cercanas se
+avivan y tiñen, la banda del HUD se ilumina más del lado del núcleo, la
+conversación (lejos) queda apagada. El efecto es sutil, por diseño.
+
+Pendiente de pulido (no bloquea): el borde del `layer` del bloom aún se
+insinúa en algunos frames; las hairlines de la píldora "volver al final" y del
+micrófono no están iluminadas todavía.

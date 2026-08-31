@@ -20,6 +20,8 @@ void main() {
     vec3 b0 = texture(bloom0, qt_TexCoord0).rgb;
     vec3 b1 = texture(bloom1, qt_TexCoord0).rgb;
     vec3 rgb = c.rgb + b0 * k0 + b1 * k1;
+    // tonemap suave: evita el "blanco quemado" y conserva el tinte
+    rgb = rgb / (1.0 + rgb * 0.55);
     float bloomA = max(b0.r, max(b0.g, b0.b)) * k0 + max(b1.r, max(b1.g, b1.b)) * k1;
     float a = clamp(max(c.a, bloomA), 0.0, 1.0);
     fragColor = vec4(rgb, a) * qt_Opacity;

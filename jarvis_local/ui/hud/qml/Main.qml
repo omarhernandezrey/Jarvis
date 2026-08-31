@@ -53,6 +53,12 @@ Window {
         layer.enabled: rootItem.motionActive
         layer.effect: Atmosphere { time: rootItem.grainTick }
 
+        // alcance de la luz del núcleo, en función del tamaño de la ventana
+        Binding {
+            target: Design; property: "lightRadius"
+            value: Math.hypot(win.width, win.height) * 0.62
+        }
+
         readonly property int pad: Design.sp(5)
         readonly property string mode: win.height < 720 ? "badge"
             : win.width >= 1600 ? "wide"
@@ -107,12 +113,10 @@ Window {
             clip: true
         }
 
-        Rectangle {   // regla bajo la banda superior (mid) / bajo el header (single)
+        Hairline {   // regla bajo la banda superior (mid) / bajo el header (single)
             visible: rootItem.mode === "mid" || rootItem.singleCol
             x: rootItem.pad
             width: parent.width - 2 * rootItem.pad
-            height: 1
-            color: Design.hairline
             y: rootItem.singleCol ? rootItem.pad + rootItem.headerH + Design.sp(2)
                                   : rootItem.pad + rootItem.bandH + Design.sp(3)
         }
@@ -146,7 +150,7 @@ Window {
                 id: core
                 anchors.centerIn: parent
                 width: Math.min(coreZone.width, coreZone.height)
-                       * (rootItem.singleCol ? 1.15 : 1.10)
+                       * (rootItem.singleCol ? 1.12 : 1.05)
                 height: width
                 compact: rootItem.singleCol
                 coreState: Vm ? Vm.state : "idle"
@@ -172,20 +176,21 @@ Window {
                 Text {
                     id: stLabel
                     text: Vm ? Vm.state : "idle"
-                    color: Design.textSecondary
+                    // texto secundario que respira con el núcleo
+                    property point _c: mapToItem(null, width / 2, height / 2)
+                    color: Design.litText(Design.textSecondary, _c.x, _c.y)
                     font.family: Design.fontMono
                     font.pixelSize: Design.fsSmall
                 }
             }
         }
 
-        Rectangle {   // regla vertical entre núcleo y conversación (wide/mid)
+        Hairline {   // regla vertical entre núcleo y conversación (wide/mid)
+            vertical: true
             visible: !rootItem.singleCol
             x: coreZone.x + coreZone.width + Design.sp(4)
             y: coreZone.y
-            width: 1
             height: coreZone.height
-            color: Design.hairline
         }
 
         // ── CONVERSACIÓN + BARRA DE COMANDO ──────────────────────────────

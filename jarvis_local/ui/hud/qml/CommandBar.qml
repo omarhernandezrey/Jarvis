@@ -21,20 +21,34 @@ Item {
 
     FontMetrics { id: fm; font.family: Design.fontSans; font.pixelSize: Design.fsBody }
 
+    // centro en coords de escena, para la iluminación del núcleo
+    property point _c: Qt.point(0, 0)
+    function _remap() { _c = mapToItem(null, width / 2, height / 2) }
+    onWidthChanged: _remap()
+    onHeightChanged: _remap()
+    onXChanged: _remap()
+    onYChanged: _remap()
+    Component.onCompleted: _remap()
+    Connections { target: Design; function onCorePosChanged() { bar._remap() } }
+
     // ── contenedor + estados visuales ────────────────────────────────
     Rectangle {
         id: box
         anchors.fill: parent
         radius: Design.radiusSurface
+        // superficie que RECIBE luz: base teñida hacia el núcleo por cercanía
         color: bar.busy ? Qt.rgba(1, 1, 1, 0.02)
              : editor.activeFocus ? Qt.rgba(1, 1, 1, 0.05)
-             : Design.surfaceColor
+             : Design.mix(Design.surfaceColor,
+                   Qt.rgba(Design.coreTint.r, Design.coreTint.g, Design.coreTint.b,
+                           Design.surfaceColor.a),
+                   Math.min(0.16, Design.lightLevel(bar._c.x, bar._c.y) * 0.18))
         border.width: 1
         border.color: bar.vizOn ? "transparent"
              : bar.busy ? Design.glow(Design.azure, 0.55)
              : editor.activeFocus ? Design.glow(Design.cyan, 0.6)
              : boxHover.hovered ? Design.glow(Design.textSecondary, 0.5)
-             : Design.hairline
+             : Design.litHairline(bar._c.x, bar._c.y)
 
         // "generating": barrido azul lento en el borde inferior
         Rectangle {

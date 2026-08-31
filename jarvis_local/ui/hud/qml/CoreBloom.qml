@@ -100,8 +100,8 @@ Item {
         property var source: coreTex
         property var bloom0: b0Tex
         property var bloom1: b1Tex
-        property real k0: 0.95
-        property real k1: 0.7
+        property real k0: 0.75
+        property real k1: 0.5
         fragmentShader: Qt.resolvedUrl("../shaders/bloom_composite.frag.qsb")
     }
 }

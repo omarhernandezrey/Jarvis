@@ -15,9 +15,10 @@ Item {
                    + Design.sp(6)
     implicitHeight: vertical ? Design.sp(13) : Design.sp(15)
 
-    // regla de 1px: abajo en horizontal, a la izquierda en vertical
-    Rectangle {
-        color: Design.hairline
+    // regla de 1px iluminada por el núcleo: abajo en horizontal, a la izquierda
+    // en vertical
+    Hairline {
+        vertical: cell.vertical
         width: cell.vertical ? 1 : parent.width
         height: cell.vertical ? parent.height : 1
         anchors.left: parent.left
