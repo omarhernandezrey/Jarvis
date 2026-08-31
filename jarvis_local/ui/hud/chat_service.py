@@ -86,8 +86,16 @@ class ChatService(QObject):
         if self._jarvis is not None or self._jarvis_err is not None:
             return
         try:
+            from jarvis_local.config import get_config
             from jarvis_local.jarvis import Jarvis
             self._jarvis = Jarvis()
+            # El agente (chat_with_tools con ~46 esquemas, SIN streaming) añade
+            # decenas de segundos por turno en CPU: inaceptable para una GUI
+            # interactiva. El parser determinista sigue activo ("abre chrome",
+            # "clima en Bogotá", "sube el volumen"…). Para recuperar el agente:
+            #   config.yaml →  hud:\n  agent: true
+            self._jarvis.agent_enabled = bool(
+                get_config().get("hud", {}).get("agent", False))
         except Exception as e:  # Ollama caído, modelo ausente, etc.
             self._jarvis_err = str(e)
 

@@ -713,3 +713,27 @@ streamea. Mitigaciones para decidir aparte: `agent.enabled: false` en
 `ConversationModel` y refleja las filas. `test_command_bar_enter_reaches_chat_send`
 — Enter llega a `Chat.send`. Suite de vista: 20 verde · `test_ollama_client` +
 `test_jarvis` + `test_streaming`: 58 verde · `ruff check .` limpio.
+
+### P0 · seguimiento — latencia del turno LLM
+
+Tras los dos fixes, la traza funciona pero un turno de LLM tardaba ~170 s en dar
+el primer token en esta máquina. Desglose medido (con `_parse_and_execute`,
+`_chat_encadenado`, `fast_respond` y `_try_agent` instrumentados):
+
+- `fast_respond` / parser: **0.0 s** — "¿qué hora es?", "abre la calculadora",
+  "gracias" responden **al instante** y ejecutan la acción real (abrió
+  gnome-calculator en la prueba).
+- `_try_agent` (`chat_with_tools`, 46 esquemas, sin streaming): **29–110 s** en
+  CPU. **Desactivado en el HUD** — `ChatService._ensure_jarvis` pone
+  `jarvis.agent_enabled = config.hud.agent` (por defecto `false`). El parser
+  determinista sigue cubriendo abrir apps, clima, volumen, recordatorios…
+  Recuperarlo: `config.yaml → hud:\n  agent: true`.
+- Camino LLM plano (ya con streaming real por el Bug 2): **~90 s hasta el 1er
+  token**, luego ~5 tok/s. Es **prefill de qwen2.5:3b en CPU** (`ollama ps` →
+  `size_vram: 0`, sin offload) con el prompt completo (system + memorias +
+  `auto_recall` + 20 mensajes de historial). No es un fallo de la vista.
+
+Para chat conversacional rápido (fuera del alcance de la vista): modelo más
+pequeño (`ollama.model: qwen2.5:1.5b`), offload a la iGPU en Ollama, o recortar
+`data/history.json` (50 mensajes). `Turn.qml` muestra "procesando… (modelo en
+CPU)" en el turno vacío hasta el primer token.

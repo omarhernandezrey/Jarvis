@@ -46,8 +46,18 @@ Item {
 
         Row {
             spacing: Design.sp(2)
+            // mientras se genera y aún no hay texto: aviso de que está trabajando
+            // (el modelo en CPU puede tardar); desaparece al llegar el 1er token
+            Text {
+                visible: turn.streaming && !turn.body.length
+                text: "procesando… (modelo en CPU)"
+                color: Design.textMeta
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMeta
+            }
             MarkdownBody {
                 id: md
+                visible: turn.body.length > 0
                 raw: turn.body
                 measure: turn.measure
             }
