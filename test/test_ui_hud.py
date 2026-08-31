@@ -159,6 +159,80 @@ def test_chat_service_full_turn_with_fake_core(monkeypatch):
     assert vm.state in ("idle", "thinking")
 
 
+def _conversation_listview(win):
+    from PySide6.QtQuick import QQuickItem
+    for o in win.findChildren(QQuickItem):
+        if "QQuickListView" in o.metaObject().className():
+            return o
+    raise AssertionError("no se encontró la ListView de la conversación")
+
+
+def test_qml_conversation_listview_reflects_model():
+    """P0 (Fase 9): la ListView de la conversación DEBE estar cableada al
+    ConversationModel real. Regresión: el context property se llamaba
+    'Conversation' y colisionaba con Conversation.qml, así que `model:
+    Conversation` resolvía al componente y nunca se veía ningún turno."""
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        rt = engine._runtime            # noqa: SLF001
+        lv = _conversation_listview(win)
+
+        # el modelo de la ListView ES el ConversationModel del runtime
+        assert lv.property("model") is rt.conversation, \
+            "ListView.model no apunta al ConversationModel (¿colisión de nombre?)"
+        assert lv.property("count") == 0
+
+        # un turno del usuario aparece en la ListView, no sólo en el modelo Python
+        rt.conversation.add_user("hola")
+        rt.conversation.begin_assistant()
+        _app.processEvents()
+        assert rt.conversation.rowCount() == 2
+        assert lv.property("count") == 2, \
+            "la ListView no refleja las filas del modelo"
+
+        rt.conversation.append_token("respuesta")
+        rt.conversation.end_assistant("", "10 ms", "chat")
+        _app.processEvents()
+        assert lv.property("count") == 2
+    finally:
+        engine._runtime.shutdown()      # noqa: SLF001
+        engine.deleteLater()
+
+
+def test_command_bar_enter_reaches_chat_send():
+    """P0 (Fase 9): pulsar Enter en la barra de comando llega a Chat.send()."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtQuick import QQuickItem
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        chat = engine._runtime.chat     # noqa: SLF001
+        seen = []
+        chat.userTurn.connect(seen.append)
+
+        editor = next(o for o in win.findChildren(QQuickItem)
+                      if "QQuickTextEdit" in o.metaObject().className())
+        editor.forceActiveFocus()
+        editor.setProperty("text", "mensaje de prueba")
+        _app.processEvents()
+        _app.sendEvent(editor, QKeyEvent(QEvent.KeyPress, Qt.Key_Return,
+                                         Qt.NoModifier, "\r"))
+        _app.processEvents()
+
+        assert seen == ["mensaje de prueba"]
+        assert editor.property("text") == ""      # se limpia tras enviar
+    finally:
+        engine._runtime.shutdown()      # noqa: SLF001
+        engine.deleteLater()
+
+
 def test_tap_client_cancel_stops_stream():
     import threading
 

@@ -163,16 +163,17 @@ class OllamaClient:
 
         client = self._get_client()
         if HAS_HTTPX:
+            if stream:
+                # httpx bufferiza toda la respuesta con .post(); para streaming
+                # real (tokens según se generan) hay que usar .stream().
+                return self._stream_response_httpx(payload)
             r = client.post(
                 "/api/chat",
                 json=payload,
                 timeout=httpx.Timeout(self.timeout, connect=15.0),
             )
             r.raise_for_status()
-            if stream:
-                return self._stream_response_httpx(r)
-            else:
-                return self._collect_response(r)
+            return self._collect_response(r)
         else:
             r = client.post(
                 self._url("/api/chat"),
@@ -201,20 +202,29 @@ class OllamaClient:
             except json.JSONDecodeError:
                 continue
 
-    def _stream_response_httpx(self, response) -> Iterator[str]:
-        """Stream de respuesta con httpx."""
-        for line in response.iter_lines():
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-                if data.get("done"):
-                    break
-                content = data.get("message", {}).get("content", "")
-                if content:
-                    yield content
-            except json.JSONDecodeError:
-                continue
+    def _stream_response_httpx(self, payload: dict) -> Iterator[str]:
+        """Stream REAL con httpx: `client.stream()` no bufferiza el cuerpo, así
+        que los tokens llegan según Ollama los genera."""
+        client = self._get_client()
+        with client.stream(
+            "POST",
+            "/api/chat",
+            json=payload,
+            timeout=httpx.Timeout(self.timeout, connect=15.0),
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if data.get("done"):
+                        break
+                    content = data.get("message", {}).get("content", "")
+                    if content:
+                        yield content
+                except json.JSONDecodeError:
+                    continue
 
     def _collect_response(self, response) -> str:
         """Recopila toda la respuesta."""

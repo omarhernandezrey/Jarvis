@@ -12,7 +12,7 @@ Item {
     ListView {
         id: list
         anchors.fill: parent
-        model: Conversation
+        model: ConversationModel        // context property (ver app.py bind_context)
         clip: true
         spacing: Design.sp(4)
         cacheBuffer: 800

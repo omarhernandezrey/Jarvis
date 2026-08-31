@@ -67,7 +67,9 @@ class Runtime:
     def bind_context(self, engine) -> None:
         ctx = engine.rootContext()
         ctx.setContextProperty("Vm", self.vm)
-        ctx.setContextProperty("Conversation", self.conversation)
+        # OJO: no llamarlo "Conversation" — colisiona con el tipo Conversation.qml
+        # y `model: Conversation` resolvería al componente, no al modelo.
+        ctx.setContextProperty("ConversationModel", self.conversation)
         ctx.setContextProperty("Chat", self.chat)
         ctx.setContextProperty("Voice", self.voice)
         ctx.setContextProperty("ReducedMotion", self.reduced_motion)

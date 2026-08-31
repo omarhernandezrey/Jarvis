@@ -652,3 +652,64 @@ muestra sin barra de título, esquinas redondeadas y controles propios ·
 salvo `test_reminders.py::test_alarma_suena`, un test de temporización de
 alarma ajeno a la vista que falla sólo bajo carga concurrente del equipo y
 pasa aislado — no se ha tocado nada de reminders.)
+
+## Fase 9 · P0 — el chat no respondía (regresión funcional)
+
+**Traza completa. Dos bugs independientes, ambos corregidos.**
+
+### Bug 1 — colisión de nombre: la conversación nunca se mostró (desde Fase 4)
+
+`app.bind_context` exponía el modelo como context property **`Conversation`**, y
+existe **`Conversation.qml`**. Dentro de ese archivo `model: Conversation`
+resolvía al *tipo del componente*, no al modelo → la `ListView` tenía
+`model = null` y `count = 0` para siempre. El `send()` llegaba al
+`ConversationModel` (`rowCount() == 2`) pero **nada se pintaba**.
+Los tests pasaban porque comprobaban el modelo Python, no la `ListView`
+(exactamente lo que advertía el brief).
+**Fix:** context property → `ConversationModel`; `Conversation.qml` usa
+`model: ConversationModel`.
+
+### Bug 2 — httpx no hacía streaming real
+
+`OllamaClient.chat(stream=True)` en la rama httpx usaba `client.post()`, que
+**bufferiza toda la respuesta** antes de devolver: cero streaming y bloqueo
+durante toda la generación. (Ollama sí streamea: `curl` directo da tokens en
+<1 s.) **Fix:** `_stream_response_httpx(payload)` usa `client.stream("POST", …)`
+dentro de un `with`; los tokens llegan según se generan (verificado: 1er token a
+1.5 s, ~0.2 s/token). Beneficia también al CLI.
+
+### Traza punto por punto (tras los fixes)
+
+`CommandBar` Enter → `Chat.send(str)` (slot) → `userTurn`/`assistantBegin`
+(señales en cola) → `ConversationModel` (2 filas) → **`ListView` las pinta** →
+hilo `_run` → `_ensure_jarvis()` (`Jarvis()` 0.6 s) → `_TapClient` sobre
+`jarvis.client` → `jarvis.chat()` → **tokens en tiempo real** → `assistantToken`
+→ `Vm.push_token` + `ConversationModel.append_token` → HUD `tokens/s` y
+`latencia` moviéndose → `assistantEnd` → estado `thinking → idle`.
+
+Voz: `VoiceService.transcribed` → `Chat.send` — **el mismo camino ya arreglado**.
+
+### E2E real (GPU, contra Ollama)
+
+"Escribe dos frases sobre el océano" → turno vacío + cursor al instante ·
+tokens en streaming (`toks 20→31→42→53`, `tps 5.1→5.5`) · cierre a
+`179838 ms · 5.3 tok/s` · estado `thinking→idle`. Captura con el turno real
+renderizado (`scratch_preview/e2e_real.png`) y una sesión de 7 turnos
+(prosa, bloque de código con copiar, turno de error) en `chat_populated.png`.
+
+### Lo que NO se logró en P0 (honesto)
+
+El **retardo hasta el primer token es de ~170 s** en esta máquina (Intel HD 520,
+CPU de 2015): `_try_agent` hace un `chat_with_tools` no-streaming con **46
+esquemas de herramientas** (~29–110 s), más el `recall` semántico y la
+evaluación del prompt completo (system + memoria + historial). Es coste del
+núcleo/agente en CPU débil, no un fallo funcional — el chat responde y
+streamea. Mitigaciones para decidir aparte: `agent.enabled: false` en
+`config.yaml` (pierde tool-calling), o acelerar el paso del agente.
+
+### Tests de regresión (impiden que vuelva)
+
+`test_qml_conversation_listview_reflects_model` — la `ListView.model` ES el
+`ConversationModel` y refleja las filas. `test_command_bar_enter_reaches_chat_send`
+— Enter llega a `Chat.send`. Suite de vista: 20 verde · `test_ollama_client` +
+`test_jarvis` + `test_streaming`: 58 verde · `ruff check .` limpio.
