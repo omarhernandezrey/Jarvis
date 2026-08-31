@@ -42,15 +42,45 @@ Window {
         property real tick: 0
         readonly property real grainTick: Math.floor(tick * 24) / 24
 
-        // ÚNICO FrameAnimation de todo el sistema
+        // ÚNICO FrameAnimation de todo el sistema. Además mide los fps para la
+        // ruta de degradación (§7): no es un `if` teórico, se dispara de verdad.
+        property real _fpsEma: 60
+        property real _lowSince: 0            // ms de `tick` en que empezó a ir <40
         FrameAnimation {
             objectName: "coreLoop"
             running: rootItem.motionActive
-            onTriggered: rootItem.tick += frameTime
+            onTriggered: {
+                rootItem.tick += frameTime
+                if (frameTime > 0.001 && frameTime < 0.5 && rootItem.tick > 2.0) {
+                    rootItem._fpsEma = rootItem._fpsEma * 0.9 + (1.0 / frameTime) * 0.1
+                    if (rootItem._fpsEma < 40) {
+                        if (rootItem._lowSince === 0)
+                            rootItem._lowSince = rootItem.tick * 1000
+                        else if (rootItem.tick * 1000 - rootItem._lowSince > 3000)
+                            rootItem._degradedLatch = true       // engancha, no vuelve
+                    } else if (rootItem._fpsEma > 46) {
+                        rootItem._lowSince = 0
+                    }
+                }
+            }
         }
 
-        // atmósfera global: sólo con foco + movimiento; si no, render normal
-        layer.enabled: rootItem.motionActive
+        // ── RUTA DE DEGRADACIÓN (§7) ────────────────────────────────────────
+        // backend software / Null, o fps <40 sostenidos 3 s → sin bloom ni
+        // atmósfera; se mantiene el shader del núcleo. Es un LATCH: una vez que
+        // degrada, se queda así toda la sesión (evita oscilar el pipeline).
+        property int  perfOverride: 0        // 0 auto · 1 forzar degradado · -1 forzar completo (tests)
+        property bool _softwareBackend: false
+        property bool _degradedLatch: false
+        readonly property bool _lowFpsSustained: _degradedLatch
+        readonly property bool degraded:
+            perfOverride === 1 ? true
+          : perfOverride === -1 ? false
+          : (_softwareBackend || _degradedLatch)
+
+        // atmósfera global: con foco + movimiento y sin degradar
+        readonly property bool atmosphereOn: motionActive && !degraded
+        layer.enabled: rootItem.atmosphereOn
         layer.effect: Atmosphere { time: rootItem.grainTick }
 
         // alcance de la luz del núcleo, en función del tamaño de la ventana
@@ -179,6 +209,7 @@ Window {
                        * (rootItem.singleCol ? 1.05 : 0.82)
                 height: width
                 bootIgnite: Math.min(1.0, rootItem.boot / 0.42)   // se enciende primero
+                degraded: rootItem.degraded
                 compact: rootItem.singleCol
                 coreState: Vm ? Vm.state : "idle"
                 audioLevel: Vm ? Vm.audio.level : 0
@@ -274,7 +305,7 @@ Window {
             Text {
                 id: swText
                 anchors.centerIn: parent
-                text: "render por software — sin GPU; el núcleo se verá degradado"
+                text: "render por software — sin bloom ni atmósfera (sólo el núcleo)"
                 color: Design.warn
                 font.family: Design.fontMono
                 font.pixelSize: Design.fsMeta
@@ -290,7 +321,9 @@ Window {
                 : api === GraphicsInfo.Metal ? "Metal"
                 : api === GraphicsInfo.Null ? "Null" : ("api=" + api)
             console.log("[hud] RHI backend:", name)
-            swBanner.visible = (api === GraphicsInfo.Software || api === GraphicsInfo.Null)
+            rootItem._softwareBackend = (api === GraphicsInfo.Software
+                                         || api === GraphicsInfo.Null)
+            swBanner.visible = rootItem._softwareBackend
         }
     }
 

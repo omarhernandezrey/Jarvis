@@ -23,12 +23,16 @@ Item {
     property real compact: 0
     property color tint: "#2B7FFF"
     property bool live: true          // false → todo el pipeline se congela
+    property bool bypass: false       // ruta de degradación (§7): sólo el shader
 
-    // 1) el núcleo, oculto: sólo alimenta la textura
+    // ¿corren las etapas de bloom?  no si está congelado o degradado
+    readonly property bool _pipeOn: live && !bypass
+
+    // 1) el núcleo. En bypass es lo único visible; si no, alimenta la textura.
     CoreShader {
         id: core
         anchors.fill: parent
-        visible: false
+        visible: bloom.bypass
         time: bloom.time; energy: bloom.energy; flux: bloom.flux
         ringOpen: bloom.ringOpen; emission: bloom.emission
         bandLow: bloom.bandLow; bandMid: bloom.bandMid; bandHigh: bloom.bandHigh
@@ -39,8 +43,8 @@ Item {
         id: coreTex
         anchors.fill: parent
         sourceItem: core
-        hideSource: true
-        live: bloom.live
+        hideSource: !bloom.bypass       // en bypass el núcleo se ve directo
+        live: bloom._pipeOn
         smooth: true
     }
 
@@ -59,7 +63,7 @@ Item {
         anchors.fill: parent
         sourceItem: extract
         hideSource: true
-        live: bloom.live
+        live: bloom._pipeOn
         smooth: true
     }
 
@@ -76,7 +80,7 @@ Item {
     }
     ShaderEffectSource {
         id: b0Tex; anchors.fill: parent; sourceItem: b0
-        hideSource: true; live: bloom.live; smooth: true
+        hideSource: true; live: bloom._pipeOn; smooth: true
     }
     MultiEffect {
         id: b1
@@ -90,12 +94,13 @@ Item {
     }
     ShaderEffectSource {
         id: b1Tex; anchors.fill: parent; sourceItem: b1
-        hideSource: true; live: bloom.live; smooth: true
+        hideSource: true; live: bloom._pipeOn; smooth: true
     }
 
-    // 4) composición aditiva (lo único visible)
+    // 4) composición aditiva (lo visible salvo en bypass)
     ShaderEffect {
         anchors.fill: parent
+        visible: !bloom.bypass
         blending: true
         property var source: coreTex
         property var bloom0: b0Tex

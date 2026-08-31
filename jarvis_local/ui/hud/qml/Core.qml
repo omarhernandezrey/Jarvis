@@ -21,6 +21,7 @@ Item {
     property bool   loopRunning: true
     property bool   compact: false
     property bool   reducedMotion: false
+    property bool   degraded: false           // §7: sin bloom, sólo el shader
     property point  pointer: Qt.point(0, 0)   // paralaje (reservado)
     property real   bootIgnite: 1.0           // 0→1: el núcleo se enciende desde un punto
 
@@ -175,5 +176,6 @@ Item {
         compact: root.compact ? 1 : 0
         tint: root.pTint
         live: root.loopActive
+        bypass: root.degraded
     }
 }

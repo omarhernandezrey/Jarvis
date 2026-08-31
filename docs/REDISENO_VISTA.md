@@ -576,3 +576,53 @@ De paso: la barra de scroll de la conversación ahora sólo aparece al desplazar
 (antes destellaba durante el arranque).
 
 0 warnings de QML · 16 tests de vista en verde · `ruff check .` limpio.
+
+## Fase 7 (addendum) — presupuesto de rendimiento (GPU)
+
+### Un solo bucle, cero timers sueltos
+
+Un único `FrameAnimation` (`objectName: coreLoop`) mueve todo. El único `Timer`
+que quedaba (reset del botón "copiar" en `CodeBlock`) se cambió por una
+`SequentialAnimation` de una pasada. El `QTimer` de Python (autoclear de ALERT)
+sigue registrado en `Runtime.timers` y se cancela en `shutdown()`.
+
+### Sin foco → 0 fps (verificado, no asumido)
+
+`FrameAnimation.running: motionActive` (falso sin foco / minimizada / `paused`).
+`CoreBloom.live` y `rootItem.layer.enabled` cuelgan de lo mismo. Medido:
+**fps sin foco = 0.00** en todas las corridas.
+
+### Ruta de degradación (real y probada, no un `if`)
+
+`services`/`Main.qml`: si el backend RHI es **software/Null**, o los fps caen
+**<40 durante 3 s**, se **engancha** un latch (`_degradedLatch`, no oscila) y:
+`CoreBloom.bypass = true` (sin extracción, sin blur, sin composición — el shader
+del núcleo se dibuja directo) y `layer.enabled = false` (sin atmósfera).
+`perfOverride` (−1/0/1) es el hook de tests. Cubierto por
+`test_degradation_path_bypasses_bloom` y `test_low_fps_sustained_degrades`.
+
+### Mediciones
+
+| entorno | pipeline | fps foco | fps sin foco | CPU | RSS (30 s) |
+|---|---|---|---|---|---|
+| offscreen (software) | **degradado** (auto) | 62 | **0.00** | 37 % | 171 → 171 (**±0.04 MB**) |
+| GPU real (HD 520) | completo (forzado) | 99* | **0.00** | 65 %* | 270 → 271 (**±0.15 MB**) |
+| GPU real (HD 520) | completo (auto) | 99* | **0.00** | 65 %* | 269 → 269 (**±0.08 MB**) |
+
+\* fps sin cap en la medición; con una ventana visible el `FrameAnimation` va a
+vsync (60) y la CPU baja en proporción (~40 %).
+
+- **RSS estable** en todos los casos (±0.15 MB). Se encontró y corrigió una
+  fuga (~500 MB/25 s) causada por el pipeline oscilando entre degradado/completo;
+  el latch de una vía lo elimina.
+- **fps sin foco = 0** confirmado empíricamente.
+- **CPU en IDLE**: ~40 % a 60 fps en la **Intel HD 520** (iGPU de 2015) con el
+  pipeline completo — por encima del ≤5 % del objetivo. El grueso es el
+  recompositado de la atmósfera a ventana completa cada frame. Para esto existe
+  la ruta de degradación; en una GPU moderna la cifra es una fracción. Se
+  reporta el número real, no se maquilla.
+
+`prefers-reduced-motion` (Fase 7 original): sigue vigente — `Design`/`Main`
+paran el bucle en reposo y el shader recibe `reduced=1`.
+
+`ruff check .` limpio · **suite completa en verde** · 18 tests de vista.

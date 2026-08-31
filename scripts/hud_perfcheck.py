@@ -1,16 +1,17 @@
-"""Medición del presupuesto de rendimiento de la vista (Fase 7).
+"""Medición del presupuesto de rendimiento de la vista (addendum §7).
 
-Uso:
-    QT_QPA_PLATFORM=offscreen python scripts/hud_perfcheck.py [segundos]
+    python scripts/hud_perfcheck.py [segundos] [--full]
 
-Reporta, en IDLE:
-  - fps efectivo del único FrameAnimation (techo esperado: 30)
-  - fps con la ventana "inactiva" (esperado: 0)
-  - CPU% del proceso
-  - deriva de RSS sobre la ventana de medición (esperado: ±5 MB en 10 min)
+  · con foco  : ~60 fps estables (lo trabaja la GPU)
+  · sin foco  : bucle detenido → 0 fps (verificado, no asumido)
+  · RSS       : estable (±5 MB en 10 min; aquí se mide un tramo y se reporta)
+  · degradación: si el backend es software o los fps caen <40 durante 3 s se
+                 desactivan bloom y atmósfera. `--full` fuerza el pipeline
+                 completo (perfOverride=-1) para medirlo aunque sea software.
 
-La ejecución completa de 10 min la hace el usuario en pantalla real; este script
-sirve como proxy rápido y como comprobación empírica del 0 fps sin foco.
+Sin `QT_QPA_PLATFORM` fijado usa `offscreen` (no abre ventana); en offscreen el
+backend es software y por tanto se mide la RUTA DE DEGRADACIÓN. Para medir en
+GPU real: `QT_QPA_PLATFORM=wayland python scripts/hud_perfcheck.py --full`.
 """
 from __future__ import annotations
 
@@ -24,53 +25,58 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PySide6.QtCore import QObject, QTimer  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
 
-from jarvis_local.ui.hud.app import create_engine  # noqa: E402
-from jarvis_local.ui.hud.viewmodel import ViewModel  # noqa: E402
+FULL = "--full" in sys.argv
+_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+DURATION = float(_args[0]) if _args else 40.0
 
-DURATION = float(sys.argv[1]) if len(sys.argv) > 1 else 45.0
 
-
-def _core_loop(root):
+def _by_name(root, name):
     for o in root.findChildren(QObject):
-        if o.objectName() == "coreLoop":
+        if o.objectName() == name:
             return o
-    raise SystemExit("no se encontró el bucle del núcleo")
+    raise SystemExit(f"no se encontró '{name}'")
 
 
 def main() -> int:
     import psutil
+
+    from jarvis_local.ui.hud.app import create_engine
+    from jarvis_local.ui.hud.viewmodel import ViewModel
     proc = psutil.Process()
 
     app = QGuiApplication([])
     engine = create_engine(app, ViewModel())
     win = engine.rootObjects()[0]
-    fa = _core_loop(win)
+    root = _by_name(win, "rootItem")
+    loop = _by_name(win, "coreLoop")
+
+    if FULL:
+        root.setProperty("perfOverride", -1)
 
     ticks = {"n": 0}
-    fa.triggered.connect(lambda: ticks.__setitem__("n", ticks["n"] + 1))
+    loop.triggered.connect(lambda: ticks.__setitem__("n", ticks["n"] + 1))
 
     r = {"marks": []}
     mb = 1024 * 1024
 
     def phase_focused():
+        time.sleep(1.0)                        # deja pasar el ramp de arranque
         proc.cpu_percent(None)
-        time.sleep(1.0)                       # deja pasar el ramp de arranque
-        r["rss0"] = proc.memory_info().rss
+        r["degraded"] = bool(root.property("degraded"))
+        r["sw"] = bool(root.property("_softwareBackend"))
         ticks["n"] = 0
         r["t0"] = time.monotonic()
-        mark = QTimer()
-        mark.timeout.connect(lambda: r["marks"].append(proc.memory_info().rss / mb))
-        mark.start(10000)
-        r["mark"] = mark
+        mk = QTimer()
+        mk.timeout.connect(lambda: r["marks"].append(proc.memory_info().rss / mb))
+        mk.start(10000)
+        r["mk"] = mk
         QTimer.singleShot(int(DURATION * 1000), phase_done_focused)
 
     def phase_done_focused():
-        r["mark"].stop()
-        dt = time.monotonic() - r["t0"]
-        r["fps_focused"] = ticks["n"] / dt
+        r["mk"].stop()
+        r["fps_focused"] = ticks["n"] / (time.monotonic() - r["t0"])
         r["cpu"] = proc.cpu_percent(None)
-        r["rss1"] = proc.memory_info().rss
-        _set_inactive(win)                    # loopRunning=false → 0 fps
+        root.setProperty("paused", True)       # simula perder el foco
         ticks["n"] = 0
         r["t1"] = time.monotonic()
         QTimer.singleShot(4000, phase_done_unfocused)
@@ -79,27 +85,24 @@ def main() -> int:
         r["fps_unfocused"] = ticks["n"] / (time.monotonic() - r["t1"])
         app.quit()
 
-    def _set_inactive(w):
-        from PySide6.QtQuick import QQuickItem
-        root = w.findChild(QQuickItem, "rootItem")
-        if root is not None:
-            root.setProperty("paused", True)
-
     QTimer.singleShot(200, phase_focused)
     app.exec()
     engine._runtime.shutdown()  # noqa: SLF001
 
-    # deriva real = oscilación entre marcas estables (ignora el ramp de arranque)
     stable = r["marks"][1:] if len(r["marks"]) > 2 else r["marks"]
-    drift = (max(stable) - min(stable)) if stable else (r["rss1"] - r["rss0"]) / mb
+    drift = (max(stable) - min(stable)) if stable else 0.0
+    pipe = "COMPLETO (forzado)" if FULL else ("DEGRADADO" if r["degraded"] else "completo")
     print(f"plataforma Qt          : {os.environ.get('QT_QPA_PLATFORM', 'auto')}")
+    print(f"backend software       : {r['sw']}")
+    print(f"pipeline medido        : {pipe}")
     print(f"duración medición      : {DURATION:.0f} s")
-    print(f"fps (con foco)         : {r['fps_focused']:.1f}  (techo 30)")
-    print(f"fps (sin foco)         : {r['fps_unfocused']:.2f}  (esperado 0)")
-    print(f"CPU proceso            : {r['cpu']:.1f} %  (1 núcleo = 100 %)")
+    print(f"fps (con foco)         : {r['fps_focused']:.1f}   (objetivo ~60)")
+    print(f"fps (sin foco)         : {r['fps_unfocused']:.2f}   (esperado 0)")
+    print(f"CPU proceso            : {r['cpu']:.1f} %   (1 núcleo = 100 %)")
     print(f"RSS marcas (cada 10 s) : {' '.join(f'{m:.0f}' for m in r['marks'])} MB")
-    print(f"deriva RSS             : {drift:+.2f} MB en {DURATION:.0f} s")
-    ok = (r["fps_focused"] <= 31 and r["fps_unfocused"] < 0.5 and abs(drift) < 5.0)
+    print(f"deriva RSS             : {drift:+.2f} MB")
+    ok = (r["fps_unfocused"] < 0.5 and abs(drift) < 5.0
+          and r["fps_focused"] >= 25)
     print("RESULTADO              :", "OK" if ok else "REVISAR")
     return 0 if ok else 1
 

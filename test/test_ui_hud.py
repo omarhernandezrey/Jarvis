@@ -274,6 +274,68 @@ def test_reduced_motion_freezes_core_and_shader():
         engine.deleteLater()
 
 
+def test_degradation_path_bypasses_bloom():
+    """Addendum §7: la ruta de degradación existe y actúa (no es un `if`
+    teórico). backend software o `perfOverride` → sin bloom, sólo el shader."""
+    from PySide6.QtCore import QObject
+    from PySide6.QtQuick import QQuickItem
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        root = win.findChild(QQuickItem, "rootItem")
+        cb = next(o for o in win.findChildren(QObject)
+                  if "CoreBloom" in o.metaObject().className())
+        cs = next(o for o in win.findChildren(QObject)
+                  if "CoreShader" in o.metaObject().className())
+
+        # forzar pipeline completo
+        root.setProperty("perfOverride", -1)
+        _app.processEvents()
+        assert root.property("degraded") is False
+        assert cb.property("bypass") is False
+        assert root.property("atmosphereOn") is True
+
+        # forzar degradado → sin bloom, el shader del núcleo se ve directo
+        root.setProperty("perfOverride", 1)
+        _app.processEvents()
+        assert root.property("degraded") is True
+        assert cb.property("bypass") is True
+        assert cs.property("visible") is True
+        assert root.property("atmosphereOn") is False
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
+
+
+def test_low_fps_sustained_degrades():
+    from PySide6.QtQuick import QQuickItem
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        root = win.findChild(QQuickItem, "rootItem")
+        root.setProperty("perfOverride", 0)               # auto
+        root.setProperty("_softwareBackend", False)       # aislar el gatillo de fps
+        _app.processEvents()
+        assert root.property("degraded") is False
+        # el bucle engancha el latch tras 3 s de <40 fps; aquí lo simulamos
+        root.setProperty("_degradedLatch", True)
+        _app.processEvents()
+        assert root.property("degraded") is True
+        # es un latch: aunque el backend siga bien, no vuelve
+        root.setProperty("_degradedLatch", False)
+        _app.processEvents()
+        assert root.property("degraded") is False   # (reset manual permitido en test)
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
+
+
 def test_runtime_shutdown_stops_metrics_thread():
     from jarvis_local.ui.hud.app import Runtime
 

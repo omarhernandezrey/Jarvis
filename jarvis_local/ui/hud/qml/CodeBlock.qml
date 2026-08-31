@@ -70,11 +70,16 @@ Item {
                 clip.copy()
                 clip.deselect()
                 copyState.copied = true
-                resetTimer.restart()
+                resetAnim.restart()
             }
         }
+        // sin Timer suelto: una animación de una pasada (addendum §7)
+        SequentialAnimation {
+            id: resetAnim
+            PauseAnimation { duration: 1400 }
+            ScriptAction { script: copyState.copied = false }
+        }
     }
-    Timer { id: resetTimer; interval: 1400; onTriggered: copyState.copied = false }
     TextEdit { id: clip; visible: false }
 
     Text {
