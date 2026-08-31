@@ -59,6 +59,27 @@ Window {
             value: Math.hypot(win.width, win.height) * 0.62
         }
 
+        // ── ARRANQUE (addendum §5): oscuridad → el núcleo se enciende desde un
+        //    punto → su luz revela la interfaz por distancia. ≤900 ms, una vez,
+        //    saltable con cualquier tecla. Sin texto, sin barras, sin ASCII.
+        property real boot: 0.0
+        readonly property bool booted: boot >= 1.0
+        Binding {
+            target: Design; property: "bootReach"
+            value: Math.hypot(win.width, win.height) * 0.9
+        }
+        Binding { target: Design; property: "bootReveal"; value: rootItem.boot }
+        NumberAnimation {
+            id: bootAnim
+            target: rootItem; property: "boot"
+            from: 0.0; to: 1.0; duration: 850
+            easing.type: Design.easeType; easing.bezierCurve: Design.easeCurve
+            running: true
+        }
+        function _skipBoot() {
+            if (!rootItem.booted) { bootAnim.stop(); rootItem.boot = 1.0 }
+        }
+
         readonly property int pad: Design.sp(5)
         readonly property string mode: win.height < 720 ? "badge"
             : win.width >= 1600 ? "wide"
@@ -99,6 +120,7 @@ Window {
         Hud {
             objectName: "hud"
             id: hud
+            opacity: Design.reveal(x + width / 2, y + height / 2)   // arranque
             vertical: rootItem.mode === "wide"
             // en single, el HUD va a la derecha de la insignia del núcleo
             x: rootItem.singleCol ? rootItem.pad + rootItem.headerH + Design.sp(4)
@@ -156,6 +178,7 @@ Window {
                 width: Math.min(coreZone.width, coreZone.height)
                        * (rootItem.singleCol ? 1.05 : 0.82)
                 height: width
+                bootIgnite: Math.min(1.0, rootItem.boot / 0.42)   // se enciende primero
                 compact: rootItem.singleCol
                 coreState: Vm ? Vm.state : "idle"
                 audioLevel: Vm ? Vm.audio.level : 0
@@ -170,6 +193,8 @@ Window {
 
             Row {
                 visible: !rootItem.singleCol
+                opacity: Design.reveal(parent.x + Design.sp(4),
+                                       parent.y + parent.height - Design.sp(4))
                 anchors { left: parent.left; bottom: parent.bottom }
                 spacing: Design.sp(2)
                 Rectangle {
@@ -201,6 +226,7 @@ Window {
         Item {
             id: convZone
             objectName: "convZone"
+            opacity: Design.reveal(x + width / 2, y + height / 2)   // se revela al final
             x: rootItem.singleCol ? rootItem.pad
                : coreZone.x + coreZone.width + Design.sp(5)
             y: {
@@ -226,10 +252,13 @@ Window {
         }
 
         Keys.onPressed: (e) => {
+            rootItem._skipBoot()                     // cualquier tecla salta el arranque
             const map = { "1": "idle", "2": "listening", "3": "thinking",
                           "4": "speaking", "5": "alert", "6": "offline" }
             if (map[e.text] !== undefined && Vm) Vm.set_state(map[e.text])
         }
+        // un clic también salta el arranque (sólo mientras dura)
+        TapHandler { enabled: !rootItem.booted; onTapped: rootItem._skipBoot() }
 
         // aviso honesto si el backend de render cae en software (addendum §2)
         Rectangle {

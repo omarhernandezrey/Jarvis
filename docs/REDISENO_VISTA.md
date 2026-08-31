@@ -549,3 +549,30 @@ la escala 12/13/15/18/24/40 se usa de verdad:
 
 0 warnings de QML · 16 tests de vista en verde · `ruff check .` limpio ·
 capturas GPU en modos `mid` y `wide`.
+
+## Fase 6 (addendum) — secuencia de arranque con identidad
+
+Es la regla de iluminación de la Fase 4, ejecutada **una vez en el tiempo**.
+Sin texto de sistema, sin barras de progreso, sin ASCII, sin "INITIALIZING".
+
+- `Design.qml`: `bootReveal` (0→1) y `reveal(sx,sy)` — un **frente de luz** que
+  sale de `corePos` y devuelve 0..1 según lo lejos que haya llegado a un punto.
+  `bootReach` = diagonal × 0.9 (lo fija Main).
+- `Main.qml`: `NumberAnimation` única (no es un FrameAnimation ni un Timer)
+  anima `boot` 0→1 en **850 ms** con la bezier del sistema, al arrancar.
+  `Binding` lo publica en `Design.bootReveal`. Cualquier **tecla o clic** salta
+  (`_skipBoot`). Las zonas (`hud`, `convZone`, etiqueta de estado) y cada
+  `Hairline` toman `opacity: Design.reveal(su centro)` → se revelan por
+  distancia al núcleo.
+- `Core.qml`: `bootIgnite` (0→1, mapeado al primer 42 % del arranque) — el orbe
+  hace **pop-in desde un punto** (escala 0.06→1 con leve rebasamiento) y un
+  **destello** de energía/emisión que sube y baja mientras se enciende.
+
+Secuencia observada (capturas GPU): ~120 ms oscuridad + chispa → ~340 ms el
+núcleo encendido, la hairline vertical revelándose hacia afuera → ~560 ms HUD y
+wordmark apareciendo → ~850 ms todo revelado e iluminado.
+
+De paso: la barra de scroll de la conversación ahora sólo aparece al desplazar
+(antes destellaba durante el arranque).
+
+0 warnings de QML · 16 tests de vista en verde · `ruff check .` limpio.

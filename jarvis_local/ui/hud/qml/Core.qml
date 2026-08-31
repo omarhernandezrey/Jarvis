@@ -21,10 +21,20 @@ Item {
     property bool   loopRunning: true
     property bool   compact: false
     property bool   reducedMotion: false
-    property point  pointer: Qt.point(0, 0)   // paralaje (reservado para Fase 4 del addendum)
+    property point  pointer: Qt.point(0, 0)   // paralaje (reservado)
+    property real   bootIgnite: 1.0           // 0→1: el núcleo se enciende desde un punto
 
     implicitWidth: 340
     implicitHeight: 340
+
+    // arranque: pop-in desde un punto con un leve rebasamiento
+    scale: {
+        if (bootIgnite >= 1.0) return 1.0
+        var b = bootIgnite
+        var over = 1.0 + 0.10 * Math.sin(b * Math.PI)      // rebasa y vuelve
+        return (0.06 + 0.94 * (b * b * (3.0 - 2.0 * b))) * over
+    }
+    opacity: Math.min(1.0, bootIgnite * 3.0)
 
     readonly property bool loopActive: loopRunning
         && (!reducedMotion || coreState === "listening" || coreState === "speaking")
@@ -148,11 +158,14 @@ Item {
         // margen para que el bloom pueda extenderse más allá del orbe
         anchors.fill: parent
         anchors.margins: -Math.round(Math.min(parent.width, parent.height) * 0.13)
+        // durante el encendido, un destello que sube y baja
+        readonly property real _ignitePulse: root.bootIgnite < 1.0
+            ? Math.sin(root.bootIgnite * Math.PI) : 0.0
         time: root._t
-        energy: root._energy
+        energy: Math.max(root._energy, 0.15 + 0.8 * _ignitePulse)
         flux: root._flux
         ringOpen: root.pRingOpen * (1.0 - 0.35 * root.pConverge)
-        emission: root.pEmission
+        emission: root.pEmission + 0.45 * _ignitePulse
         bandLow: root._bLow
         bandMid: root._bMid
         bandHigh: root._bHigh

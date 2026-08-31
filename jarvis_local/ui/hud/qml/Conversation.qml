@@ -43,8 +43,18 @@ Item {
         }
         onMovementEnded: stick = atYEnd
 
-        // barra sutil
-        ScrollBar.vertical: ScrollBar { active: true; policy: ScrollBar.AsNeeded }
+        // barra sutil: sólo visible al desplazar/arrastrar
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+            active: list.movingVertically || list.draggingVertically || pressed
+            contentItem: Rectangle {
+                implicitWidth: 3
+                radius: 1.5
+                color: Design.hairline
+                opacity: parent.active ? 0.9 : 0.0
+                Behavior on opacity { NumberAnimation { duration: Design.durFast } }
+            }
+        }
     }
 
     // estado vacío: identidad a 40 px, callada. Se desvanece con el primer turno.

@@ -95,6 +95,23 @@ QtObject {
         return mix(base, mix(base, coreTint, 0.4), t)
     }
 
+    // ── ARRANQUE (addendum §5) ──────────────────────────────────────────────
+    // Un frente de luz que sale del núcleo y va revelando la interfaz por
+    // DISTANCIA. `bootReveal` 0→1 lo anima Main una sola vez (≤900 ms). Con
+    // valor 1 todo está revelado (estado normal).
+    property real bootReveal: 1.0
+    property real bootReach: 2000       // px que alcanza el frente en bootReveal=1
+
+    // 0..1 cuánto ha llegado el frente a un punto de escena (1 = revelado)
+    function reveal(sx, sy) {
+        if (bootReveal >= 1.0) return 1.0
+        var dx = sx - corePos.x, dy = sy - corePos.y
+        var d = Math.sqrt(dx * dx + dy * dy)
+        var front = bootReveal * bootReach
+        var edge = 200.0
+        return Math.max(0.0, Math.min(1.0, (front - d) / edge + 0.5))
+    }
+
     // ── TIPOGRAFÍA ───────────────────────────────────────────────────────────
     // Verificadas con `fc-list` en la máquina objetivo:
     //   mono → "JetBrainsMono Nerd Font" (instalada)

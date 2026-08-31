@@ -21,4 +21,5 @@ Rectangle {
     Connections { target: Design; function onCorePosChanged() { hl._remap() } }
 
     color: Design.litHairline(_mid.x, _mid.y)
+    opacity: Design.reveal(_mid.x, _mid.y)      // el frente de arranque la revela
 }
