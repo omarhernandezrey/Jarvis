@@ -19,6 +19,7 @@ Item {
     property real   tokensPerSecond: 0.0
     property bool   loopRunning: true
     property bool   compact: false
+    property bool   reducedMotion: false
 
     // paralaje: puntero normalizado -1..1 (lo alimenta MouseArea del padre)
     property point pointer: Qt.point(0, 0)
@@ -35,6 +36,7 @@ Item {
         tokensPerSecond: root.tokensPerSecond
         loopRunning: root.loopRunning
         compact: root.compact
+        reducedMotion: root.reducedMotion
         parallax: Qt.point(root.pointer.x, root.pointer.y)
 
         // valores por defecto = IDLE; las transiciones interpolan al cambiar

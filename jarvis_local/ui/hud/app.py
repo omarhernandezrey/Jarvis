@@ -1,13 +1,16 @@
 """Arranque de la vista Qt Quick.
 
-`main()` crea la QGuiApplication, instancia el ViewModel (único puente con el
-núcleo), lo expone al contexto QML como `Vm`, carga `qml/Main.qml` y entra en el
-bucle de eventos de Qt. Los productores de datos reales (muestreo de sistema,
-salud de Ollama, micrófono, stream del LLM) se conectan en fases siguientes vía
-los slots `push_*` del ViewModel.
+`main()` crea la QGuiApplication, construye el `Runtime` (ViewModel + servicios,
+único puente con el núcleo), lo expone al contexto QML, carga `qml/Main.qml` y
+entra en el bucle de eventos.
+
+`Runtime` es el **único lugar** donde se registran los recursos de larga vida
+(hilos de muestreo, timers, servicios de voz/chat). `Runtime.shutdown()` los
+para todos y se conecta a `app.aboutToQuit`; un test lo verifica.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -19,54 +22,100 @@ def _configure_environment() -> None:
     os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
 
 
-def create_engine(app, view_model=None):
-    """Crea el QQmlApplicationEngine con `Vm` en contexto y Main.qml cargado.
+class Runtime:
+    """Contenedor de todo lo vivo detrás de la vista. Registra sus timers y los
+    cancela en `shutdown()`."""
 
-    Separado de `main()` para poder instanciarlo en tests sin `app.exec()`.
+    def __init__(self, view_model=None) -> None:
+        from jarvis_local.ui.hud.chat_service import ChatService
+        from jarvis_local.ui.hud.conversation_model import ConversationModel
+        from jarvis_local.ui.hud.services import MetricsService, detect_reduced_motion
+        from jarvis_local.ui.hud.viewmodel import ViewModel
+
+        self.vm = view_model or ViewModel()
+        self.conversation = ConversationModel()
+        self.chat = ChatService(self.vm, self.conversation)
+        self.voice = self._make_voice()
+        self.metrics = MetricsService(self.vm)
+        self.reduced_motion = detect_reduced_motion()
+        self.timers: list = []          # todos los QTimer de larga vida, aquí
+        self._alive = True
+
+        self.voice.transcribed.connect(self.chat.send)
+        self.chat.assistantEnd.connect(
+            lambda text, meta, kind: _maybe_speak(self.voice, text, kind))
+
+        self._wire_alert_autoclear()
+
+    def _make_voice(self):
+        from jarvis_local.ui.hud.voice_service import VoiceService
+        return VoiceService(self.vm)
+
+    def _wire_alert_autoclear(self) -> None:
+        from PySide6.QtCore import QTimer
+
+        timer = QTimer(self.vm)
+        timer.setObjectName("alertAutoclear")
+        timer.setSingleShot(True)
+        timer.setInterval(2500)
+        timer.timeout.connect(
+            lambda: self.vm.set_state("idle") if self.vm.state == "alert" else None)
+        self.vm.stateChanged.connect(
+            lambda s: timer.start() if s == "alert" else timer.stop())
+        self.timers.append(timer)
+
+    def bind_context(self, engine) -> None:
+        ctx = engine.rootContext()
+        ctx.setContextProperty("Vm", self.vm)
+        ctx.setContextProperty("Conversation", self.conversation)
+        ctx.setContextProperty("Chat", self.chat)
+        ctx.setContextProperty("Voice", self.voice)
+        ctx.setContextProperty("ReducedMotion", self.reduced_motion)
+
+    def start(self) -> None:
+        self.metrics.start()
+
+    def shutdown(self) -> None:
+        if not self._alive:
+            return
+        self._alive = False
+        for t in self.timers:
+            with contextlib.suppress(Exception):
+                t.stop()
+        with contextlib.suppress(Exception):
+            self.chat.cancel()
+        with contextlib.suppress(Exception):
+            self.voice.stop_recording()
+            self.voice.stop_speech()
+        self.metrics.stop()
+
+
+def create_engine(app, view_model=None):
+    """Crea el QQmlApplicationEngine con el Runtime en contexto y Main.qml
+    cargado. Separado de `main()` para instanciarlo en tests sin `app.exec()`.
     """
     from PySide6.QtCore import QUrl
     from PySide6.QtQml import QQmlApplicationEngine
 
-    from jarvis_local.ui.hud.chat_service import ChatService
-    from jarvis_local.ui.hud.conversation_model import ConversationModel
-    from jarvis_local.ui.hud.viewmodel import ViewModel
-    from jarvis_local.ui.hud.voice_service import VoiceService
-
-    vm = view_model or ViewModel()
-    conversation = ConversationModel()
-    chat = ChatService(vm, conversation)
-    voice = VoiceService(vm)
-
-    # voz → chat, y respuesta hablada si config.voice.tts_enabled
-    voice.transcribed.connect(chat.send)
-    chat.assistantEnd.connect(lambda text, meta, kind: _maybe_speak(voice, text, kind))
+    runtime = Runtime(view_model)
 
     engine = QQmlApplicationEngine()
-    ctx = engine.rootContext()
-    ctx.setContextProperty("Vm", vm)
-    ctx.setContextProperty("Conversation", conversation)
-    ctx.setContextProperty("Chat", chat)
-    ctx.setContextProperty("Voice", voice)
+    runtime.bind_context(engine)
     engine.addImportPath(str(_QML_DIR))
     engine.load(QUrl.fromLocalFile(str(_QML_DIR / "Main.qml")))
 
-    # el engine no es dueño de estos objetos: que sobrevivan al scope
-    engine._vm = vm            # noqa: SLF001
-    engine._conversation = conversation  # noqa: SLF001
-    engine._chat = chat        # noqa: SLF001
-    engine._voice = voice      # noqa: SLF001
+    engine._runtime = runtime  # noqa: SLF001  (que sobreviva al scope)
+    # compat con tests previos
+    engine._vm = runtime.vm            # noqa: SLF001
+    engine._conversation = runtime.conversation  # noqa: SLF001
+    engine._chat = runtime.chat        # noqa: SLF001
+    engine._voice = runtime.voice      # noqa: SLF001
+    engine._metrics = runtime.metrics  # noqa: SLF001
 
-    # ALERT vuelve a IDLE tras 2.5 s si nadie cambió el estado entretanto
-    _wire_alert_autoclear(vm)
-
-    # muestreo real de sistema / Ollama / voz / memoria / tools (cada 2 s)
-    from jarvis_local.ui.hud.services import MetricsService
-    metrics = MetricsService(vm)
     if engine.rootObjects():
-        metrics.start()
+        runtime.start()
         if app is not None:
-            app.aboutToQuit.connect(metrics.stop)
-    engine._metrics = metrics  # noqa: SLF001
+            app.aboutToQuit.connect(runtime.shutdown)
     return engine
 
 
@@ -79,16 +128,6 @@ def _maybe_speak(voice, text: str, kind: str) -> None:
             voice.speak(text)
     except Exception:
         pass
-
-
-def _wire_alert_autoclear(vm) -> None:
-    from PySide6.QtCore import QTimer
-
-    timer = QTimer(vm)
-    timer.setSingleShot(True)
-    timer.setInterval(2500)
-    timer.timeout.connect(lambda: vm.set_state("idle") if vm.state == "alert" else None)
-    vm.stateChanged.connect(lambda s: timer.start() if s == "alert" else timer.stop())
 
 
 def main() -> int:
@@ -106,8 +145,7 @@ def main() -> int:
         return 1
 
     rc = app.exec()
-    # teardown determinista: destruir el árbol QML mientras el ViewModel sigue
-    # vivo evita 'TypeError: property of null' en los bindings finales.
+    engine._runtime.shutdown()  # noqa: SLF001  (idempotente)
     engine.deleteLater()
     del engine
     return rc

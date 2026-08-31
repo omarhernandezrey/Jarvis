@@ -129,7 +129,11 @@ Window {
                 tokensPerSecond: (Vm && Vm.metrics.tokensPerSecond !== undefined)
                                  ? Vm.metrics.tokensPerSecond : 0
                 pointer: Qt.point(win.pointerX, win.pointerY)
+                // 0 fps sin foco o minimizada (Fase 7)
                 loopRunning: win.active
+                             && win.visibility !== Window.Minimized
+                             && win.visibility !== Window.Hidden
+                reducedMotion: (typeof ReducedMotion !== "undefined") && ReducedMotion === true
             }
 
             Row {

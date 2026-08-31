@@ -201,6 +201,100 @@ def test_qml_engine_loads_without_warnings():
         engine.deleteLater()
 
 
+def _core_loop(root):
+    from PySide6.QtCore import QObject
+    loops = [o for o in root.findChildren(QObject) if o.objectName() == "coreLoop"]
+    assert len(loops) == 1, f"esperaba 1 bucle de núcleo, hay {len(loops)}"
+    return loops[0]
+
+
+def test_single_animation_loop_capped_at_30fps():
+    """Fase 7: un único bucle de animación del núcleo, con techo de 30 fps
+    (Timer a 33 ms). Nada de FrameAnimation a refresco de pantalla."""
+    from PySide6.QtCore import QObject
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        loop = _core_loop(win)
+        assert loop.property("interval") in (33, 50)   # techo 30 fps; 20 en reposo
+        assert loop.property("repeat") is True
+        fas = [o for o in win.findChildren(QObject)
+               if "FrameAnimation" in o.metaObject().className()]
+        assert fas == [], "no debe haber FrameAnimation (techo 30 fps por Timer)"
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
+
+
+def test_loop_pauses_when_not_running():
+    from PySide6.QtQuick import QQuickItem
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        core = win.findChild(QQuickItem, "coreZone").childItems()[0]
+        loop = _core_loop(win)
+        core.setProperty("loopRunning", True)
+        _app.processEvents()
+        assert loop.property("running") is True
+        core.setProperty("loopRunning", False)
+        _app.processEvents()
+        assert loop.property("running") is False
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
+
+
+def test_reduced_motion_zeros_particle_density():
+    from PySide6.QtCore import QObject
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        cf = next(o for o in win.findChildren(QObject)
+                  if "CoreField" in o.metaObject().className())
+        cf.setProperty("coreState", "thinking")
+        _app.processEvents()
+        assert cf.property("particleDensity") == 1.0
+        cf.setProperty("reducedMotion", True)
+        _app.processEvents()
+        assert cf.property("particleDensity") == 0.0
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
+
+
+def test_runtime_shutdown_stops_metrics_thread():
+    from jarvis_local.ui.hud.app import Runtime
+
+    rt = Runtime(ViewModel())
+    rt.start()
+    import time
+    time.sleep(0.1)
+    assert rt.metrics._thread is not None and rt.metrics._thread.is_alive()  # noqa: SLF001
+    rt.shutdown()
+    assert rt.metrics._thread is None  # noqa: SLF001
+    # timers registrados y detenidos
+    for t in rt.timers:
+        assert not t.isActive()
+
+
+def test_reduced_motion_detection_env(monkeypatch):
+    from jarvis_local.ui.hud.services import detect_reduced_motion
+
+    monkeypatch.setenv("JARVIS_REDUCED_MOTION", "1")
+    assert detect_reduced_motion() is True
+    monkeypatch.setenv("JARVIS_REDUCED_MOTION", "0")
+    assert detect_reduced_motion() is False
+
+
 def test_responsive_layout_no_overlap_no_overflow():
     """Fase 6: en los cuatro modos, núcleo y conversación no se solapan, todo
     queda dentro de la ventana y la barra de comando es alcanzable."""

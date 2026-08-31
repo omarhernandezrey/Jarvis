@@ -293,3 +293,25 @@ escala):
 verde): en 1700×900, 1360×820, 1000×760 y 430×360 → **solape núcleo/conversación
 = 0**, todas las zonas dentro de la ventana, barra de comando visible. **0
 warnings** de QML en las 6 medidas probadas.
+
+---
+
+## FASE 7 — Presupuesto de rendimiento
+
+| criterio | estado | evidencia |
+|---|---|---|
+| Un único bucle de animación | ✅ | un solo `Timer` `objectName:"coreLoop"`; **cero `FrameAnimation`**. Test `test_single_animation_loop_capped_at_30fps`. |
+| Techo de 30 fps | ✅ | `interval` 33 ms en estados con datos vivos, 50 ms (~20 fps) en reposo. Medido: 20 fps en IDLE. |
+| 0 fps sin foco / minimizada | ✅ **empírico** | `loopActive = win.active && visibility != Minimized/Hidden`. Medido: **fps sin foco = 0.00**. Test `test_loop_pauses_when_not_running`. |
+| Timers registrados y cancelados al cerrar | ✅ | `Runtime.timers` (único lugar) + `Runtime.shutdown()` conectado a `aboutToQuit`. Test `test_runtime_shutdown_stops_metrics_thread`. |
+| RSS estable ±5 MB | ✅ **medido** | 45 s en IDLE: RSS **171 · 171 · 171 · 171 MB**, deriva **±0.3 MB**. Fuga encontrada y corregida: `sd.query_devices` cada 2 s desde un hilo re-inicializaba PortAudio (~1.5 MB/llamada) → ahora `_read_voice` se cachea. `OllamaClient` también se reutiliza. |
+| `prefers-reduced-motion` | ✅ | `services.detect_reduced_motion()` (env `JARVIS_REDUCED_MOTION` + GNOME `enable-animations`) → `ReducedMotion` en contexto. En ese modo: `particleDensity=0`, sin rotación/respiración/barrido/concéntricos/onda; sólo las transiciones de estado (220 ms). Tests `test_reduced_motion_*`. |
+| IDLE ≤3 % de un núcleo | ⚠️ **pendiente en GPU real** | Medido **~34 %** bajo el rasterizador **software** (`QT_QPA_PLATFORM=offscreen`, sin GPU) a 20 fps. En la ruta real Qt Quick sube la textura del `Canvas` a la iGPU Intel HD 520 y la cifra cae mucho. `scripts/hud_perfcheck.py` deja al usuario medirlo en pantalla (quitar el `os.environ.setdefault(...offscreen...)`). |
+
+Optimizaciones aplicadas al `onPaint`: sin `ctx.reset()` por frame; halo por
+apilado de discos (sin crear objetos gradiente); partículas con un `fillStyle`
++ `globalAlpha` por partícula; anillo plano (idle/alert/offline) en **un solo
+trazo** de 64 sub-caminos; color de tinte cacheado como string.
+
+`scripts/hud_perfcheck.py`: reporta fps con/sin foco, CPU y marcas de RSS cada
+10 s. La corrida completa de 10 min la hace el usuario.

@@ -10,11 +10,33 @@ pinta como ausente.
 """
 from __future__ import annotations
 
+import os
+import subprocess
 import threading
 
 from PySide6.QtCore import QObject, Signal
 
 SAMPLE_S = 2.0
+
+
+def detect_reduced_motion() -> bool:
+    """¿El sistema pide reducir animaciones? Orden: variable de entorno →
+    GNOME (`enable-animations`). Best-effort; ante la duda, False."""
+    env = os.environ.get("JARVIS_REDUCED_MOTION", "").strip().lower()
+    if env in ("1", "true", "yes", "on"):
+        return True
+    if env in ("0", "false", "no", "off"):
+        return False
+    try:
+        out = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "enable-animations"],
+            capture_output=True, text=True, timeout=1.5,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip() == "false"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False
 
 
 def _read_cpu_ram():
@@ -25,25 +47,41 @@ def _read_cpu_ram():
         return None, None
 
 
+_ollama_client = None
+
+
 def _read_ollama():
-    """(online: bool, model: str|None, ping_ms: int|None) del cliente real."""
+    """(online: bool, model: str|None, ping_ms: int|None) del cliente real.
+    Reutiliza un único OllamaClient (crear/cerrar uno por muestra hacía crecer
+    la RSS)."""
+    global _ollama_client
     try:
         import time
 
         from jarvis_local.config import get_config
         from jarvis_local.ollama_client.client import OllamaClient
         model = get_config().get("ollama", {}).get("model")
-        client = OllamaClient()
+        if _ollama_client is None:
+            _ollama_client = OllamaClient()
         t0 = time.monotonic()
-        online = client.is_running()
-        client.close()
+        online = _ollama_client.is_running()
         ping = round((time.monotonic() - t0) * 1000) if online else None
         return online, model, ping
     except Exception:
         return False, None, None
 
 
-def _read_voice():
+_voice_cache: dict | None = None
+
+
+def _read_voice(force: bool = False):
+    """Estado de voz. `sd.query_devices` desde un hilo, cada 2 s, hacía crecer
+    la RSS (PortAudio se re-inicializa): se consulta UNA vez y se cachea. La
+    disponibilidad real del micrófono se reevalúa cuando el usuario intenta
+    grabar (VoiceService pone `denied` si el stream falla)."""
+    global _voice_cache
+    if _voice_cache is not None and not force:
+        return _voice_cache
     tts_ok = False
     try:
         import edge_tts  # noqa: F401
@@ -57,7 +95,8 @@ def _read_voice():
             mic = "available"
     except Exception:
         mic = "absent"
-    return {"tts": tts_ok, "mic": mic}
+    _voice_cache = {"tts": tts_ok, "mic": mic}
+    return _voice_cache
 
 
 def _read_tools():
