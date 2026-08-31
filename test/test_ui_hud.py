@@ -260,6 +260,71 @@ def test_voice_service_state_machine_no_audio():
     assert v.micState == "inactive"
 
 
+def test_tts_playback_terminates_and_clears_speaking(monkeypatch):
+    """Fase 9 (voz): `_speak` no debe colgarse. El bug: en el último trozo
+    parcial el callback no avanzaba `pos` hasta el final y el `while` giraba
+    para siempre → estado SPEAKING pegado. Sin audio real (OutputStream falso).
+    """
+    import sys
+    import time
+    import types
+
+    import numpy as np
+
+    from jarvis_local.ui.hud.voice_service import VoiceService
+
+    # audio cuya longitud NO es múltiplo del blocksize (fuerza el trozo parcial)
+    fake_samples = np.zeros(1024 * 3 + 137, dtype="float32")
+
+    fake_sd = types.SimpleNamespace()
+
+    class CallbackStop(Exception):
+        pass
+
+    class _FakeOutputStream:
+        def __init__(self, *, samplerate, channels, dtype, blocksize, callback):
+            self._cb = callback
+            self._bs = blocksize
+
+        def __enter__(self):
+            buf = np.zeros((self._bs, 1), dtype="float32")
+            for _ in range(10_000):            # tope de seguridad del propio test
+                try:
+                    self._cb(buf, self._bs, None, None)
+                except CallbackStop:
+                    break
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    fake_sd.OutputStream = _FakeOutputStream
+    fake_sd.CallbackStop = CallbackStop
+    fake_sd.sleep = lambda ms: time.sleep(0.001)
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+
+    from jarvis_local.voice import tts
+    monkeypatch.setattr(tts, "_cache_get", lambda text: b"FAKEMP3")
+    monkeypatch.setattr(tts, "_cache_put", lambda text, data: None)
+    monkeypatch.setattr(tts, "_mp3_bytes_to_numpy", lambda data: (fake_samples, 16000))
+
+    v = VoiceService(ViewModel())
+    changes = []
+    v.speakingChanged.connect(changes.append)
+
+    v.speak("cualquier frase")
+    t0 = time.monotonic()
+    while v.speaking and time.monotonic() - t0 < 5:
+        _app.processEvents()
+        time.sleep(0.02)
+    for _ in range(50):
+        _app.processEvents()
+        time.sleep(0.01)
+
+    assert v.speaking is False, "el hilo de TTS se colgó: SPEAKING quedó pegado"
+    assert changes[:1] == [True] and changes[-1] is False, changes
+
+
 def test_voice_path_end_to_end_stt_to_chat_send():
     """Fase 9 P0 (voz): audio real → STT → señal `transcribed` → `chat.send`.
 

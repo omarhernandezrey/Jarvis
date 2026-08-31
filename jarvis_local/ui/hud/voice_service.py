@@ -12,6 +12,7 @@ Estados de micrófono (reales, no asumidos): `inactive`, `listening`, `denied`.
 from __future__ import annotations
 
 import threading
+import time
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
@@ -195,6 +196,7 @@ class VoiceService(QObject):
                 if len(chunk) < frames:
                     outdata[:len(chunk), 0] = chunk
                     outdata[len(chunk):, 0] = 0.0
+                    pos["i"] = n            # marca fin: si no, el while gira sin parar
                     raise sd.CallbackStop
                 outdata[:, 0] = chunk
                 pos["i"] = i + frames
@@ -208,12 +210,17 @@ class VoiceService(QObject):
                     b = np.full(_BINS, lvl)
                 self.audio.emit(lvl, (np.sqrt(b)).tolist())
 
+            # tope de tiempo = duración del audio + 1 s de margen: aunque
+            # PortAudio no llame más al callback, el hilo termina y el estado
+            # SPEAKING no se queda pegado.
+            deadline = time.monotonic() + n / float(sr) + 1.0
             with sd.OutputStream(samplerate=sr, channels=1, dtype="float32",
                                  blocksize=_BLOCK, callback=_out_cb):
-                while pos["i"] < n and not self._stop_speech.is_set():
+                while (pos["i"] < n and not self._stop_speech.is_set()
+                       and time.monotonic() < deadline):
                     sd.sleep(50)
-        except Exception:
-            pass
+        except Exception as e:
+            self.notice.emit(f"no se pudo reproducir la voz: {e}")
         finally:
             self._speaking = False
             self.speakingChanged.emit(False)

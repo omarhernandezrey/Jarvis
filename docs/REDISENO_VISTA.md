@@ -786,3 +786,61 @@ completa verde.
 
 Suite de vista: **21 verde** (nuevo: el E2E de voz). Suite completa:
 **587 passed, 7 skipped**. `ruff check .` limpio.
+
+## P0 · seguimiento 3 — "haga pruebas de voz y de todas sus funcionalidades"
+
+Batería funcional a través del `Runtime` real + núcleo real. **28 comprobaciones**;
+lo que estaba mal, corregido:
+
+### Bug 3 — el parser de comandos ignoraba las tildes (voz lenta)
+
+El dictado (whisper) devuelve texto **con tildes**: *"¿cuánta batería queda?"*,
+*"recuérdame…"*. Los patrones de `intent/parser.py` se escribieron en ASCII, así
+que esas frases **no las reconocía el parser** y caían al camino del LLM
+(decenas de segundos en CPU) en vez de resolverse al instante. Afectaba a
+calculadora, estado del sistema, recordatorios, multimedia…
+**Fix:** `parse_intent()` normaliza las vocales acentuadas al entrar
+(`_sin_tildes`, la ñ se mantiene). El texto libre capturado (ciudad, cuerpo del
+recordatorio) también sale sin tildes — coste asumido frente a que el comando
+no funcione. Test: `test_comandos_con_tildes_del_dictado`. Verificado por el
+núcleo real: *"¿cuánto es 48 entre 6?"* → "8", *"¿cuánta batería queda?"* →
+estado del sistema, *"recuérdame … en 1 minuto"* → recordatorio creado — todo
+instantáneo, sin LLM.
+
+### Bug 4 — el TTS se colgaba y dejaba el estado SPEAKING pegado
+
+`VoiceService._speak`: en el último trozo de audio (parcial, < blocksize) el
+callback de salida hacía `raise sd.CallbackStop` **sin** avanzar `pos["i"]`
+hasta el final, así que el `while pos["i"] < n` giraba para siempre — el hilo no
+terminaba, `speakingChanged(False)` no se emitía y el núcleo se quedaba en
+`speaking`. **Fix:** marcar `pos["i"] = n` antes del `CallbackStop` + tope de
+tiempo (`duración + 1 s`) en el bucle como red de seguridad. `except` ahora
+emite `notice` en vez de callar. Test:
+`test_tts_playback_terminates_and_clears_speaking` (OutputStream falso, sin
+audio). Verificado con audio real: habla 4.6 s, `speakingChanged=[True, False]`,
+estados `speaking → idle`.
+
+### Resultado de la batería
+
+| Funcionalidad | Estado | Evidencia |
+|---|---|---|
+| Respuestas instantáneas (saludo/hora/fecha/gracias) | ✅ | `fast_respond` responde sin LLM |
+| Calculadora | ✅ | "calcula 15 * 12" → "180"; "48 entre 6" → "8" |
+| Clima | ✅ | "clima en Bogotá" → datos reales (17 °C, humedad 53 %…) |
+| Chiste | ✅ | devuelve chiste |
+| Estado del sistema / batería | ✅ | CPU/RAM/disco reales |
+| Abrir aplicación | ✅ | "abre la calculadora" → abre gnome-calculator |
+| Volumen / multimedia / recordatorios | ✅ | intención correcta + ejecución |
+| Chat LLM con streaming | ✅ | tokens uno a uno ("L","ima",","," mango"…), 1er token ~100 s (prefill CPU), luego ~5.7 tok/s, `latencyMs`/`tok/s` en el HUD |
+| Micrófono (captura real) | ✅ | InputStream abre, 24 576 muestras, RMS 0.13 |
+| Voz STT extremo a extremo | ✅ | "¿qué hora es?" hablado → whisper → "Son las 17:48, senor." |
+| TTS (síntesis + envolvente + fin) | ✅ tras Bug 4 | habla, envolvente 0.887, termina limpio |
+| Estados del núcleo | ✅ | idle/listening/thinking/speaking |
+
+Único límite no resuelto (hardware, ya documentado): **el 1er token del LLM
+tarda ~100 s** en esta CPU. Los comandos por parser y la voz son instantáneos.
+
+### Tests
+
+Suite de vista: **22 verde**. Suite completa: **589 passed, 7 skipped**.
+`ruff check .` limpio.

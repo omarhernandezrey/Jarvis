@@ -10,6 +10,16 @@ from jarvis_local.config import user_dir
 from jarvis_local.intent.schemas import IntentResult
 from jarvis_local.safety.permissions import is_command_blocked, is_within_allowed
 
+# El dictado (whisper) devuelve texto CON tildes: "¿cuánta batería queda?",
+# "recuérdame...". Los patrones de este parser se escribieron sin tildes, así
+# que sin esto los comandos por voz caían al LLM (lento) en vez de resolverse
+# al instante. Se quitan sólo las tildes de vocales; la ñ se conserva.
+_TILDES = str.maketrans("áéíóúÁÉÍÓÚüÜ", "aeiouAEIOUuU")
+
+
+def _sin_tildes(text: str) -> str:
+    return text.translate(_TILDES)
+
 _APP_ALIASES = {
     "chrome": ["chrome", "google chrome", "navegador", "google"],
     "vscode": ["vscode", "vs code", "visual studio code", "code", "visual studio"],
@@ -678,7 +688,11 @@ def es_anaforica(message: str) -> bool:
 
 
 def parse_intent(message: str) -> IntentResult:
-    m = message.strip()
+    # sin tildes: los patrones son ASCII y el dictado trae acentos. El texto
+    # libre que se capture (ciudad, cuerpo del recordatorio) también sale sin
+    # tildes — es un coste asumible frente a que el comando por voz no se
+    # reconozca. La ñ se mantiene.
+    m = _sin_tildes(message.strip())
 
     # Peticion con dos acciones: el parser solo sabe resolver una y descartaria
     # la otra sin avisar. Que la maneje el agente (encadena herramientas).

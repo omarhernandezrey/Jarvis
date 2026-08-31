@@ -37,6 +37,22 @@ def test_open_app_vscode():
     assert "vscode" in r.arguments["app"]
 
 
+def test_comandos_con_tildes_del_dictado():
+    """El dictado (whisper) devuelve texto CON tildes. El parser debe
+    reconocer igual el comando (antes caían al LLM, lento)."""
+    casos = [
+        ("¿cuánto es 48 entre 6?", "tool_read", "calculate"),
+        ("¿cuánta batería queda?", "tool_read", "system_status"),
+        ("recuérdame llamar a mamá en 10 minutos", "tool_execute", "set_reminder"),
+        ("qué clima hace en Bogotá", "tool_read", "weather"),
+        ("súbeme el volumen", "tool_execute", "volume_up"),
+    ]
+    for frase, kind, tool in casos:
+        r = parse_intent(frase)
+        assert r.kind == kind, f"{frase!r} -> {r.kind}"
+        assert r.tool == tool, f"{frase!r} -> {r.tool}"
+
+
 def test_close_app_alias():
     r = parse_intent("cierra chrome")
     assert r.kind == "tool_execute"
