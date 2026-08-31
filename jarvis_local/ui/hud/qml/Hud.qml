@@ -10,10 +10,11 @@ Item {
     property var m: Vm ? Vm.metrics : ({})
     property bool vertical: false
 
-    readonly property var keys: ["SISTEMA", "MODELO", "CPU", "RAM", "LATENCIA",
-                                 "TOKENS/S", "VOZ", "MEMORIA", "HERRAMIENTAS"]
+    // etiquetas en minúscula: la etiqueta susurra, el valor (24 px) domina
+    readonly property var keys: ["sistema", "modelo", "cpu", "ram", "latencia",
+                                 "tokens/s", "voz", "memoria", "herramientas"]
 
-    implicitHeight: vertical ? content.implicitHeight : Design.sp(15)
+    implicitHeight: vertical ? content.implicitHeight : Design.sp(16)
     implicitWidth: vertical ? Design.sp(40) : content.implicitWidth
 
     function _has(v) { return v !== undefined && v !== null }
@@ -22,36 +23,36 @@ Item {
     function cell(key) {
         var mm = hud.m || {}
         switch (key) {
-        case "SISTEMA":
-            return [!_has(mm.online), mm.online ? "EN LÍNEA" : "SIN CONEXIÓN",
+        case "sistema":
+            return [!_has(mm.online), mm.online ? "en línea" : "sin conexión",
                     mm.online ? Design.ok : Design.alert]
-        case "MODELO":
+        case "modelo":
             return [!_has(mm.model), mm.model || "", Design.textPrimary]
-        case "CPU":
+        case "cpu":
             return [!_has(mm.cpu), _has(mm.cpu) ? Math.round(mm.cpu) + "%" : "",
                     _has(mm.cpu) && mm.cpu > 85 ? Design.warn : Design.textPrimary]
-        case "RAM":
+        case "ram":
             return [!_has(mm.ram), _has(mm.ram) ? Math.round(mm.ram) + "%" : "",
                     _has(mm.ram) && mm.ram > 90 ? Design.warn : Design.textPrimary]
-        case "LATENCIA":
+        case "latencia":
             return [!_has(mm.latencyMs), _has(mm.latencyMs) ? mm.latencyMs + " ms" : "",
                     Design.textPrimary]
-        case "TOKENS/S":
+        case "tokens/s":
             return [!_has(mm.tokensPerSecond),
                     _has(mm.tokensPerSecond) ? mm.tokensPerSecond.toFixed(1) : "",
                     Design.cyan]
-        case "VOZ":
+        case "voz":
             return [!_has(mm.voice),
-                    mm.voice ? ((mm.voice.tts ? "LISTA" : "OFF")
+                    mm.voice ? ((mm.voice.tts ? "lista" : "off")
                         + (mm.voice.mic === "available" ? ""
                            : mm.voice.mic === "denied" ? " · sin permiso" : " · sin mic")) : "",
                     mm.voice && mm.voice.tts ? Design.ok : Design.textSecondary]
-        case "MEMORIA":
+        case "memoria":
             return [!_has(mm.memory),
-                    mm.memory ? ((mm.memory.auto_recall ? "ACTIVA" : "INACTIVA")
+                    mm.memory ? ((mm.memory.auto_recall ? "activa" : "inactiva")
                         + (_has(mm.memory.count) ? " · " + mm.memory.count : "")) : "",
                     mm.memory && mm.memory.auto_recall ? Design.ok : Design.textSecondary]
-        case "HERRAMIENTAS":
+        case "herramientas":
             return [!(mm.tools && _has(mm.tools.count)),
                     mm.tools && _has(mm.tools.count)
                         ? (mm.tools.count + (mm.tools.agent ? "" : " · parser")) : "",
@@ -64,7 +65,7 @@ Item {
         id: content
         anchors.fill: parent
         flow: hud.vertical ? Flow.TopToBottom : Flow.LeftToRight
-        spacing: hud.vertical ? Design.sp(2) : Design.sp(7)
+        spacing: hud.vertical ? Design.sp(2) : Design.sp(5)
         Repeater {
             model: hud.keys
             delegate: HudCell {

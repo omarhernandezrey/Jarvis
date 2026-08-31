@@ -24,5 +24,11 @@ void main() {
     rgb = rgb / (1.0 + rgb * 0.55);
     float bloomA = max(b0.r, max(b0.g, b0.b)) * k0 + max(b1.r, max(b1.g, b1.b)) * k1;
     float a = clamp(max(c.a, bloomA), 0.0, 1.0);
+    // difuminar los bordes del propio recuadro: sin arista visible del layer
+    // (se apaga tanto color como alpha para que no quede ni un gris de fondo)
+    vec2 e = abs(qt_TexCoord0 - 0.5) * 2.0;
+    float edge = 1.0 - smoothstep(0.55, 0.98, dot(e, e));
+    rgb *= edge;
+    a *= edge;
     fragColor = vec4(rgb, a) * qt_Opacity;
 }

@@ -519,3 +519,33 @@ conversación (lejos) queda apagada. El efecto es sutil, por diseño.
 Pendiente de pulido (no bloquea): el borde del `layer` del bloom aún se
 insinúa en algunos frames; las hairlines de la píldora "volver al final" y del
 micrófono no están iluminadas todavía.
+
+## Fase 5 (addendum) — tipografía y densidad de layout
+
+Antes: todo entre 12 y 18 px; `fsLarge (24)` y `fsDisplay (40)` sin usar. Ahora
+la escala 12/13/15/18/24/40 se usa de verdad:
+
+| tamaño | uso |
+|---|---|
+| 40 display | wordmark "JARVIS" del estado vacío de la conversación (callado, `textMeta`) |
+| 24 large | **valores del HUD** (mono → cifras tabulares). El valor domina. |
+| 18 title | prompt `❯` de la barra de comando |
+| 15 body | etiqueta de estado, editor de la barra, prosa de los turnos |
+| 13 small | pista del estado vacío, código |
+| 12 meta | etiquetas del HUD, canaleta y metadatos de los turnos |
+
+- **HUD**: etiquetas en **minúscula** (`sistema`, `cpu`, `voz`…), 12 px,
+  `textMeta` — "la etiqueta susurra". Valores 24 px. Sin versalitas espaciadas.
+  Celdas más juntas (`sp(5)`), banda un poco más alta (`sp(16)`) para el valor
+  grande.
+- **Estado vacío de la conversación**: identidad a 40 px + una línea de pista;
+  se desvanece con el primer turno (antes: un vacío negro).
+- **Densidad asimétrica**: el layout ya no se parte en tercios iguales. La zona
+  del núcleo baja a **0.34–0.38** del ancho disponible y el orbe ocupa **0.82**
+  de su zona → tiene aire alrededor; la conversación (donde vive el contenido)
+  se queda con el resto.
+- El borde del `layer` del bloom se difumina en el propio shader del composite
+  (círculo suave sobre color y alpha) → ya no se ve la arista del recuadro.
+
+0 warnings de QML · 16 tests de vista en verde · `ruff check .` limpio ·
+capturas GPU en modos `mid` y `wide`.

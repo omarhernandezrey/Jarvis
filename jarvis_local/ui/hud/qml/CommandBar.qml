@@ -135,7 +135,7 @@ Item {
         text: "❯"
         color: bar.busy ? Design.azure : Design.cyan
         font.family: Design.fontMono
-        font.pixelSize: Design.fsBody
+        font.pixelSize: Design.fsTitle
     }
 
     Flickable {

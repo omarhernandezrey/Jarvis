@@ -47,6 +47,27 @@ Item {
         ScrollBar.vertical: ScrollBar { active: true; policy: ScrollBar.AsNeeded }
     }
 
+    // estado vacío: identidad a 40 px, callada. Se desvanece con el primer turno.
+    Column {
+        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        spacing: Design.sp(3)
+        opacity: list.count === 0 ? 1.0 : 0.0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
+        Text {
+            text: "JARVIS"
+            color: Design.textMeta
+            font.family: Design.fontSans
+            font.pixelSize: Design.fsDisplay
+        }
+        Text {
+            text: "consola conversacional — escribe abajo o mantén el micrófono"
+            color: Design.textMeta
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsSmall
+        }
+    }
+
     // píldora "volver al final"
     Rectangle {
         visible: !list.stick && list.contentHeight > list.height

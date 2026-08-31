@@ -66,7 +66,7 @@ Window {
         readonly property bool singleCol: mode === "narrow" || mode === "badge"
         readonly property int hudSideW: Design.sp(42)
         readonly property int headerH: mode === "badge" ? Design.sp(20) : Design.sp(22)
-        readonly property int bandH: Design.sp(15)
+        readonly property int bandH: Design.sp(16)
 
         // ── planos de profundidad ────────────────────────────────────────
         Rectangle {
@@ -135,10 +135,12 @@ Window {
                 return rootItem.pad          // single: insignia en el header
             }
             width: {
+                // densidad asimétrica: el núcleo tiene AIRE, la conversación
+                // (donde vive el contenido) se queda con el espacio
                 if (rootItem.singleCol) return rootItem.headerH
                 if (rootItem.mode === "wide")
-                    return (parent.width - x - rootItem.pad) * 0.46
-                return (parent.width - 2 * rootItem.pad) * 0.40
+                    return (parent.width - x - rootItem.pad) * 0.38
+                return (parent.width - 2 * rootItem.pad) * 0.34
             }
             height: {
                 if (rootItem.singleCol) return rootItem.headerH
@@ -149,8 +151,10 @@ Window {
             Core {
                 id: core
                 anchors.centerIn: parent
+                // el orbe tiene AIRE en su zona; el bloom (margen negativo del
+                // CoreBloom) queda dentro sin recortarse contra la ventana
                 width: Math.min(coreZone.width, coreZone.height)
-                       * (rootItem.singleCol ? 1.12 : 1.05)
+                       * (rootItem.singleCol ? 1.05 : 0.82)
                 height: width
                 compact: rootItem.singleCol
                 coreState: Vm ? Vm.state : "idle"
@@ -180,7 +184,7 @@ Window {
                     property point _c: mapToItem(null, width / 2, height / 2)
                     color: Design.litText(Design.textSecondary, _c.x, _c.y)
                     font.family: Design.fontMono
-                    font.pixelSize: Design.fsSmall
+                    font.pixelSize: Design.fsBody
                 }
             }
         }

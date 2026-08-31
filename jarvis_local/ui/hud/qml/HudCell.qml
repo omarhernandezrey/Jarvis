@@ -12,8 +12,8 @@ Item {
     property bool vertical: false      // Fase 6: banda superior vs. regla lateral
 
     implicitWidth: Math.max(labelText.implicitWidth, valueText.implicitWidth)
-                   + Design.sp(6)
-    implicitHeight: vertical ? Design.sp(13) : Design.sp(15)
+                   + Design.sp(7)
+    implicitHeight: vertical ? Design.sp(13) : Design.sp(16)
 
     // regla de 1px iluminada por el núcleo: abajo en horizontal, a la izquierda
     // en vertical
@@ -42,8 +42,8 @@ Item {
             id: valueText
             text: cell.absent ? "—" : cell.value
             color: cell.absent ? Design.textMeta : cell.accent
-            font.family: Design.fontMono
-            font.pixelSize: cell.vertical ? Design.fsBody : Design.fsTitle
+            font.family: Design.fontMono          // dígitos ya tabulares (mono)
+            font.pixelSize: cell.vertical ? Design.fsBody : Design.fsLarge
         }
     }
 }
