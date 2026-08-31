@@ -4,6 +4,7 @@ GUI tkinter con estética HUD / arc-reactor / "tecnología de otro mundo".
 Sin dependencias externas.
 """
 import contextlib
+import json
 import math
 import os
 import queue
@@ -12,8 +13,11 @@ import sys
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from jarvis_local.config import BASE_DIR  # noqa: E402
 
 # ═══════════════════════════════════════════════════════════
 # PALETA — HOLOGRAMA / ARC REACTOR
@@ -43,9 +47,43 @@ C = {
     "term_glow":    "#0a2e40",
 }
 
+# "Consolas"/"Segoe UI" son fuentes de Windows: en Linux no existen y Tk las
+# sustituye por una fuente generica (a menudo fea/pequeña), que era la causa
+# real de que la interfaz se viera "basica". Se resuelven a fuentes reales
+# instaladas en esta maquina la primera vez que hay una ventana Tk activa
+# (ver JarvisDesktop._resolve_fonts). Estos valores son el fallback si nada
+# de la lista de candidatos esta instalado.
 MONO = "Consolas"
 UI_FONT = "Segoe UI"
+_MONO_CANDIDATES = ("JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font",
+                    "JetBrains Mono", "Cascadia Code", "Ubuntu Mono", "Consolas",
+                    "DejaVu Sans Mono")
+_UI_CANDIDATES = ("Ubuntu", "Segoe UI", "Inter", "Noto Sans", "DejaVu Sans")
+
+# Tamaño de fuente: multiplicador base (la interfaz se veia muy pequeña con
+# los tamaños originales en pantallas grandes) mas el zoom en vivo del
+# usuario (Ctrl+ / Ctrl- / Ctrl+rueda / Ctrl+0), persistido entre sesiones.
+DEFAULT_ZOOM = 1.4
+_ZOOM_FILE = BASE_DIR / "data" / "ui_zoom.json"
+
 GLITCH_CHARS = "!<>-_\\/[]{}—=+*^?#$%~01アイウエオカキクケコ"
+
+
+def _load_zoom() -> float:
+    try:
+        with open(_ZOOM_FILE, encoding="utf-8") as f:
+            return float(json.load(f).get("zoom", DEFAULT_ZOOM))
+    except Exception:
+        return DEFAULT_ZOOM
+
+
+def _save_zoom(zoom: float) -> None:
+    try:
+        _ZOOM_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ZOOM_FILE, "w", encoding="utf-8") as f:
+            json.dump({"zoom": zoom}, f)
+    except Exception:
+        pass
 
 
 def spaced(s):
@@ -135,6 +173,13 @@ class JarvisDesktop:
         self.root.title("J.A.R.V.I.S — Sistema Inteligente")
         self.root.configure(bg=C["bg"])
 
+        # Fuentes reales de esta maquina (Consolas/Segoe UI no existen en
+        # Linux) y sistema de zoom en vivo. Debe ir ANTES de _build_ui()/
+        # _boot_sequence(): ambas ya piden fuentes via self._F().
+        self._resolve_fonts()
+        self._font_registry = {}   # (familia,tam,peso,inclin) -> (Font, tam_base)
+        self.zoom = _load_zoom()
+
         sw = self.root.winfo_screenwidth(); sh = self.root.winfo_screenheight()
         w, h = int(sw * 0.64), int(sh * 0.70)
         x, y = (sw - w) // 2, (sh - h) // 2
@@ -163,8 +208,67 @@ class JarvisDesktop:
         self.root.bind("<Control-l>", lambda e: self.input_field.focus_set())
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Zoom: Ctrl+/Ctrl- (varias variantes de teclado), Ctrl+rueda, Ctrl+0
+        for seq in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
+            self.root.bind(seq, lambda e: self._zoom_by(0.1))
+        for seq in ("<Control-minus>", "<Control-KP_Subtract>"):
+            self.root.bind(seq, lambda e: self._zoom_by(-0.1))
+        for seq in ("<Control-0>", "<Control-KP_0>"):
+            self.root.bind(seq, lambda e: self._zoom_reset())
+        self.root.bind("<Control-MouseWheel>", self._on_ctrl_wheel)
+        self.root.bind("<Control-Button-4>", lambda e: self._zoom_by(0.1))   # X11/XWayland: rueda arriba
+        self.root.bind("<Control-Button-5>", lambda e: self._zoom_by(-0.1))  # X11/XWayland: rueda abajo
+
         self._build_ui()
         self._boot_sequence()
+
+    # ═══════════════════════════════════════════════════════
+    # FUENTES Y ZOOM
+    # ═══════════════════════════════════════════════════════
+    def _resolve_fonts(self):
+        """Reemplaza los nombres de fuente de Windows por fuentes reales
+        instaladas en esta maquina (evita el fallback feo de Tk)."""
+        global MONO, UI_FONT
+        try:
+            available = set(tkfont.families(self.root))
+        except Exception:
+            available = set()
+        MONO = next((c for c in _MONO_CANDIDATES if c in available), MONO)
+        UI_FONT = next((c for c in _UI_CANDIDATES if c in available), UI_FONT)
+
+    def _F(self, size, *style, mono=True):
+        """Fuente con zoom en vivo: reconfigurar self.zoom actualiza todos
+        los widgets que usan la fuente devuelta aqui, sin tocar cada uno."""
+        family = MONO if mono else UI_FONT
+        weight = "bold" if "bold" in style else "normal"
+        slant = "italic" if "italic" in style else "roman"
+        key = (family, size, weight, slant)
+        reg = self._font_registry.get(key)
+        if reg is None:
+            actual = max(6, round(size * self.zoom))
+            f = tkfont.Font(family=family, size=actual, weight=weight, slant=slant)
+            self._font_registry[key] = (f, size)
+            return f
+        return reg[0]
+
+    def _apply_zoom(self):
+        for fnt, base_size in self._font_registry.values():
+            fnt.configure(size=max(6, round(base_size * self.zoom)))
+        if hasattr(self, "zoom_label"):
+            self.zoom_label.config(text=f"🔍 {round(self.zoom * 100)}%")
+
+    def _zoom_by(self, delta):
+        self.zoom = round(min(2.4, max(0.7, self.zoom + delta)), 2)
+        self._apply_zoom()
+        _save_zoom(self.zoom)
+
+    def _zoom_reset(self):
+        self.zoom = DEFAULT_ZOOM
+        self._apply_zoom()
+        _save_zoom(self.zoom)
+
+    def _on_ctrl_wheel(self, event):
+        self._zoom_by(0.1 if event.delta > 0 else -0.1)
 
     # ═══════════════════════════════════════════════════════
     # SECUENCIA DE ARRANQUE
@@ -197,14 +301,14 @@ class JarvisDesktop:
                               fill=C["primary"], outline="")
             idx = min(state["i"], len(lines) - 1)
             boot.create_text(cx, cy + 90, text=spaced(lines[idx]),
-                              fill=C["primary"], font=(MONO, 10))
+                              fill=C["primary"], font=self._F(10))
             bw = 260
             boot.create_rectangle(cx-bw/2, cy+115, cx+bw/2, cy+119, outline=C["border"])
             prog = min(1.0, step / 90)
             boot.create_rectangle(cx-bw/2, cy+115, cx-bw/2+bw*prog, cy+119,
                                    fill=C["primary"], outline="")
             boot.create_text(cx, cy-120, text="J . A . R . V . I . S",
-                              fill=C["text"], font=(UI_FONT, 22, "bold"))
+                              fill=C["text"], font=self._F(22, "bold", mono=False))
 
         def tick(step=0):
             if step > 95:
@@ -237,10 +341,10 @@ class JarvisDesktop:
         self._sep_canvas = sep
 
         left_sb = tk.Frame(self.status_bar, bg=C["titlebar"]); left_sb.pack(side=tk.LEFT, fill=tk.Y, padx=(14,0))
-        tk.Label(left_sb, text="◉", font=(UI_FONT, 10), bg=C["titlebar"], fg=C["primary"]).pack(side=tk.LEFT)
-        tk.Label(left_sb, text=" " + spaced("JARVIS"), font=(UI_FONT, 9, "bold"),
+        tk.Label(left_sb, text="◉", font=self._F(10, mono=False), bg=C["titlebar"], fg=C["primary"]).pack(side=tk.LEFT)
+        tk.Label(left_sb, text=" " + spaced("JARVIS"), font=self._F(9, "bold", mono=False),
                  bg=C["titlebar"], fg=C["primary"]).pack(side=tk.LEFT)
-        self.sb_status = tk.Label(left_sb, text="   │  Sistema operativo", font=(MONO, 8),
+        self.sb_status = tk.Label(left_sb, text="   │  Sistema operativo", font=self._F(8),
                                    bg=C["titlebar"], fg=C["text_dim"]); self.sb_status.pack(side=tk.LEFT)
 
         # Visualizador de onda (vida ambiental)
@@ -251,14 +355,23 @@ class JarvisDesktop:
         self._dot(right_sb, "OLLAMA", True).pack(side=tk.LEFT, padx=(0,10))
         self._dot(right_sb, "MIC", True).pack(side=tk.LEFT, padx=(0,10))
         self.st_tts = self._dot(right_sb, "VOZ", True); self.st_tts.pack(side=tk.LEFT, padx=(0,10))
-        tk.Label(right_sb, text="qwen2.5:3b", font=(MONO, 8),
+        tk.Label(right_sb, text="qwen2.5:3b", font=self._F(8),
                  bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT, padx=(0,12))
-        self.tts_btn = tk.Button(right_sb, text="\U0001F50A VOZ ON", font=(UI_FONT, 8, "bold"),
+        self.tts_btn = tk.Button(right_sb, text="\U0001F50A VOZ ON", font=self._F(8, "bold", mono=False),
                                   bg=C["primary_dim"], fg=C["primary"], activebackground=C["primary_dim"],
                                   activeforeground=C["white"], relief=tk.FLAT, borderwidth=1, cursor="hand2",
                                   command=self._toggle_tts, padx=8, pady=1)
         self.tts_btn.pack(side=tk.LEFT)
         self._hover(self.tts_btn, C["primary_dim"], "#0e3348")
+
+        self.zoom_label = tk.Label(right_sb, text=f"🔍 {round(self.zoom * 100)}%",
+                                    font=self._F(8), bg=C["titlebar"], fg=C["text_dim"],
+                                    cursor="hand2")
+        self.zoom_label.pack(side=tk.LEFT, padx=(10, 0))
+        self.zoom_label.bind("<Button-1>", lambda e: self._zoom_by(0.1))
+        self.zoom_label.bind("<Button-3>", lambda e: self._zoom_reset())
+        self._add_tooltip(self.zoom_label,
+                           "Zoom: Ctrl+ / Ctrl- / Ctrl+rueda · clic = acercar · clic-derecho = restablecer")
 
         # PanedWindow
         self.pane = tk.PanedWindow(self.root, bg=C["border"], sashwidth=2, sashrelief=tk.FLAT, orient=tk.HORIZONTAL)
@@ -271,18 +384,18 @@ class JarvisDesktop:
         left_inner = tk.Frame(self.left_panel, bg=C["bg"]); left_inner.pack(fill=tk.BOTH, expand=True, padx=16, pady=10)
 
         tf = tk.Frame(left_inner, bg=C["bg"]); tf.pack(fill=tk.X, pady=(10,0))
-        self.left_title = tk.Label(tf, text=spaced("JARVIS"), font=(UI_FONT, 19, "bold"), bg=C["bg"], fg=C["text"])
+        self.left_title = tk.Label(tf, text=spaced("JARVIS"), font=self._F(19, "bold", mono=False), bg=C["bg"], fg=C["text"])
         self.left_title.pack()
-        self.left_sub = tk.Label(tf, text=spaced("SISTEMA AUTONOMO"), font=(MONO, 7),
+        self.left_sub = tk.Label(tf, text=spaced("SISTEMA AUTONOMO"), font=self._F(7),
                                   bg=C["bg"], fg=C["text_dim"]); self.left_sub.pack(pady=(2,0))
 
         self.orb_canvas = tk.Canvas(left_inner, bg=C["bg"], highlightthickness=0)
         self.orb_canvas.pack(expand=True, pady=(10,4))
 
-        self.orb_label = tk.Label(left_inner, text=spaced("LISTO"), font=(MONO, 9, "bold"),
+        self.orb_label = tk.Label(left_inner, text=spaced("LISTO"), font=self._F(9, "bold"),
                                    bg=C["bg"], fg=C["primary"]); self.orb_label.pack()
 
-        self.voice_btn = tk.Button(left_inner, text="\U0001F399  HABLAR", font=(UI_FONT, 9, "bold"),
+        self.voice_btn = tk.Button(left_inner, text="\U0001F399  HABLAR", font=self._F(9, "bold", mono=False),
                                     bg=C["primary_dim"], fg=C["primary"], activebackground=C["primary_dim"],
                                     activeforeground=C["white"], relief=tk.FLAT, borderwidth=1, cursor="hand2",
                                     padx=16, pady=8)
@@ -290,11 +403,11 @@ class JarvisDesktop:
         self.voice_btn.bind("<ButtonPress-1>", lambda e: self._voice_start_recording())
         self.voice_btn.bind("<ButtonRelease-1>", lambda e: self._voice_stop_recording())
         self._hover(self.voice_btn, C["primary_dim"], "#0e3348")
-        self.voice_hint = tk.Label(left_inner, text="Mantén  •  Ctrl+Espacio", font=(MONO, 7),
+        self.voice_hint = tk.Label(left_inner, text="Mantén  •  Ctrl+Espacio", font=self._F(7),
                                     bg=C["bg"], fg=C["text_dim"]); self.voice_hint.pack(pady=(0,6))
 
         # Telemetría decorativa (sensación "viva")
-        self.telemetry = tk.Label(left_inner, text="", font=(MONO, 7), bg=C["bg"], fg=C["text_dim"], justify=tk.LEFT)
+        self.telemetry = tk.Label(left_inner, text="", font=self._F(7), bg=C["bg"], fg=C["text_dim"], justify=tk.LEFT)
         self.telemetry.pack(side=tk.BOTTOM, pady=(4,0))
 
         # ——— Panel derecho ———
@@ -308,19 +421,25 @@ class JarvisDesktop:
         inf = tk.Frame(inf_wrap, bg=C["term_bg"])
         inf.pack(fill=tk.X, padx=1, pady=1)
 
-        self.input_prompt = tk.Label(inf, text=" ❯", font=(MONO, 13, "bold"),
+        self.input_prompt = tk.Label(inf, text=" ❯", font=self._F(13, "bold"),
                                       bg=C["term_bg"], fg=C["primary"])
         self.input_prompt.pack(side=tk.LEFT, padx=(8,0))
 
-        self.input_field = tk.Text(inf, bg=C["term_bg"], fg=C["text"], font=(MONO, 11),
-                                    wrap=tk.WORD, relief=tk.FLAT, borderwidth=0, padx=8, pady=9,
-                                    insertbackground=C["primary"], height=2,
+        # height=1 + padding vertical simetrico (pady=10 arriba y abajo) es
+        # lo que centra el texto verticalmente: con una sola linea de alto,
+        # esa linea cae justo en el medio del padding. Ademas crece hasta
+        # 5 lineas si el mensaje es largo (ver _autosize_input), y siempre
+        # queda centrado porque el alto siempre se ajusta al contenido real.
+        self.input_field = tk.Text(inf, bg=C["term_bg"], fg=C["text"], font=self._F(11),
+                                    wrap=tk.WORD, relief=tk.FLAT, borderwidth=0, padx=8, pady=10,
+                                    insertbackground=C["primary"], height=1,
                                     highlightthickness=0)
         self.input_field.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2,4))
         self.input_field.bind("<Return>", self._on_enter)
         self.input_field.bind("<Shift-Return>", lambda e: None)
+        self.input_field.bind("<KeyRelease>", self._autosize_input)
 
-        self.send_btn = tk.Button(inf, text="➤", font=(UI_FONT, 14, "bold"),
+        self.send_btn = tk.Button(inf, text="➤", font=self._F(14, "bold", mono=False),
                                    bg=C["term_bg"], fg=C["primary"], activebackground=C["term_bg"],
                                    activeforeground=C["accent"], relief=tk.FLAT, borderwidth=0,
                                    cursor="hand2", command=self._send_from_input, padx=12, pady=6)
@@ -345,17 +464,17 @@ class JarvisDesktop:
 
         header = tk.Frame(term_inner, bg=C["titlebar"], height=32)
         header.pack(fill=tk.X, side=tk.TOP); header.pack_propagate(False)
-        self._live_dot = tk.Label(header, text="●", font=(MONO, 9), bg=C["titlebar"], fg=C["danger"])
+        self._live_dot = tk.Label(header, text="●", font=self._F(9), bg=C["titlebar"], fg=C["danger"])
         self._live_dot.pack(side=tk.LEFT, padx=(10,3))
-        tk.Label(header, text="ENLACE NEURAL", font=(MONO, 8, "bold"),
+        tk.Label(header, text="ENLACE NEURAL", font=self._F(8, "bold"),
                  bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT)
-        tk.Label(header, text="root@jarvis :: /neural-link", font=(MONO, 8),
+        tk.Label(header, text="root@jarvis :: /neural-link", font=self._F(8),
                  bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT, padx=(10,0))
         self.term_bar = tk.Canvas(header, width=130, height=22, bg=C["titlebar"], highlightthickness=0)
         self.term_bar.pack(side=tk.RIGHT, padx=(0,10))
 
         cf = tk.Frame(term_inner, bg=C["term_bg"]); cf.pack(fill=tk.BOTH, expand=True)
-        self.chat = tk.Text(cf, bg=C["term_bg"], fg=C["text"], font=(MONO, 10),
+        self.chat = tk.Text(cf, bg=C["term_bg"], fg=C["text"], font=self._F(10),
                              wrap=tk.WORD, state=tk.DISABLED, relief=tk.FLAT, borderwidth=0,
                              padx=14, pady=10, insertbackground=C["primary"], cursor="arrow",
                              spacing1=1, spacing3=1)
@@ -364,18 +483,18 @@ class JarvisDesktop:
         self.chat.config(yscrollcommand=sb.set); sb.config(command=self.chat.yview)
 
         for tag, fg, bg, font in [
-            ("prompt_user", C["gold"], None, (MONO, 10, "bold")),
-            ("prompt_jarvis", C["primary"], None, (MONO, 10, "bold")),
-            ("id_tag", C["accent"], None, (MONO, 8)),
-            ("msg_user", C["text"], None, (MONO, 10)),
-            ("msg_jarvis", C["text"], None, (MONO, 10)),
-            ("glitch_user", C["gold"], None, (MONO, 10)),
-            ("glitch_jarvis", C["primary"], None, (MONO, 10)),
-            ("time", C["text_dim"], None, (MONO, 7)),
-            ("sep", C["term_glow"], None, (MONO, 8)),
-            ("sys", C["accent"], None, (MONO, 8, "italic")),
-            ("typing", C["primary"], None, (MONO, 9, "italic")),
-            ("cursor", C["primary"], None, (MONO, 10, "bold")),
+            ("prompt_user", C["gold"], None, self._F(10, "bold")),
+            ("prompt_jarvis", C["primary"], None, self._F(10, "bold")),
+            ("id_tag", C["accent"], None, self._F(8)),
+            ("msg_user", C["text"], None, self._F(10)),
+            ("msg_jarvis", C["text"], None, self._F(10)),
+            ("glitch_user", C["gold"], None, self._F(10)),
+            ("glitch_jarvis", C["primary"], None, self._F(10)),
+            ("time", C["text_dim"], None, self._F(7)),
+            ("sep", C["term_glow"], None, self._F(8)),
+            ("sys", C["accent"], None, self._F(8, "italic")),
+            ("typing", C["primary"], None, self._F(9, "italic")),
+            ("cursor", C["primary"], None, self._F(10, "bold")),
         ]:
             opts = {"foreground": fg, "font": font}
             if bg: opts["background"] = bg
@@ -397,12 +516,37 @@ class JarvisDesktop:
         c = C["success"] if on else C["danger"]
         d = tk.Canvas(f, width=8, height=8, bg=C["titlebar"], highlightthickness=0)
         d.create_oval(1, 1, 7, 7, fill=c, outline=""); d.pack(side=tk.LEFT, padx=(0,4))
-        tk.Label(f, text=text, font=(MONO, 8), bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT)
+        tk.Label(f, text=text, font=self._F(8), bg=C["titlebar"], fg=C["text_dim"]).pack(side=tk.LEFT)
         return f
 
     def _hover(self, widget, normal_bg, hover_bg):
         widget.bind("<Enter>", lambda e: widget.config(bg=hover_bg))
         widget.bind("<Leave>", lambda e: widget.config(bg=normal_bg))
+
+    def _add_tooltip(self, widget, text):
+        """Tooltip flotante simple al pasar el mouse (detalle moderno)."""
+        state = {"win": None}
+
+        def show(_e):
+            if state["win"] is not None:
+                return
+            x = widget.winfo_rootx() + 12
+            y = widget.winfo_rooty() + widget.winfo_height() + 8
+            win = tk.Toplevel(widget)
+            win.wm_overrideredirect(True)
+            win.wm_geometry(f"+{x}+{y}")
+            win.configure(bg=C["primary"])
+            tk.Label(win, text=text, font=self._F(8, mono=False), bg=C["surface2"],
+                     fg=C["text"], padx=8, pady=4).pack(padx=1, pady=1)
+            state["win"] = win
+
+        def hide(_e):
+            if state["win"] is not None:
+                state["win"].destroy()
+                state["win"] = None
+
+        widget.bind("<Enter>", show, add="+")
+        widget.bind("<Leave>", hide, add="+")
 
     # ═══════════════════════════════════════════════════════
     # FONDO — grid + constelación de partículas
@@ -806,12 +950,12 @@ class JarvisDesktop:
     def _resize_left(self, w):
         sz = max(46, min(w - 40, 190)); self._draw_orb(sz)
         if w < 210:
-            self.left_title.config(font=(UI_FONT, 12, "bold"))
-            self.voice_btn.config(text="\U0001F399", font=(UI_FONT, 10), padx=8, pady=5)
+            self.left_title.config(font=self._F(12, "bold", mono=False))
+            self.voice_btn.config(text="\U0001F399", font=self._F(10, mono=False), padx=8, pady=5)
             self.voice_hint.config(text="Ctrl+Esp")
         else:
-            self.left_title.config(font=(UI_FONT, 19, "bold"))
-            self.voice_btn.config(text="\U0001F399  HABLAR", font=(UI_FONT, 9, "bold"), padx=16, pady=8)
+            self.left_title.config(font=self._F(19, "bold", mono=False))
+            self.voice_btn.config(text="\U0001F399  HABLAR", font=self._F(9, "bold", mono=False), padx=16, pady=8)
             self.voice_hint.config(text="Mantén  •  Ctrl+Espacio")
 
     def _on_right_resize(self, event):
@@ -828,7 +972,7 @@ class JarvisDesktop:
         for i, (label, cmd) in enumerate(self.quick_commands):
             if i > 0 and i % self._quick_cols == 0:
                 row = tk.Frame(self.quick_frame, bg=C["surface"]); row.pack(fill=tk.X)
-            btn = tk.Button(row, text=label, font=(UI_FONT, 8, "bold"), bg=C["primary_dim"], fg=C["primary"],
+            btn = tk.Button(row, text=label, font=self._F(8, "bold", mono=False), bg=C["primary_dim"], fg=C["primary"],
                             activebackground=C["accent_dim"], activeforeground=C["white"],
                             relief=tk.FLAT, borderwidth=1, cursor="hand2", padx=10, pady=3,
                             command=lambda c=cmd: self._send_message(c))
@@ -838,9 +982,24 @@ class JarvisDesktop:
     # ═══════════════════════════════════════════════════════
     # ACCIONES
     # ═══════════════════════════════════════════════════════
+    def _autosize_input(self, event=None):
+        """Crece el cuadro de texto hasta 5 lineas segun el contenido
+        (incluye lineas por wrap, no solo saltos de linea reales), y
+        siempre queda vertical y simetricamente centrado por el padding."""
+        try:
+            n_display = int(self.input_field.count("1.0", "end", "displaylines")[0])
+        except Exception:
+            n_display = int(self.input_field.index("end-1c").split(".")[0])
+        new_height = max(1, min(5, n_display))
+        if new_height != int(self.input_field.cget("height")):
+            self.input_field.config(height=new_height)
+
     def _send_from_input(self):
         text = self.input_field.get("1.0", tk.END).strip()
-        if text: self.input_field.delete("1.0", tk.END); self._send_message(text)
+        if text:
+            self.input_field.delete("1.0", tk.END)
+            self._autosize_input()
+            self._send_message(text)
 
     def _on_enter(self, event):
         if not event.state & 0x1: self._send_from_input(); return "break"
