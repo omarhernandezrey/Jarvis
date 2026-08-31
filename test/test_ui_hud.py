@@ -199,3 +199,39 @@ def test_qml_engine_loads_without_warnings():
     finally:
         engine._metrics.stop()  # noqa: SLF001
         engine.deleteLater()
+
+
+def test_responsive_layout_no_overlap_no_overflow():
+    """Fase 6: en los cuatro modos, núcleo y conversación no se solapan, todo
+    queda dentro de la ventana y la barra de comando es alcanzable."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtQuick import QQuickItem
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    win = engine.rootObjects()[0]
+
+    def rect(name):
+        it = win.findChild(QQuickItem, name)
+        tl = it.mapToScene(QPointF(0, 0))
+        return (tl.x(), tl.y(), it.width(), it.height())
+
+    def overlap(a, b):
+        ix = max(0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+        iy = max(0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+        return ix * iy
+
+    try:
+        for w, h in ((1700, 900), (1360, 820), (1000, 760), (430, 360)):
+            win.setWidth(w); win.setHeight(h)
+            _app.processEvents()
+            cz, vz, cb = rect("coreZone"), rect("convZone"), rect("cmdBar")
+            assert overlap(cz, vz) == 0, f"{w}x{h}: solapan núcleo y conversación"
+            for r in (cz, vz, rect("hud")):
+                assert r[0] >= -1 and r[1] >= -1
+                assert r[0] + r[2] <= w + 1 and r[1] + r[3] <= h + 1, f"{w}x{h}: overflow"
+            assert cb[1] + cb[3] <= h + 1, f"{w}x{h}: barra de comando fuera de vista"
+    finally:
+        engine._metrics.stop()  # noqa: SLF001
+        engine.deleteLater()

@@ -11,8 +11,10 @@ Item {
     id: bar
     property bool busy: Chat ? Chat.busy : false
     property string micState: Voice ? Voice.micState : "inactive"
-    property var spectrum: (Voice && bar.recording && Vm) ? Vm.audio.spectrum : []
+    property bool showViz: false        // visualizador persistente (modo badge)
     readonly property bool recording: micState === "listening"
+    readonly property bool vizOn: recording || showViz
+    property var spectrum: (bar.vizOn && Vm) ? Vm.audio.spectrum : []
 
     property int lineH: Math.ceil(fm.lineSpacing)
     implicitHeight: Math.min(6, Math.max(1, editor.lineCount)) * lineH + Design.sp(6)
@@ -28,7 +30,7 @@ Item {
              : editor.activeFocus ? Qt.rgba(1, 1, 1, 0.05)
              : Design.surfaceColor
         border.width: 1
-        border.color: bar.recording ? "transparent"
+        border.color: bar.vizOn ? "transparent"
              : bar.busy ? Design.glow(Design.azure, 0.55)
              : editor.activeFocus ? Design.glow(Design.cyan, 0.6)
              : boxHover.hovered ? Design.glow(Design.textSecondary, 0.5)
@@ -60,10 +62,10 @@ Item {
     Canvas {
         id: micViz
         anchors.fill: parent
-        visible: bar.recording
+        visible: bar.vizOn
         onPaint: {
             var ctx = getContext("2d"); ctx.reset()
-            if (!bar.recording) return
+            if (!bar.vizOn) return
             var s = bar.spectrum
             var r = Design.radiusSurface
             ctx.strokeStyle = "" + Design.cyan

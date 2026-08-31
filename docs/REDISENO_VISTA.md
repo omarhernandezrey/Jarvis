@@ -265,3 +265,31 @@ cancelación del `_TapClient`, máquina de estados del micrófono sin audio, y e
 resto de fases. En esta máquina `start_recording()` abre el micrófono real y
 pasa a `listening`. Prueba de voz punta a punta (STT/TTS con audio real):
 pendiente en pantalla por el usuario.
+
+---
+
+## FASE 6 — Responsive real (reorganización, no encogimiento)
+
+`Main.qml` deriva `mode` de las dimensiones y **recoloca** las zonas (no las
+escala):
+
+| modo | condición | composición |
+|---|---|---|
+| `wide` | ancho ≥ 1600 | HUD lateral (columna) · núcleo · conversación — 3 zonas |
+| `mid` | 1100–1599 | HUD en banda superior; núcleo reducido a la izquierda |
+| `narrow` | ancho < 1100 | una columna: cabecera con núcleo-insignia + HUD; conversación prioritaria; barra abajo |
+| `badge` | alto < 720 | núcleo-insignia en cabecera; el visualizador de espectro vive **persistente** en la barra de comando (`CommandBar.showViz`) |
+
+- `Core.compact` / `CoreField.compact` (modo insignia): el bucle sigue siendo
+  uno, pero se omiten partículas, halo doble, anillos concéntricos, onda radial
+  y barrido — quedan anillo de datos + respiración + punto de luz + color de
+  estado. También baja el coste.
+- La barra de comando está **siempre anclada al fondo** de su zona y alcanzable
+  en los cuatro modos.
+
+### Verificación
+
+`test/test_ui_hud.py::test_responsive_layout_no_overlap_no_overflow` (11 tests
+verde): en 1700×900, 1360×820, 1000×760 y 430×360 → **solape núcleo/conversación
+= 0**, todas las zonas dentro de la ventana, barra de comando visible. **0
+warnings** de QML en las 6 medidas probadas.

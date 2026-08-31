@@ -18,6 +18,7 @@ Item {
     property var    spectrum: []
     property real   tokensPerSecond: 0.0
     property bool   loopRunning: true
+    property bool   compact: false
 
     // paralaje: puntero normalizado -1..1 (lo alimenta MouseArea del padre)
     property point pointer: Qt.point(0, 0)
@@ -33,6 +34,7 @@ Item {
         spectrum: root.spectrum
         tokensPerSecond: root.tokensPerSecond
         loopRunning: root.loopRunning
+        compact: root.compact
         parallax: Qt.point(root.pointer.x, root.pointer.y)
 
         // valores por defecto = IDLE; las transiciones interpolan al cambiar

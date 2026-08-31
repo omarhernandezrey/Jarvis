@@ -2,15 +2,19 @@ import QtQuick
 import QtQuick.Window
 import "."
 
-// FASE 4 — núcleo + consola conversacional. La barra de comando definitiva y el
-// responsive llegan en fases 5 y 6. `Vm` / `Conversation` / `Chat` son
-// contexto. Teclas 1–6: inspección de estados (no es UI final).
+// FASE 6 — responsive por reorganización (no por encogimiento). Cuatro modos:
+//   wide   ≥1600           HUD lateral | núcleo | conversación (3 zonas)
+//   mid    1100–1599       HUD en banda superior; núcleo reducido
+//   narrow <1100           una columna: conversación prioritaria; núcleo insignia
+//   badge  alto <720       núcleo insignia; el visualizador vive en la barra
+// La barra de comando queda SIEMPRE anclada abajo y alcanzable; cero
+// solapamientos, cero overflow.
 Window {
     id: win
-    width: 1280
-    height: 800
-    minimumWidth: 900
-    minimumHeight: 560
+    width: 1360
+    height: 820
+    minimumWidth: 380
+    minimumHeight: 360
     visible: true
     color: Design.bgVoid
     title: "J.A.R.V.I.S"
@@ -23,12 +27,19 @@ Window {
         anchors.fill: parent
         focus: true
 
-        // Plano 0 — fondo absoluto (paralaje 2 px)
+        readonly property int pad: Design.sp(5)
+        readonly property string mode: win.height < 720 ? "badge"
+            : win.width >= 1600 ? "wide"
+            : win.width < 1100 ? "narrow" : "mid"
+        readonly property bool singleCol: mode === "narrow" || mode === "badge"
+        readonly property int hudSideW: Design.sp(42)
+        readonly property int headerH: mode === "badge" ? Design.sp(20) : Design.sp(22)
+        readonly property int bandH: Design.sp(15)
+
+        // ── planos de profundidad ────────────────────────────────────────
         Rectangle {
-            anchors.fill: parent
-            anchors.margins: -4
-            x: win.pointerX * 2
-            y: win.pointerY * 2
+            anchors.fill: parent; anchors.margins: -4
+            x: win.pointerX * 2; y: win.pointerY * 2
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Design.bgAbyss }
                 GradientStop { position: 1.0; color: Design.bgVoid }
@@ -41,7 +52,6 @@ Window {
                 GradientStop { position: 0.4; color: "transparent" }
             }
         }
-
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
@@ -53,88 +63,128 @@ Window {
             onExited: { win.pointerX = 0; win.pointerY = 0 }
         }
 
+        // ── HUD ──────────────────────────────────────────────────────────
         Hud {
-            id: hudBand
-            anchors { top: parent.top; left: parent.left; right: parent.right
-                      margins: Design.sp(5) }
+            objectName: "hud"
+            id: hud
+            vertical: rootItem.mode === "wide"
+            // en single, el HUD va a la derecha de la insignia del núcleo
+            x: rootItem.singleCol ? rootItem.pad + rootItem.headerH + Design.sp(4)
+                                  : rootItem.pad
+            y: rootItem.pad
+            width: rootItem.mode === "wide" ? rootItem.hudSideW
+                 : rootItem.singleCol ? Math.max(0, parent.width - x - rootItem.pad)
+                 : parent.width - 2 * rootItem.pad
+            height: rootItem.mode === "wide" ? parent.height - 2 * rootItem.pad
+                  : rootItem.singleCol ? rootItem.headerH
+                  : rootItem.bandH
+            clip: true
         }
-        Rectangle {
-            id: hudRule
-            anchors { left: parent.left; right: parent.right; top: hudBand.bottom
-                      topMargin: Design.sp(3) }
+
+        Rectangle {   // regla bajo la banda superior (mid) / bajo el header (single)
+            visible: rootItem.mode === "mid" || rootItem.singleCol
+            x: rootItem.pad
+            width: parent.width - 2 * rootItem.pad
             height: 1
+            color: Design.hairline
+            y: rootItem.singleCol ? rootItem.pad + rootItem.headerH + Design.sp(2)
+                                  : rootItem.pad + rootItem.bandH + Design.sp(3)
+        }
+
+        // ── NÚCLEO ───────────────────────────────────────────────────────
+        Item {
+            id: coreZone
+            objectName: "coreZone"
+            x: {
+                if (rootItem.mode === "wide") return rootItem.pad + rootItem.hudSideW + Design.sp(6)
+                return rootItem.pad
+            }
+            y: {
+                if (rootItem.mode === "wide") return rootItem.pad
+                if (rootItem.mode === "mid") return rootItem.pad + rootItem.bandH + Design.sp(6)
+                return rootItem.pad          // single: insignia en el header
+            }
+            width: {
+                if (rootItem.singleCol) return rootItem.headerH
+                if (rootItem.mode === "wide")
+                    return (parent.width - x - rootItem.pad) * 0.46
+                return (parent.width - 2 * rootItem.pad) * 0.40
+            }
+            height: {
+                if (rootItem.singleCol) return rootItem.headerH
+                if (rootItem.mode === "wide") return parent.height - 2 * rootItem.pad
+                return parent.height - y - rootItem.pad
+            }
+
+            Core {
+                id: core
+                anchors.centerIn: parent
+                width: Math.min(coreZone.width, coreZone.height)
+                       * (rootItem.singleCol ? 1.0 : 0.92)
+                height: width
+                compact: rootItem.singleCol
+                coreState: Vm ? Vm.state : "idle"
+                audioLevel: Vm ? Vm.audio.level : 0
+                spectrum: Vm ? Vm.audio.spectrum : []
+                tokensPerSecond: (Vm && Vm.metrics.tokensPerSecond !== undefined)
+                                 ? Vm.metrics.tokensPerSecond : 0
+                pointer: Qt.point(win.pointerX, win.pointerY)
+                loopRunning: win.active
+            }
+
+            Row {
+                visible: !rootItem.singleCol
+                anchors { left: parent.left; bottom: parent.bottom }
+                spacing: Design.sp(2)
+                Rectangle {
+                    width: 1; height: stLabel.height
+                    color: stLabel.text === "alert" ? Design.alert
+                        : stLabel.text === "offline" ? Design.textMeta : Design.cyan
+                }
+                Text {
+                    id: stLabel
+                    text: Vm ? Vm.state : "idle"
+                    color: Design.textSecondary
+                    font.family: Design.fontMono
+                    font.pixelSize: Design.fsSmall
+                }
+            }
+        }
+
+        Rectangle {   // regla vertical entre núcleo y conversación (wide/mid)
+            visible: !rootItem.singleCol
+            x: coreZone.x + coreZone.width + Design.sp(4)
+            y: coreZone.y
+            width: 1
+            height: coreZone.height
             color: Design.hairline
         }
 
-        // ── zona de contenido: núcleo | conversación ──────────────────────
+        // ── CONVERSACIÓN + BARRA DE COMANDO ──────────────────────────────
         Item {
-            id: contentRow
-            anchors { left: parent.left; right: parent.right
-                      top: hudRule.bottom; bottom: parent.bottom
-                      margins: Design.sp(5) }
-
-            Item {
-                id: coreZone
-                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: Math.max(320, Math.min(parent.width * 0.42, parent.height))
-
-                Core {
-                    id: core
-                    anchors.centerIn: parent
-                    width: Math.min(coreZone.width, coreZone.height) * 0.92
-                    height: width
-                    coreState: Vm ? Vm.state : "idle"
-                    audioLevel: Vm ? Vm.audio.level : 0
-                    spectrum: Vm ? Vm.audio.spectrum : []
-                    tokensPerSecond: (Vm && Vm.metrics.tokensPerSecond !== undefined)
-                                     ? Vm.metrics.tokensPerSecond : 0
-                    pointer: Qt.point(win.pointerX, win.pointerY)
-                    loopRunning: win.active     // Fase 7 endurece esto
-                }
-
-                Row {
-                    anchors { left: parent.left; bottom: parent.bottom }
-                    spacing: Design.sp(2)
-                    Rectangle {
-                        width: 1; height: stLabel.height
-                        color: stLabel.text === "alert" ? Design.alert
-                            : stLabel.text === "offline" ? Design.textMeta : Design.cyan
-                    }
-                    Text {
-                        id: stLabel
-                        text: Vm ? Vm.state : "idle"
-                        color: Design.textSecondary
-                        font.family: Design.fontMono
-                        font.pixelSize: Design.fsSmall
-                    }
-                }
+            id: convZone
+            objectName: "convZone"
+            x: rootItem.singleCol ? rootItem.pad
+               : coreZone.x + coreZone.width + Design.sp(5)
+            y: {
+                if (rootItem.mode === "wide") return rootItem.pad
+                if (rootItem.mode === "mid") return rootItem.pad + rootItem.bandH + Design.sp(6)
+                return rootItem.pad + rootItem.headerH + Design.sp(5)   // single
             }
+            width: parent.width - x - rootItem.pad
+            height: parent.height - y - rootItem.pad
 
-            Rectangle {
-                id: zoneRule
-                anchors { left: coreZone.right; top: parent.top; bottom: parent.bottom
-                          leftMargin: Design.sp(4) }
-                width: 1
-                color: Design.hairline
+            Conversation {
+                id: convo
+                anchors { left: parent.left; right: parent.right; top: parent.top
+                          bottom: cmdBar.top; bottomMargin: Design.sp(3) }
+                measure: Math.min(640, width - Design.sp(6))
             }
-
-            Item {
-                id: convZone
-                anchors { left: zoneRule.right; right: parent.right
-                          top: parent.top; bottom: parent.bottom
-                          leftMargin: Design.sp(5) }
-
-                Conversation {
-                    id: convo
-                    anchors { left: parent.left; right: parent.right; top: parent.top
-                              bottom: cmdBar.top; bottomMargin: Design.sp(3) }
-                    measure: 560
-                }
-
-                CommandBar {
-                    id: cmdBar
-                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                }
+            CommandBar {
+                id: cmdBar
+                objectName: "cmdBar"
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                showViz: rootItem.mode === "badge"
             }
         }
 

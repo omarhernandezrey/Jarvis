@@ -23,6 +23,7 @@ Item {
     property real   tokensPerSecond: 0.0
     property point  parallax: Qt.point(0, 0)   // -1..1, del puntero
     property bool   loopRunning: true
+    property bool   compact: false             // modo insignia (Fase 6)
 
     // ── parámetros visuales, interpolados por Core.qml al cambiar de estado ─
     property color tint: Design.azure
@@ -64,6 +65,7 @@ Item {
 
     // densidad y velocidad del campo = función del estado (no aleatorias)
     function _density() {
+        if (compact) return 0.0            // insignia: sin campo de partículas
         switch (coreState) {
         case "listening": return 0.60
         case "thinking":  return 1.00
@@ -181,7 +183,8 @@ Item {
             if (em > 0.01) {
                 var hx = cx + field.parallax.x * 3
                 var hy = cy + field.parallax.y * 3
-                _halo(ctx, hx, hy, field.ringR * 2.6, rgba(0.05 * em))
+                if (!field.compact)
+                    _halo(ctx, hx, hy, field.ringR * 2.6, rgba(0.05 * em))
                 _halo(ctx, hx - field.parallax.x * 1.5, hy - field.parallax.y * 1.5,
                       field.ringR * 1.7, rgba(0.09 * em))
             }
@@ -204,7 +207,7 @@ Item {
             var ncy = cy + field.parallax.y * 4
 
             // anillos concéntricos contrarrotantes (THINKING)
-            if (field.concentric > 0.01) {
+            if (field.concentric > 0.01 && !field.compact) {
                 var k = field.concentric
                 _arc(ctx, ncx, ncy, field.ringR * 0.78, field._angle * 2.0, 210,
                      rgba(0.5 * k), 2)
@@ -213,7 +216,7 @@ Item {
             }
 
             // onda radial desde el centro (SPEAKING)
-            if (field.radialWave > 0.01) {
+            if (field.radialWave > 0.01 && !field.compact) {
                 for (var w = 0; w < 3; w++) {
                     var ph = (t * 0.6 + w / 3) % 1
                     var rr = ph * field.ringR * 1.8
@@ -247,7 +250,7 @@ Item {
 
             // barrido especular lento sobre el anillo (una pasada / 6–9 s)
             var sf = (t - field._sweepAt) / field._sweepPeriod
-            if (sf >= 0 && sf < 0.5 && em > 0.01) {
+            if (sf >= 0 && sf < 0.5 && em > 0.01 && !field.compact) {
                 var sweepDeg = sf * 720
                 var sAng = baseA + sweepDeg * Math.PI / 180
                 for (var b = 0; b < 10; b++) {
