@@ -1,31 +1,47 @@
 """
 JARVIS Local - Text-to-Speech (Fase 3C)
-Primario  : edge-tts + PyAV + sounddevice (voz neural masculina latina).
-            Sin API key. Solo requiere internet.
+Unica voz : edge-tts + PyAV + sounddevice (voz neural masculina latina).
+            Sin API key. Requiere internet SIEMPRE: esta maquina esta
+            conectada de forma permanente, asi que no hay fallback a otro
+            motor de voz. Si la voz neural no esta disponible (sin
+            internet, o falla del servicio), Jarvis se queda en silencio
+            en vez de hablar con espeak-ng/pyttsx3 -- nunca se usa una voz
+            distinta a la configurada (ver _DEFAULT_EDGE_VOICE).
 Cache     : las frases generadas se guardan en data/tts_cache, asi que las
             respuestas repetidas ("Te escucho.", saludos) suenan al instante
             y siguen sonando con voz neural aunque no haya internet.
-Fallback  : Linux: espeak-ng por subprocess (pyttsx3+espeak es un no-op
-            silencioso en varias distros). Windows: pyttsx3/SAPI5.
 """
 import asyncio
 import contextlib
 import hashlib
 import io
-import shutil as _shutil
-import subprocess
-import threading
 
 import numpy as np
 import sounddevice as sd
 
-from jarvis_local.config import BASE_DIR, IS_WINDOWS, get_config
+from jarvis_local.config import BASE_DIR, get_config
 
-# Voz principal: hombre mexicano (la mas usada en proyectos JARVIS en espanol)
-# Configurable en config.yaml -> voice.tts_voice
-# Otras opciones: es-AR-TomasNeural, es-CO-GonzaloNeural, es-US-AlonsoNeural
-_EDGE_VOICE = str(
-    (get_config().get("voice") or {}).get("tts_voice", "es-MX-JorgeNeural")
+# Voz principal y UNICA: hombre mexicano (la mas usada en proyectos JARVIS
+# en espanol). Configurable en config.yaml -> voice.tts_voice, pero si ese
+# valor no tiene forma de voz de Edge TTS valida (ej. quedo en "auto", vacio,
+# o alguien lo borro/corrompio por error) se ignora y se usa este default en
+# vez de dejar a Jarvis sin voz configurada. Asi la voz elegida nunca se
+# "pierde" por un config.yaml invalido.
+# Otras opciones validas: es-AR-TomasNeural, es-CO-GonzaloNeural,
+# es-US-AlonsoNeural
+_DEFAULT_EDGE_VOICE = "es-MX-JorgeNeural"
+
+
+def _is_valid_edge_voice(name: str) -> bool:
+    """Forma esperada de un nombre de voz de Edge TTS: 'xx-YY-NombreNeural'."""
+    return bool(name) and name.count("-") >= 2 and name.endswith("Neural")
+
+
+_configured_voice = str(
+    (get_config().get("voice") or {}).get("tts_voice", _DEFAULT_EDGE_VOICE)
+)
+_EDGE_VOICE = (
+    _configured_voice if _is_valid_edge_voice(_configured_voice) else _DEFAULT_EDGE_VOICE
 )
 _EDGE_RATE = "+0%"
 _EDGE_VOLUME = "+0%"
@@ -41,7 +57,6 @@ _voice_index_pyttsx3 = None
 
 _is_speaking = False
 _engine_pyttsx3 = None
-_engine_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +92,8 @@ async def _edge_generate_async(text: str) -> bytes:
             return mp3
 
         # Sin internet, el stream puede colgarse en vez de fallar rapido:
-        # con timeout caemos al fallback offline en vez de dejar mudo a Jarvis.
+        # con timeout fallamos rapido y speak() se queda en silencio en vez
+        # de esperar indefinidamente.
         return await asyncio.wait_for(_gen(), timeout=15)
     except Exception:
         return b""
@@ -149,84 +165,6 @@ def _play_numpy(audio: np.ndarray, samplerate: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Fallback: pyttsx3 SAPI5
-# ---------------------------------------------------------------------------
-
-def _get_pyttsx3_engine():
-    global _engine_pyttsx3
-    with _engine_lock:
-        if _engine_pyttsx3 is None:
-            import pyttsx3
-            _engine_pyttsx3 = pyttsx3.init()
-            _apply_pyttsx3_settings()
-        return _engine_pyttsx3
-
-
-def _apply_pyttsx3_settings():
-    if _engine_pyttsx3 is None:
-        return
-    voices = _engine_pyttsx3.getProperty("voices")
-    idx = _voice_index_pyttsx3 if _voice_index_pyttsx3 is not None else _auto_spanish_idx(voices)
-    if idx is not None and 0 <= idx < len(voices):
-        _engine_pyttsx3.setProperty("voice", voices[idx].id)
-    _engine_pyttsx3.setProperty("rate", _rate_wpm)
-    _engine_pyttsx3.setProperty("volume", _volume_float)
-
-
-def _auto_spanish_idx(voices) -> int | None:
-    for i, v in enumerate(voices):
-        for lang in (v.languages or []):
-            if any(x in str(lang).lower() for x in ["es-co", "es-mx", "es-es", "es_", "es-", "spanish"]):
-                return i
-    for i, v in enumerate(voices):
-        if any(x in (v.name or "").lower() for x in ["spanish", "espanol", "español"]):
-            return i
-    return 0 if voices else None
-
-
-def _pyttsx3_speak(text: str) -> bool:
-    try:
-        engine = _get_pyttsx3_engine()
-        engine.say(text)
-        engine.runAndWait()
-        return True
-    except Exception as e:
-        print(f"[TTS Fallback Error] {e}")
-        return False
-
-
-# ---------------------------------------------------------------------------
-# Fallback Linux: espeak-ng por subprocess. pyttsx3 con el driver espeak
-# retorna OK sin emitir sonido en varias distros; el binario si funciona.
-# ---------------------------------------------------------------------------
-
-def _espeak_binary() -> str | None:
-    return _shutil.which("espeak-ng") or _shutil.which("espeak")
-
-
-def _espeak_speak(text: str) -> bool:
-    binary = _espeak_binary()
-    if not binary:
-        return False
-    try:
-        amp = max(0, min(200, int(_volume_float * 200)))
-        subprocess.run(
-            [binary, "-v", "es-419", "-s", str(_rate_wpm), "-a", str(amp), text],
-            capture_output=True, timeout=120, check=True,
-        )
-        return True
-    except Exception as e:
-        print(f"[TTS Fallback Error] espeak: {e}")
-        return False
-
-
-def _offline_speak(text: str) -> bool:
-    if IS_WINDOWS:
-        return _pyttsx3_speak(text)
-    return _espeak_speak(text) or _pyttsx3_speak(text)
-
-
-# ---------------------------------------------------------------------------
 # API publica
 # ---------------------------------------------------------------------------
 
@@ -251,9 +189,13 @@ def speak(text: str) -> bool:
                 if not from_cache:
                     _cache_put(text, mp3_bytes)
                 return _play_numpy(audio, sr)
-        # Fallback offline: espeak-ng (Linux) / pyttsx3 SAPI5 (Windows)
-        print("[TTS] Voz neural no disponible (sin internet?); uso la voz de respaldo.")
-        return _offline_speak(text)
+        # Sin fallback: nunca se usa una voz distinta a _EDGE_VOICE. Si la
+        # voz neural no esta disponible (sin internet, o falla del
+        # servicio), Jarvis se queda en silencio en vez de hablar con
+        # espeak-ng/pyttsx3.
+        print(f"[TTS] Voz neural ({_EDGE_VOICE}) no disponible; Jarvis no habla esta vez "
+              "(requiere internet, sin voz de respaldo por diseno).")
+        return False
     except Exception as e:
         print(f"[TTS Error] {e}")
         return False
@@ -272,17 +214,9 @@ def is_speaking() -> bool:
 
 
 def is_available() -> bool:
-    """Hay ALGUNA forma de hablar: fallback offline instalado, o edge-tts
-    (que solo necesita internet y sounddevice, ya presentes)."""
-    if not IS_WINDOWS and _espeak_binary():
-        return True
-    try:
-        import pyttsx3
-        e = pyttsx3.init()
-        if len(e.getProperty("voices")) > 0:
-            return True
-    except Exception:
-        pass
+    """Hay forma de hablar: paquete edge-tts instalado (la unica via, no
+    hay fallback). No confirma que haya internet en este momento -- eso
+    solo se sabe al intentar speak()."""
     try:
         import edge_tts  # noqa: F401
         return True
@@ -352,20 +286,18 @@ def set_edge_voice(voice_name: str) -> bool:
     """Cambia la voz neural principal (ej. es-CO-GonzaloNeural) en caliente.
     Para hacerlo permanente: config.yaml -> voice.tts_voice."""
     global _EDGE_VOICE
-    if voice_name and voice_name.count("-") >= 2:
+    if _is_valid_edge_voice(voice_name):
         _EDGE_VOICE = voice_name
         return True
     return False
 
 
 def get_voice_state() -> dict:
-    fallback = "pyttsx3/SAPI5" if IS_WINDOWS else (
-        _espeak_binary() or "sin fallback offline")
     return {
         "voice_index": _voice_index_pyttsx3,
         "rate": _rate_wpm,
         "volume": _volume_float,
-        "engine": f"edge-tts ({_EDGE_VOICE}) | fallback {fallback}",
+        "engine": f"edge-tts ({_EDGE_VOICE}) | sin voz de respaldo (requiere internet)",
         "edge_voice": _EDGE_VOICE,
         "cache_dir": str(_CACHE_DIR),
     }

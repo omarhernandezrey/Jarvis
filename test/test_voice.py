@@ -138,6 +138,51 @@ def test_tts_no_piper_import():
     assert "gTTS" not in source
 
 
+def test_tts_no_offline_fallback_engine():
+    """Jarvis solo debe usar la voz neural configurada: no debe quedar
+    codigo que hable con espeak-ng/pyttsx3 como respaldo automatico."""
+    import jarvis_local.voice.tts as tts_mod
+    source = open(tts_mod.__file__, encoding="utf-8").read()
+    assert "_offline_speak" not in source
+    assert "_pyttsx3_speak" not in source
+    assert "_espeak_speak" not in source
+
+
+def test_tts_default_voice_is_jorge():
+    """La voz por defecto (si config.yaml faltara o tuviera un valor
+    invalido) siempre debe resolver a la voz elegida, nunca a otra."""
+    from jarvis_local.voice.tts import _DEFAULT_EDGE_VOICE, get_voice_state
+    assert _DEFAULT_EDGE_VOICE == "es-MX-JorgeNeural"
+    assert get_voice_state()["edge_voice"] == "es-MX-JorgeNeural"
+
+
+def test_tts_invalid_voice_name_rejected():
+    """Un valor invalido (ej. 'auto', vacio) nunca debe reemplazar la voz
+    configurada, ni en config.yaml ni via set_edge_voice()."""
+    from jarvis_local.voice.tts import _is_valid_edge_voice, set_edge_voice
+    assert _is_valid_edge_voice("auto") is False
+    assert _is_valid_edge_voice("") is False
+    assert _is_valid_edge_voice("es-MX-JorgeNeural") is True
+    assert set_edge_voice("auto") is False
+    assert set_edge_voice("") is False
+
+
+def test_tts_speak_stays_silent_when_neural_voice_unavailable():
+    """Si la voz neural falla (sin internet, error del servicio), speak()
+    debe devolver False y quedarse en silencio -- nunca debe hablar con
+    otra voz."""
+    from jarvis_local.voice import tts as tts_mod
+
+    async def _empty_bytes(_text):
+        return b""
+
+    with (
+        patch.object(tts_mod, "_edge_generate_async", side_effect=_empty_bytes),
+        patch.object(tts_mod, "_cache_get", return_value=b""),
+    ):
+        result = tts_mod.speak("Texto de prueba sin voz neural disponible.")
+    assert result is False
+
 
 def test_config_has_voice_section():
     from jarvis_local.config import reload_config
@@ -147,6 +192,16 @@ def test_config_has_voice_section():
     assert voice["tts_enabled"] is False
     assert "stt_noise_floor" in voice
     assert "stt_min_threshold" in voice
+
+
+def test_config_yaml_tts_voice_is_jorge():
+    """Guarda contra ediciones futuras de config.yaml que revirtieran la
+    voz a 'auto' o cualquier otro valor: siempre debe quedar la voz
+    elegida por el usuario."""
+    from jarvis_local.config import CONFIG_FILE
+    with open(CONFIG_FILE, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    assert cfg["voice"]["tts_voice"] == "es-MX-JorgeNeural"
 
 
 def test_voz_does_not_import_tools():

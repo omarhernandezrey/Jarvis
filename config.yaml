@@ -53,5 +53,5 @@ voice:
   stt_sample_rate: 16000
   tts_enabled: false
   tts_rate: 175
-  tts_voice: auto
+  tts_voice: es-MX-JorgeNeural
   tts_volume: 1.0
