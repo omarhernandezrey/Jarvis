@@ -2,10 +2,10 @@ import QtQuick
 import QtQuick.Window
 import "."
 
-// FASE 1 — lienzo mínimo que prueba el sistema de diseño: tres planos de
-// profundidad construidos SOLO con luz (gradientes desde Design.lightOrigin),
-// una hairline, y la escala tipográfica real. El núcleo, el HUD y la
-// conversación llegan en fases siguientes.
+// FASE 2 — el núcleo montado sobre los planos de profundidad. HUD, conversación
+// y barra de comando llegan en fases siguientes. `Vm` es el ViewModel
+// (contexto). Las teclas 1–6 recorren los estados para inspección; no forman
+// parte de la interfaz final.
 Window {
     id: win
     width: 1280
@@ -16,93 +16,80 @@ Window {
     color: Design.bgVoid
     title: "J.A.R.V.I.S"
 
-    // Plano 0 — fondo absoluto. Gradiente sutil que sube hacia la fuente de luz.
+    // puntero normalizado -1..1 para el paralaje
+    property real pointerX: 0
+    property real pointerY: 0
+
+    Item {
+        id: rootItem
+        anchors.fill: parent
+        focus: true
+
+    // Plano 0 — fondo absoluto (paralaje 2 px).
     Rectangle {
         anchors.fill: parent
+        anchors.margins: -4
+        x: win.pointerX * 2
+        y: win.pointerY * 2
         gradient: Gradient {
             GradientStop { position: 0.0; color: Design.bgAbyss }
             GradientStop { position: 1.0; color: Design.bgVoid }
         }
     }
-
-    // Plano 1 — campo. Halo de luz único, arriba-centro, muy tenue.
+    // halo de luz único, arriba-centro
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            orientation: Gradient.Vertical
             GradientStop { position: 0.0; color: Design.glow(Design.azure, 0.10) }
-            GradientStop { position: 0.45; color: "transparent" }
+            GradientStop { position: 0.4; color: "transparent" }
         }
     }
 
-    // Plano 2 — superficie translúcida de muestra, con su regla lateral (la
-    // etiqueta vive en la regla, no flotando sobre el bloque).
-    Item {
-        id: panel
-        x: Design.sp(10); y: Design.sp(10)
-        width: Math.min(420, parent.width - Design.sp(20))
-        height: Design.sp(56)
-
-        Rectangle {   // regla lateral de 1px
-            width: 1; height: parent.height
-            color: Design.cyan; opacity: 0.5
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        onPositionChanged: (m) => {
+            win.pointerX = (m.x / win.width - 0.5) * 2
+            win.pointerY = (m.y / win.height - 0.5) * 2
         }
-        Text {
-            x: Design.sp(4); y: 0
-            text: "sistema de diseño"
-            font.family: Design.fontMono
-            font.pixelSize: Design.fsMeta
-            color: Design.textMeta
-        }
-        Rectangle {
-            anchors.fill: parent
-            anchors.leftMargin: Design.sp(4)
-            color: Design.surfaceColor
-            radius: Design.radiusSurface
-            border.width: 1
-            border.color: Design.hairline
-        }
-        Column {
-            anchors.fill: parent
-            anchors.margins: Design.sp(3)
-            anchors.leftMargin: Design.sp(6)
-            spacing: Design.sp(1)
-            Text { text: "JARVIS"; color: Design.textPrimary
-                   font.family: Design.fontSans; font.pixelSize: Design.fsTitle }
-            Text { text: "capa de vista · PySide6 + Qt Quick"; color: Design.textSecondary
-                   font.family: Design.fontMono; font.pixelSize: Design.fsSmall }
-        }
+        onExited: { win.pointerX = 0; win.pointerY = 0 }
     }
 
-    // Hairline horizontal de separación.
-    Rectangle {
-        anchors { left: parent.left; right: parent.right }
-        y: Design.sp(10) + Design.sp(56) + Design.sp(6)
-        height: 1
-        color: Design.hairline
+    Core {
+        id: core
+        anchors.centerIn: parent
+        width: Math.min(parent.width, parent.height) * 0.52
+        height: width
+        coreState: Vm.state
+        audioLevel: Vm.audio.level
+        spectrum: Vm.audio.spectrum
+        tokensPerSecond: (Vm.metrics.tokensPerSecond !== undefined) ? Vm.metrics.tokensPerSecond : 0
+        pointer: Qt.point(win.pointerX, win.pointerY)
+        loopRunning: win.active          // Fase 7 endurece esto (0 fps sin foco)
     }
 
-    // Escala tipográfica — evidencia de jerarquía real.
-    Column {
-        x: Design.sp(10)
-        y: Design.sp(10) + Design.sp(56) + Design.sp(12)
+    // etiqueta de estado — en la regla lateral, no en versalitas flotantes
+    Row {
+        anchors { left: parent.left; bottom: parent.bottom; margins: Design.sp(6) }
         spacing: Design.sp(2)
-        Repeater {
-            model: [
-                { s: Design.fsDisplay, t: "40 · display" },
-                { s: Design.fsLarge,   t: "24 · large" },
-                { s: Design.fsTitle,   t: "18 · title" },
-                { s: Design.fsBody,    t: "15 · body" },
-                { s: Design.fsSmall,   t: "13 · small" },
-                { s: Design.fsMeta,    t: "12 · meta" }
-            ]
-            delegate: Text {
-                required property var modelData
-                text: modelData.t
-                color: Design.textPrimary
-                font.family: Design.fontMono
-                font.pixelSize: modelData.s
-            }
+        Rectangle { width: 1; height: label.height; color: core.state === "alert" ? Design.alert
+                    : core.state === "offline" ? Design.textMeta : Design.cyan }
+        Text {
+            id: label
+            text: Vm.state
+            color: Design.textSecondary
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsSmall
         }
     }
+
+    Keys.onPressed: (e) => {
+        const map = { "1": "idle", "2": "listening", "3": "thinking",
+                      "4": "speaking", "5": "alert", "6": "offline" }
+        if (map[e.text] !== undefined) Vm.set_state(map[e.text])
+    }
+    }
+
+    Component.onCompleted: win.requestActivate()
 }

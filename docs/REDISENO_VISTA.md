@@ -66,3 +66,64 @@ hará cuando la vista nueva sea usable (Fase 2+). La Tkinter se retira en Fase 8
 `QQmlApplicationEngine` carga `Main.qml` con **0 warnings** (el singleton
 `Design` resuelve, todos los bindings de tokens enlazan). `PySide6>=6.10`
 añadido a `pyproject.toml` y `requirements.txt`.
+
+---
+
+## FASE 2 — El núcleo
+
+### ViewModel (`jarvis_local/ui/hud/viewmodel.py`)
+
+`QObject` con exactamente los cinco canales del contrato:
+
+| canal | forma | quién lo alimenta |
+|---|---|---|
+| state | `Property state` + `stateChanged(str)`; `set_state()` valida contra `STATES` | la vista / drivers |
+| token | `token(str)`; `push_token()` | cliente Ollama (Fase 4) |
+| audio | `Property audio {level, spectrum}` + `audioChanged`; `push_audio()` / `clear_audio()` | micrófono (Fase 5) |
+| metrics | `Property metrics` (dict) + `metricsChanged`; `push_metrics()` | muestreo de sistema (Fase 3) |
+| error | `error(str)`; `push_error()` | cualquier subsistema |
+
+`spectrum` vacío ⇒ el anillo cae a su valor base, nunca a ruido. Los `push_*`
+son slots pensados para `invokeMethod(..., QueuedConnection)` desde hilos
+productores.
+
+### El núcleo (`qml/Core.qml` + `qml/CoreField.qml`)
+
+- **Un solo lienzo** (`Canvas`, FBO) y **un solo bucle** (`FrameAnimation`).
+  Ningún otro timer. La simulación integra por `frameTime` real (clamp 50 ms);
+  el repintado se limita a 30 fps con un acumulador; bajar de fps no altera el
+  movimiento.
+- **Tres planos con paralaje** desde el puntero: fondo (2 px, en `Main.qml`),
+  campo = halo + partículas (3 px), núcleo = anillo + punto de luz (4 px).
+- **Campo de partículas**: un simulador, 120 partículas en `Float32Array`
+  preasignados (0 asignaciones por frame), vida + atracción al núcleo.
+  Densidad y velocidad = función del estado, no aleatorias.
+- **Anillo de 64 segmentos** con binding real: `listening`/`speaking` →
+  `Vm.audio.spectrum`; `thinking` → `Vm.metrics.tokensPerSecond`; sin fuente →
+  `0.05` apagado.
+- **Barrido especular** una pasada cada 6–9 s (periodo re-sorteado por pasada).
+- **Respiración** 1.000→1.012 en 4 s sinusoidal, calculada en el bucle.
+- **Halo volumétrico**: dos capas radiales desenfocadas con desplazamiento de
+  paralaje distinto, dibujadas en el mismo lienzo.
+- **Lenguaje de estados** (`states` + `PropertyChanges` sobre `field`,
+  cross-fade **220 ms** con la bezier de `Design`, nunca corte seco):
+
+| estado | color | geometría / ritmo | fuente |
+|---|---|---|---|
+| idle | azure tenue | anillo cerrado, órbita lenta, emisión 0.45 | — |
+| listening | cyan | anillo abre a 64 segmentos reactivos | FFT mic |
+| thinking | azure→cyan | anillos concéntricos contrarrotantes, partículas convergen | tokens/s |
+| speaking | cyan brillante | onda radial desde el centro | envolvente TTS |
+| alert | alert | anillo fragmentado, rotación detenida, sin emisión | evento error |
+| offline | texto terciario | anillo en trazo discontinuo, inmóvil, sin emisión | health-check |
+
+`Main.qml` monta el núcleo centrado sobre los planos; teclas 1–6 recorren
+estados para inspección (no es UI final). `app.py` instancia el ViewModel y lo
+expone como `Vm`.
+
+### Verificación
+
+Recorridos los seis estados en `offscreen` con espectro y `tokensPerSecond`
+simulados: **0 warnings del engine, 0 errores de runtime** en el bucle/`onPaint`.
+`ruff` limpio. Inspección visual en pantalla real: pendiente para el usuario
+(`python -m jarvis_local.ui.hud`).

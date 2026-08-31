@@ -1,9 +1,10 @@
 """Arranque de la vista Qt Quick.
 
-`main()` crea la QGuiApplication y el motor QML, carga `qml/Main.qml` y entra
-en el bucle de eventos de Qt. En fases siguientes aquí se instancia el
-ViewModel y se expone al contexto QML; por ahora solo levanta el lienzo del
-sistema de diseño.
+`main()` crea la QGuiApplication, instancia el ViewModel (único puente con el
+núcleo), lo expone al contexto QML como `Vm`, carga `qml/Main.qml` y entra en el
+bucle de eventos de Qt. Los productores de datos reales (muestreo de sistema,
+salud de Ollama, micrófono, stream del LLM) se conectan en fases siguientes vía
+los slots `push_*` del ViewModel.
 """
 from __future__ import annotations
 
@@ -15,27 +16,26 @@ _QML_DIR = Path(__file__).parent / "qml"
 
 
 def _configure_environment() -> None:
-    """Ajustes previos a crear la QGuiApplication.
-
-    - En sesión Wayland, Qt usa el plugin `wayland` si está; si no, cae a
-      XWayland automáticamente. No forzamos plataforma para no romper el
-      arranque en equipos sin el plugin wayland de Qt.
-    - Escala de fuentes: dejamos que Qt siga el factor del sistema.
-    """
     os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
 
 
-def create_engine(app):
-    """Crea y devuelve el QQmlApplicationEngine ya con Main.qml cargado.
+def create_engine(app, view_model=None):
+    """Crea el QQmlApplicationEngine con `Vm` en contexto y Main.qml cargado.
 
     Separado de `main()` para poder instanciarlo en tests sin `app.exec()`.
     """
     from PySide6.QtCore import QUrl
     from PySide6.QtQml import QQmlApplicationEngine
 
+    from jarvis_local.ui.hud.viewmodel import ViewModel
+
+    vm = view_model or ViewModel()
     engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("Vm", vm)
     engine.addImportPath(str(_QML_DIR))
     engine.load(QUrl.fromLocalFile(str(_QML_DIR / "Main.qml")))
+    # el engine no es dueño del vm: que sobreviva al scope
+    engine._vm = vm  # noqa: SLF001
     return engine
 
 
