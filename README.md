@@ -202,7 +202,7 @@ python3 -m venv --system-site-packages .venv
 
 # 5. Arrancar (desde la raíz del proyecto)
 .venv/bin/python -m jarvis_local.cli          # consola
-.venv/bin/python -m jarvis_local.ui.desktop   # interfaz de escritorio
+.venv/bin/python -m jarvis_local.ui.hud       # interfaz de escritorio (Qt/QML)
 ```
 
 > La primera carga del modelo tarda 2–5 min en CPU modesta. JARVIS lo precalienta en segundo plano, así que puedes usar los comandos rápidos de inmediato.

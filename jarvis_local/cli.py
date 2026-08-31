@@ -55,7 +55,7 @@ Chat (prefijo /):
   /estado                Estado de Ollama
   /limpiar               Borrar historial
   /ui                    Abrir Interfaz Web de JARVIS
-  /desktop               Abrir Interfaz de Escritorio (HUD Qt; /desktop-clasica para la Tkinter)
+  /desktop               Abrir Interfaz de Escritorio (HUD Qt/QML)
 
 Voz (/voz):
   /voz                   Capturar voz, transcribir, enviar a Ollama
@@ -712,27 +712,15 @@ def main():
                 elif sub in ("desktop", "hud"):
                     print("Iniciando JARVIS Desktop...")
                     try:
-                        try:
-                            from jarvis_local.ui.hud import main as desktop_main
-                        except Exception as imp_err:
-                            # Sin PySide6/Qt: se cae a la interfaz Tkinter clasica
-                            logger.warning(f"HUD Qt no disponible ({imp_err}); "
-                                           "usando la interfaz clasica")
-                            from jarvis_local.ui.desktop import main as desktop_main
+                        from jarvis_local.ui.hud import main as desktop_main
                         desktop_main()
                     except KeyboardInterrupt:
                         print("\nInterfaz desktop cerrada.")
                     except Exception as e:
+                        # sin degradacion: si Qt falla, se reporta el error
                         logger.error(f"Error en interfaz desktop: {e}")
-                elif sub == "desktop-clasica":
-                    print("Iniciando JARVIS Desktop (Tkinter)...")
-                    try:
-                        from jarvis_local.ui.desktop import main as desktop_main
-                        desktop_main()
-                    except KeyboardInterrupt:
-                        print("\nInterfaz desktop cerrada.")
-                    except Exception as e:
-                        logger.error(f"Error en interfaz desktop: {e}")
+                        print(f"No se pudo abrir la interfaz de escritorio: {e}")
+                        print("Requiere PySide6 (pip install -r requirements.txt).")
                 elif sub == "confirmar":
                     handle_confirm(jarvis)
                 elif sub == "cancelar":

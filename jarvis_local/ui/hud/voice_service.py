@@ -110,7 +110,8 @@ class VoiceService(QObject):
         stream, self._stream = self._stream, None
         if stream is not None:
             try:
-                stream.stop(); stream.close()
+                stream.stop()
+                stream.close()
             except Exception:
                 pass
         self.audio.emit(0.0, [])

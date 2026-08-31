@@ -322,10 +322,9 @@ trazo** de 64 sub-caminos; color de tinte cacheado como string.
 
 ### Integración
 
-`cli.py` `/desktop` (y alias `/hud`) lanza el HUD Qt; si PySide6/Qt no está
-disponible cae a la Tkinter clásica. `/desktop-clasica` fuerza la Tkinter.
-El módulo `jarvis_local/ui/desktop.py` y sus tests se conservan como respaldo
-(cero regresión): no se elimina funcionalidad.
+`cli.py` `/desktop` (y alias `/hud`) lanza el HUD Qt.
+> **Actualizado por el ADDENDUM (ver abajo):** la Tkinter se eliminó; ya no hay
+> fallback. Si Qt falla, se reporta el error.
 
 ### Estado
 
@@ -375,3 +374,44 @@ El módulo `jarvis_local/ui/desktop.py` y sus tests se conservan como respaldo
    la reconocería como "terminal estilizada".
 10. El arranque no tiene identidad todavía (la secuencia de boot de la Tkinter
     no se portó); la primera impresión es una ventana que aparece sin más.
+
+---
+
+# ADDENDUM — dirección visual GPU
+
+El brief inicial pedía austeridad ("glow escaso", "sin box-shadow", "cero
+decoración"). El resultado es fiel a ese brief y por eso se lee **básico**. El
+addendum lo revoca: el núcleo emite luz que se propaga a **toda** la interfaz;
+la profundidad se construye con un **pipeline de render en GPU**, no con trazos;
+la atmósfera (viñeta, grano, aberración cromática) es función, no adorno.
+
+Plan de ejecución (una fase por sesión, commit + STOP al final de cada una):
+
+1. **Eliminar la GUI Tkinter y sus tests.** ← esta fase
+2. Migrar el núcleo de `Canvas` a `ShaderEffect` (fragment shaders `.frag` → `qsb`
+   en el build). Sin bloom aún; medir fps. Antes de invertir en el resto,
+   enseñar el shader del núcleo aislado para validar la dirección.
+3. Post-proceso: extracción de altas luces + bloom en dos pasadas + atmósfera.
+4. Iluminación global: `corePos` / `coreEnergy` / `coreTint` en `Design.qml`;
+   cada hairline, borde y panel deriva su opacidad y tinte de ahí.
+5. Tipografía y densidad de layout (escala 12/13/15/18/24/40 usada de verdad,
+   cifras tabulares en el HUD, densidad asimétrica).
+6. Secuencia de arranque con identidad (≤900 ms, la luz revela la interfaz).
+7. Rendimiento GPU: 60 fps con foco / bucle detenido sin foco, ruta de
+   degradación real (software o <40 fps 3 s → sin bloom ni partículas),
+   `ruff check .`, suite completa.
+
+## Fase 1 (addendum) — eliminación de Tkinter
+
+- Borrados `jarvis_local/ui/desktop.py` (1352 líneas) y `test/test_ui_desktop.py`.
+- `cli.py`: `/desktop` y `/hud` → sólo `jarvis_local.ui.hud`; **sin fallback**.
+  Si Qt falla, se registra el error y se avisa en pantalla. Eliminado
+  `/desktop-clasica`.
+- `jarvis_local/ui/hud/__main__.py` para `python -m jarvis_local.ui.hud`.
+- `README.md` y el docstring del paquete actualizados. Retirado el ignore
+  `jarvis_local/ui/*` de ruff (era para el estilo compacto de Tkinter); esto
+  destapó un `E702` propio en `voice_service.py`, corregido.
+- Verificado: **nada en el código importa `jarvis_local.ui.desktop`**
+  (`ui/server.py` y `ui/dashboard.py` son la interfaz web, intactas).
+  `ruff check .` limpio. `test_ui_hud` + `test_ui_server` + `test_cli` +
+  `test_startup` en verde (35 tests).
