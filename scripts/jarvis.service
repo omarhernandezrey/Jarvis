@@ -1,0 +1,36 @@
+[Unit]
+Description=JARVIS — asistente local de IA (HUD Qt Quick)
+Documentation=file:///home/omar/Documentos/Jarvis/docs/REDISENO_VISTA.md
+# Es una app Qt Quick / OpenGL: necesita la sesion grafica (Wayland) levantada.
+After=graphical-session.target
+PartOf=graphical-session.target
+# Ollama corre como servicio de SISTEMA (systemctl status ollama). Aqui solo
+# fijamos el orden de arranque; no es una dependencia dura.
+After=ollama.service
+Wants=ollama.service
+# Antibucle de reinicio: si el proceso falla 5 veces en 120 s, systemd se
+# rinde y deja el servicio en estado "failed" (evita el bucle infinito).
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=exec
+WorkingDirectory=/home/omar/Documentos/Jarvis
+ExecStart=/home/omar/Documentos/Jarvis/.venv/bin/python -m jarvis_local.ui.hud
+# Reinicio SOLO ante fallo/caida inesperada (senal, codigo != 0, timeout).
+# Cerrar la ventana es una salida limpia (codigo 0) y NO relanza: eso es
+# deliberado. Para relanzar tambien al cerrar la ventana: Restart=always.
+Restart=on-failure
+RestartSec=5
+# Margen para que Runtime.shutdown() pare hilos de voz/metricas con calma.
+TimeoutStopSec=10
+# El display (WAYLAND_DISPLAY / DISPLAY / XAUTHORITY) y el bus de sesion los
+# aporta el gestor "systemd --user" (ya estan en su entorno; se comprobo con
+# `systemctl --user show-environment`). Solo forzamos el flush de logs.
+Environment=PYTHONUNBUFFERED=1
+# Logs a journald: journalctl --user -u jarvis -f
+SyslogIdentifier=jarvis
+Slice=app.slice
+
+[Install]
+WantedBy=graphical-session.target
