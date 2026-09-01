@@ -1623,3 +1623,49 @@ render offscreen por software no dibuja el shader del orbe. No he visto el
 paralaje, la onda de choque, el fleco cromático ni el rizo de audio. Están
 razonados y validados técnicamente; el ajuste fino (amplitudes, radios)
 necesita mirarlo.
+
+## Fase 8 — Entidad viva alienígena
+
+El usuario quiere que el orbe parezca "alienígena, nunca antes visto, con vida
+propia". Sin uniforms nuevos — todo de datos existentes. `core.frag`.
+
+1. **Cuerpo orgánico, no esfera** — `lobes()`: dos bultos lentos que migran por
+   la superficie (barato, sin `pow`/ruido extra) sumados al SDF → forma
+   amorfa que cambia. Respiración de geometría ahora irregular (2 senos
+   desfasados).
+2. **Pupila que MIRA** — un vacío que absorbe la luz en el centro, rodeado de
+   un iris encendido. **Deriva hacia el ratón** (`par*3.4`) → el orbe te
+   sigue. Es lo que lo hace parecer vivo y con intención.
+3. **Filamentos de datos** en la superficie del volumen — líneas finas que
+   corren siguiendo el flujo del normal (`fract(n·k − t)`), enmascaradas por
+   el Fresnel. Lectura de "procesando / tejido activo".
+4. **Motas orbitales** — 10 puntos diminutos girando en órbitas elípticas
+   inclinadas (posiciones sembradas por hash, velocidad por `spin`+`energy`).
+   Vida en el campo.
+5. **Fulguraciones** — en picos de `energy`/`flux` reales, lenguas puntiagudas
+   que salen del limbo. Dramático en los picos de SPEAKING.
+6. **Oclusión suave** — el campo de interferencia se atenúa donde el cuerpo
+   está delante (centro) → núcleo sólido con el campo envolviéndolo, capas 3D.
+7. **Temperatura de color** — `warmTint`: el cuerpo entero se calienta hacia
+   `tintHot` con energía y se enfría hacia `tintDeep` en reposo. Antes sólo el
+   punto central lo hacía.
+8. **AA adaptativo** (`fwidth`) en rim, arcos, motas, onda y fulguraciones →
+   bordes nítidos y sin *shimmer* al girar, a cualquier tamaño. **Flare del
+   rim** en el cambio de estado (`pow(transPhase, 1.6)`).
+
+Coste: `lobes()` se evalúa 5× por fragmento del volumen (SDF + normal); el
+bucle de 10 motas corre en todo el disco. En Intel HD 520 lo cubre la ruta de
+degradación (fps EMA < 40 sostenido 3 s → engancha, sin bloom).
+
+### Validación
+
+Shaders recompilan sin errores GLSL (`fwidth`, bucles, `mat2` OK); QML sin
+warnings; `pytest test/test_ui_hud.py` 25 verde; `ruff` limpio;
+`systemctl --user status jarvis` → `active (running)`; `RHI OpenGL`,
+`journalctl` sin errores de shader/QRhi ni enganche de degradación.
+
+**NO verificado visualmente:** Wayland bloquea la captura. No he visto la
+pupila siguiendo el ratón, los lóbulos deformando el cuerpo, los filamentos,
+las motas ni las fulguraciones. Están razonados y validados técnicamente; el
+ajuste fino (tamaño de la pupila, número de motas, amplitud de lóbulos)
+necesita mirarlo — y comprobar los fps en la máquina real.
