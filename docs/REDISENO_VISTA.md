@@ -1669,3 +1669,70 @@ pupila siguiendo el ratón, los lóbulos deformando el cuerpo, los filamentos,
 las motas ni las fulguraciones. Están razonados y validados técnicamente; el
 ajuste fino (tamaño de la pupila, número de motas, amplitud de lóbulos)
 necesita mirarlo — y comprobar los fps en la máquina real.
+
+## Fase 9 — "Obra maestra": profundidad real, un iris que es un ser, un sistema
+
+El usuario: *"dame lo mejor que Claude puede hacer, algo tan increíble que ya no
+quiera pedir más"*. Sin uniforms nuevos — todo sale de datos que ya existen.
+`core.frag` reescrito.
+
+1. **Plasma volumétrico interior con paralaje por capas** — tras tocar la
+   superficie, el raymarch avanza 4 pasos DENTRO del cuerpo acumulando densidad
+   de plasma con *warp de dominio* (`fbm2(q + vnoise(q·0.7))`). Cada capa se
+   desplaza con el ratón (`par·(1.6 + k·0.8)`) → al mover el cursor se revela un
+   ADENTRO con profundidad 3D real, no una cáscara pintada. Es el mayor salto.
+2. **Iris alienígena** — la pupila deja de ser un círculo: son **hojas** que
+   dilatan con la energía (`dil = mix(0.052, 0.135, energy)`; se abre al
+   escuchar/hablar, se cierra al pensar), con **fibras radiales** y un
+   **reflejo vivo** (catchlight) fijo en la pupila — el truco clásico de "está
+   vivo". Sigue derivando hacia el ratón.
+3. **Piel celular bioluminiscente** — Voronoi barato (9 células) proyectado
+   sobre el normal; cada célula late con una onda que la recorre
+   (`sin(id·42 − t·3 + bandMid)`), y el brillo total sólo sube con audio real
+   (`bandLow + bandHigh`). Ommatidios de ojo compuesto / plancton.
+4. **Corona magnética** — sustituye a las lenguas rectas de la Fase 8 por 4
+   **arcos curvos** que salen del limbo y regresan, anclados a puntos fijos y
+   modulados por `max(energy, flux, bandSum·0.6)`. Corona estelar, no púas.
+5. **Satélite compañero** — un cuerpo coherente en órbita inclinada (matriz de
+   rotación fija) que **proyecta una sombra tenue** sobre el campo cuando pasa
+   por delante (`satFront`). Sistema, no chispa suelta.
+6. **Nacimiento de estrella** — rara vez (hash temporal lento) una mota fulgura
+   a punto brillante y se estira antes de apagarse. Micro-evento que premia
+   mirar.
+7. **Iridiscencia de película fina en el borde** — sobre el fleco cromático,
+   una paleta coseno (`irid()`) cuyo color se desliza con el ángulo y el ratón:
+   el borde tornasola como concha de escarabajo / aceite.
+8. **Deriva onírica en reposo** — batido largo (`sin(t·0.037)·sin(t·0.019)`,
+   período de minutos) que en reposo mece el color por la rampa y desfasa la
+   rotación del campo. En reposo nunca se repite ni se queda quieto; se
+   desvanece en cuanto hay trabajo (`rest = 1 − energy·1.6`).
+
+### Coste y red de seguridad
+
+El march de superficie baja de 22 → 18 iteraciones (SDF suave, sobra margen)
+para recomprar presupuesto; encima se añaden 4 pasos de plasma + Voronoi de 9
+células, **sólo dentro del cuerpo y sólo si `reduced == 0`**. En la Intel HD
+520 la CPU del proceso queda en ~26–29 % en reposo con la ventana enfocada
+(pico de arranque ~38 %), comparable a la Fase 8. La ruta de degradación
+(fps EMA < 40 sostenido 3 s → sin bloom) sigue de red. Si molesta el consumo,
+los knobs son: pasos de plasma (`kk < 4`), células del Voronoi, nº de motas.
+
+### Validación
+
+- Shaders recompilan sin errores GLSL (`fbm2`, `voro` con doble bucle, `mod`,
+  `irid`, `mat2` OK) — `4 shader(s) compilados`.
+- `pytest test/test_ui_hud.py` → 25 verde.
+- `pytest test` (suite completa) → verde, 0 fallos.
+- `ruff check .` → limpio.
+- `systemctl --user status jarvis` → `active (running)`, `NRestarts=0`, una
+  instancia; `RHI OpenGL`, `journalctl` sin errores de shader/QRhi ni banner
+  de degradación tras ~3 min.
+
+**NO verificado visualmente:** Wayland/Mutter bloquea la captura del proceso y
+el render offscreen por software no dibuja el shader del orbe. No he visto el
+plasma volumétrico, el paralaje por capas, el iris de hojas, el catchlight, la
+piel celular, la corona ni el tornasol del borde. Están razonados y validados
+técnicamente; el ajuste fino (densidad del plasma, tamaño del iris, brillo de
+las células, radio de la corona) y los fps en uso real necesitan mirarlo.
+Para verlo: mira la ventana y **mueve el ratón junto al orbe** — el iris debe
+seguirte y el interior debe cambiar de profundidad.
