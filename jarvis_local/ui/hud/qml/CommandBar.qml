@@ -23,7 +23,7 @@ Item {
     property int lineH: Math.ceil(fm.lineSpacing)
     readonly property int _vpad: Design.sp(4)
     implicitHeight: Math.max(
-        Design.sp(9),
+        Design.sp(11),
         Math.min(6, Math.max(1, editor.lineCount)) * lineH + _vpad * 2)
 
     FontMetrics { id: fm; font.family: Design.fontSans; font.pixelSize: Design.fsBody }
@@ -243,9 +243,9 @@ Item {
     // ── MICRÓFONO (botón aparte, fuera del campo) ────────────────────────
     MicButton {
         id: micBtn
-        anchors { right: parent.right
+        anchors { right: parent.right; rightMargin: Design.sp(1)
                   verticalCenter: parent.verticalCenter }
-        width: Design.sp(9); height: Design.sp(9)
+        width: Design.sp(10); height: Design.sp(10)
         micState: bar.micState
         onToggled: {
             if (!Voice) return

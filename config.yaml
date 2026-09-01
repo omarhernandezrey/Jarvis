@@ -61,7 +61,7 @@ voice:
   stt_model: small
   stt_noise_floor: 0.00033246
   stt_sample_rate: 16000
-  tts_enabled: false
+  tts_enabled: true
   tts_rate: 175
   tts_voice: es-MX-JorgeNeural
   tts_volume: 1.0

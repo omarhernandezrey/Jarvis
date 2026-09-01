@@ -894,3 +894,33 @@ Nueva estructura:
 ### Tests
 
 Suite de vista: **23 verde** (nuevo: foco de la barra). `ruff check .` limpio.
+
+## P0 · seguimiento 5 — JARVIS no hablaba + micrófono apretado
+
+Confirmado por el usuario tras seg. 4: ya se puede escribir y se ven las
+conversaciones. Quedaban dos cosas.
+
+### JARVIS no decía en voz alta sus respuestas
+
+`config.yaml → voice.tts_enabled` estaba en `false`. El cableado ya existía
+(`chat.assistantEnd → _maybe_speak → voice.speak`) y el cuelgue del TTS se
+arregló en seg. 3 (Bug 4). **Fix:** `tts_enabled: true`. Verificado extremo a
+extremo por el `Runtime`: un turno de chat dispara `voice.speak()`,
+`speakingChanged` pasa a `true` y luego a `false`, estados
+`thinking → idle → speaking → idle`. Síntesis `edge-tts` OK (1.5 s, voz
+`es-MX-JorgeNeural`). Habla todas las respuestas (rápidas, parser y LLM);
+si molesta, se vuelve a poner en `false`.
+
+### El micrófono lo apretaba su propio recuadro
+
+`MicButton` tenía un recuadro con borde **siempre visible** que dejaba poco
+aire al icono. **Fix:** en reposo NO hay recuadro — sólo el icono; el recuadro
+(borde + fondo tenue, con `Behavior` de color) aparece al pasar el ratón o al
+escuchar. Botón más grande (`sp(10)` = 40 px), icono `sp(4.5)×sp(5.5)`
+(≈18×22) → ~11 px de aire a cada lado. En `CommandBar` la separación campo↔micro
+sube a `sp(3)` + `sp(1)` de margen desde el borde; alto mínimo de la barra a
+`sp(11)` para alojarlo centrado.
+
+### Tests
+
+Suite de vista: **23 verde**. `ruff check .` limpio.
