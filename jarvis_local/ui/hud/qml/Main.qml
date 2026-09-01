@@ -169,6 +169,9 @@ Window {
                 GradientStop { position: 0.4; color: "transparent" }
             }
         }
+        // retícula técnica: profundidad de "centro de mando", casi subliminal
+        // (se pinta una vez por tamaño, cero coste por frame — ver TechGrid.qml)
+        TechGrid { anchors.fill: parent }
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
@@ -256,26 +259,12 @@ Window {
                 reducedMotion: rootItem.reducedMotion
             }
 
-            Row {
+            CoreStatus {
                 visible: !rootItem.singleCol
                 opacity: Design.reveal(parent.x + Design.sp(4),
                                        parent.y + parent.height - Design.sp(4))
                 anchors { left: parent.left; bottom: parent.bottom }
-                spacing: Design.sp(2)
-                Rectangle {
-                    width: 1; height: stLabel.height
-                    color: stLabel.text === "alert" ? Design.alert
-                        : stLabel.text === "offline" ? Design.textMeta : Design.cyan
-                }
-                Text {
-                    id: stLabel
-                    text: Vm ? Vm.state : "idle"
-                    // texto secundario que respira con el núcleo
-                    property point _c: mapToItem(null, width / 2, height / 2)
-                    color: Design.litText(Design.textSecondary, _c.x, _c.y)
-                    font.family: Design.fontMono
-                    font.pixelSize: Design.fsBody
-                }
+                coreState: Vm ? Vm.state : "idle"
             }
         }
 

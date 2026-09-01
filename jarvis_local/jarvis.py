@@ -314,6 +314,11 @@ class Jarvis:
         # True si la ultima respuesta ya se hablo durante el streaming: evita
         # que la interfaz la vuelva a pronunciar al terminar.
         self.spoke_last_response = False
+        # Que rama de la cascada respondio el ultimo chat(): "exact" | "fast" |
+        # "tool" (parser/agente, sincrono) | "llm" (streaming). Lo lee la vista
+        # (HUD) para mostrar el estado "executing" cuando de verdad se ejecuto
+        # una herramienta, en vez de inventar una animacion sin dato real.
+        self.last_reply_kind: str = "llm"
         self._ensure_model()
         self._restore_history()
 
@@ -398,6 +403,7 @@ class Jarvis:
 
             exact = _exact_response(safe_input)
             if exact is not None:
+                self.last_reply_kind = "exact"
                 self.history.add_user(safe_input)
                 self.history.add_assistant(exact)
                 self._persist_message("user", safe_input)
@@ -408,6 +414,7 @@ class Jarvis:
             # Respuestas instantaneas sin Ollama (saludos, hora, fecha, etc.)
             fast = fast_respond(safe_input)
             if fast is not None:
+                self.last_reply_kind = "fast"
                 self.history.add_user(safe_input)
                 self.history.add_assistant(fast)
                 self._persist_message("user", safe_input)
@@ -422,12 +429,14 @@ class Jarvis:
             # perfecto: el modelo pequeno a veces no la ejecutaba.
             encadenada = self._chat_encadenado(safe_input, instruction)
             if encadenada is not None:
+                self.last_reply_kind = "tool"
                 return encadenada
 
             # Camino rapido: el parser deterministico reconoce la frase
             # (instantaneo, sin gastar el LLM)
             intent = _parse_and_execute(safe_input, self)
             if intent is not None:
+                self.last_reply_kind = "tool"
                 self._persist_message("user", safe_input)
                 self._persist_message("assistant", intent)
                 return intent
@@ -436,8 +445,10 @@ class Jarvis:
             # Cubre las frases que el parser no anticipo y encadena acciones.
             agent_reply = self._try_agent(safe_input, instruction)
             if agent_reply is not None:
+                self.last_reply_kind = "tool"
                 return agent_reply
 
+            self.last_reply_kind = "llm"
             self.history.add_user(safe_input)
             self._persist_message("user", safe_input)
 

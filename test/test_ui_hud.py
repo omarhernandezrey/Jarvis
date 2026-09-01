@@ -159,6 +159,77 @@ def test_chat_service_full_turn_with_fake_core(monkeypatch):
     assert vm.state in ("idle", "thinking")
 
 
+def test_chat_service_tool_reply_shows_executing_state(monkeypatch):
+    """Rediseño visual: una respuesta resuelta por parser/agente (síncrona,
+    dato real de `Jarvis.last_reply_kind == "tool"`) debe pasar por el estado
+    `executing` antes de volver a idle — no saltar directo de thinking a idle
+    sin que el usuario vea qué pasó."""
+    from jarvis_local.ui.hud.chat_service import ChatService
+    from jarvis_local.ui.hud.conversation_model import ConversationModel
+
+    class _FakeToolJarvis:
+        last_reply_kind = "tool"
+
+        def __init__(self):
+            self.client = _FakeInner()
+
+        def chat(self, text):
+            return "calculadora abierto correctamente."
+
+    vm = ViewModel()
+    cm = ConversationModel()
+    svc = ChatService(vm, cm)
+    monkeypatch.setattr(svc, "_ensure_jarvis",
+                        lambda: setattr(svc, "_jarvis", _FakeToolJarvis()))
+    seen = []
+    svc.wantState.connect(seen.append)
+
+    svc.send("abre la calculadora")
+    import time
+    t0 = time.monotonic()
+    while svc.busy and time.monotonic() - t0 < 5:
+        _app.processEvents()
+        time.sleep(0.02)
+    _app.processEvents()
+
+    assert "executing" in seen, f"nunca pasó por 'executing': {seen}"
+    assert vm.state == "idle"
+
+
+def test_core_qml_has_distinct_executing_state():
+    """El QML de Core.qml define de verdad el estado 'executing' (no un
+    `if` teórico): sus parámetros deben distinguirse tanto de 'thinking'
+    como de 'idle'."""
+    import time
+
+    from PySide6.QtQuick import QQuickItem
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        core = win.findChild(QQuickItem, "coreZone").childItems()[0]
+
+        def _settle(state):
+            core.setProperty("coreState", state)
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < 1.0:
+                _app.processEvents()
+                time.sleep(0.02)
+            return core.property("pRingOpen"), core.property("pConverge")
+
+        idle_ring, idle_conv = _settle("idle")
+        exec_ring, exec_conv = _settle("executing")
+        think_ring, think_conv = _settle("thinking")
+
+        assert (exec_ring, exec_conv) != (idle_ring, idle_conv)
+        assert (exec_ring, exec_conv) != (think_ring, think_conv)
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
+
+
 def _conversation_listview(win):
     from PySide6.QtQuick import QQuickItem
     for o in win.findChildren(QQuickItem):

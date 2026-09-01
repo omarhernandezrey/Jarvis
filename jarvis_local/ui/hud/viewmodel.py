@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
-STATES = ("idle", "listening", "thinking", "speaking", "alert", "offline")
+STATES = ("idle", "listening", "thinking", "speaking", "executing", "alert", "offline")
 
 
 class ViewModel(QObject):

@@ -973,3 +973,84 @@ seg. 4). Sigue vigente.
 
 Suite de vista: **23 verde**. `test_app_index` + `test_apps` + `test_intent` +
 `test_fase4/5` + `test_router`: **verde**. `ruff check .` limpio.
+
+## Rediseño visual profundo — "AI Command System" (con JARVIS ya como servicio)
+
+Petición explícita: transformar la GUI en un centro de mando de IA, con
+identidad propia, sin romper la arquitectura ni el servicio systemd.
+Inventario previo: `jarvis_local/ui/hud/qml/` ya traía núcleo GPU
+(shader raymarch + bloom + atmósfera), iluminación global desde el núcleo,
+HUD de telemetría real (`Hud.qml`/`HudCell.qml`), conversación con canaleta
+USER/JARVIS y barra de comando rediseñada (seg. 4) — mucho de lo pedido ya
+existía. Se buscaron los huecos reales en vez de repetir trabajo:
+
+### Nuevo estado `executing` (TOOL EXECUTION)
+
+La máquina de estados (`idle·listening·thinking·speaking·alert·offline`) no
+distinguía "el LLM está pensando" de "el parser/agente acaba de ejecutar una
+herramienta real" (abrir una app, consultar el clima…) — ambas pasaban por
+`thinking` sin más. Es un hueco real de arquitectura, no sólo visual.
+
+- `Jarvis.chat()` (`jarvis.py`) ahora anota `self.last_reply_kind` en cada
+  rama de la cascada: `"exact"` · `"fast"` · `"tool"` (parser/agente,
+  síncrono) · `"llm"` (streaming). Atributo aditivo, no cambia la firma ni el
+  valor de retorno — cero riesgo para lo ya probado.
+- `chat_service.py`: si `last_reply_kind == "tool"`, emite `wantState
+  ("executing")` y lo sostiene 280 ms (dato real: la herramienta YA se
+  ejecutó; el tiempo es sólo para que se perciba, no una animación inventada)
+  antes de volver a `idle`.
+- `viewmodel.py`: `"executing"` añadido a `STATES`.
+- `Core.qml`: nuevo `State { name: "executing" }` — apertura de anillo y
+  convergencia a medio camino entre `listening` y `thinking`, con un pulso de
+  energía propio (`_targetEnergy`) más rápido que la respiración de idle. No
+  reutiliza `dashed`/`fragmented`: esos uniforms del shader significan
+  "congelado" (offline) y "roto" (alert) — lo contrario de "trabajando".
+
+Verificado con el núcleo real: `Jarvis().chat("abre la calculadora")` →
+`last_reply_kind == "tool"`; `chat("hola")` → `"fast"` (no dispara
+`executing`, correcto). Tests:
+`test_chat_service_tool_reply_shows_executing_state`,
+`test_core_qml_has_distinct_executing_state`.
+
+### Lectura de estado elevada (`CoreStatus.qml`, nuevo)
+
+El estado se mostraba como texto plano en minúscula (`Vm.state` tal cual,
+15 px, color secundario) — la parte más floja frente al pedido de
+"LISTENING/PROCESSING/EXECUTING/SPEAKING/SYSTEM ALERT" visibles. Componente
+nuevo, mismo lenguaje visual que `HudCell` (etiqueta susurra / valor domina):
+mapa estado→palabra (`STANDBY·LISTENING·PROCESSING·EXECUTING·SPEAKING·
+SYSTEM ALERT·OFFLINE`), 18 px en negrita con `letterSpacing`, color por
+estado, y un punto de presencia cuya opacidad sigue `Design.coreEnergy` — el
+mismo dato real que ya mueve el núcleo (RMS de voz / tok·s / pulso de
+`executing`), no una animación aparte inventada.
+
+### Retícula técnica de fondo (`TechGrid.qml`, nuevo)
+
+El fondo tenía dos gradientes + parallax + atmósfera (viñeta/grano/aberración
+cromática) pero nada que leyera a "instrumento". `TechGrid.qml`: líneas de
+1 px cada 96 px (`Design.sp(24)`) a alfa ~0.035, con marcas cada 4 celdas un
+poco más presentes — casi subliminal. Se pinta **una vez por tamaño**
+(`onWidthChanged`/`onHeightChanged`), no vive en el `FrameAnimation`: coste
+cero por frame.
+
+### Validación
+
+- `pytest test -q`: **595 passed, 7 skipped, 0 fallos** (602 recolectados).
+  `ruff check .` limpio.
+- `systemctl --user status jarvis` → `active (running)`, mismo PID 8+ min,
+  sin reinicios.
+- `journalctl --user -u jarvis -n 100` → sin errores QML/Python; sólo
+  `qml: [hud] RHI backend: OpenGL` por arranque.
+- No se pudo ejercitar el ciclo completo `idle→listening→thinking→speaking`
+  con el HUD gráfico real (Wayland bloquea la captura, como ya se documentó);
+  se verificó por el `Runtime` headless (offscreen) con núcleo/Ollama reales
+  y con los tests de QML que leen `Core.pRingOpen`/`pConverge` tras cada
+  transición.
+
+### Lo que NO se tocó (y por qué)
+
+`CommandBar`, `Turn`/`Conversation`, `MicButton`, `WindowChrome` — ya
+rediseñados en seguimientos 2 y 4 de esta misma fase (foco, chevron trazado,
+micrófono separado con recuadro sólo en hover, canaleta USER/JARVIS). No se
+repitió trabajo sobre ellos; el esfuerzo de esta iteración fue a los huecos
+reales: el estado `executing` y la lectura de estado.

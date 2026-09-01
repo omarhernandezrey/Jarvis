@@ -162,6 +162,14 @@ class ChatService(QObject):
                                        "cancelado", "chat")
                 return
 
+            # El parser/agente ya ejecutó la herramienta de forma síncrona (es
+            # rápido: <1 s). Un dato real, no una animación inventada: se
+            # muestra "executing" un instante para que se perciba, en vez de
+            # pasar de "thinking" a "idle" sin que el usuario vea qué pasó.
+            if getattr(self._jarvis, "last_reply_kind", "llm") == "tool":
+                self.wantState.emit("executing")
+                time.sleep(0.28)
+
             latency = round((time.monotonic() - t_start) * 1000)
             tps = None
             if seen["t0"] is not None and seen["n"] > 1:
@@ -181,5 +189,5 @@ class ChatService(QObject):
             self._busy = False
             self.busyChanged.emit(False)
             # sólo volver a idle si nadie cambió el estado entretanto
-            if self._vm.state == "thinking":
+            if self._vm.state in ("thinking", "executing"):
                 self.wantState.emit("idle")
