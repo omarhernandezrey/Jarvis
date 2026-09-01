@@ -92,12 +92,13 @@ Item {
         textFormat: Text.RichText
         font.family: Design.fontMono
         font.pixelSize: Design.fsSmall
-        color: Design.textPrimary
+        color: Design.chatJarvis
         lineHeight: 1.45
         wrapMode: Text.NoWrap
+        // resaltado ANSI: keywords cian · strings verde · números ámbar
         text: "<pre style='margin:0'>" + HL.highlight(block.code, {
-            kw: "" + Design.cyan, str: "" + Design.ok, com: "" + Design.textMeta,
-            num: "" + Design.warn, txt: "" + Design.textPrimary
+            kw: "" + Design.chatPrompt, str: "" + Design.ok, com: "" + Design.chatMeta,
+            num: "" + Design.warn, txt: "" + Design.chatJarvis
         }) + "</pre>"
     }
 }

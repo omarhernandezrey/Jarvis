@@ -1546,3 +1546,35 @@ errores QML/Python.
 **NO verificado visualmente:** Wayland bloquea la captura. No he visto los
 widgets sobre el escritorio ni si los colores vivos "se hacen notar" sin
 saturar; el efecto lo confirma una mirada humana.
+
+## Fase 6c — Conversación estilo terminal (colores ANSI vivos)
+
+Petición: la zona de chat debe verse **estilo terminal** — letra
+monoespaciada y colores vivos tipo ANSI (verde, rojo, cian…) para que sea
+más visual.
+
+### Tokens (`Design.qml`)
+
+`chatUser #31E27A` (eco de entrada, verde brillante) · `chatJarvis #A7F0CE`
+(prosa, verde fósforo legible) · `chatPrompt #3FE0E0` (el `❯`, cian) ·
+`chatMeta #5E8C74` (timestamp, verde apagado).
+
+### Cambios
+
+- **`MarkdownBody`**: fuente `fontSans` → **`fontMono`**; `lineHeight` 1.6→1.5;
+  nuevo `property color textColor` (lo fija `Turn` por canal).
+- **`Turn`**: prompt de canal `USER ❯` / `JARVIS ❯`; color de canal = rojo
+  error · verde brillante usuario · cian JARVIS. Cuerpo del mensaje:
+  usuario en `chatUser` (verde), JARVIS en `chatJarvis` (verde fósforo),
+  error en rojo. Aviso "procesando…" en ámbar. Cursor `▌` verde terminal.
+  Metadatos en `chatMeta`.
+- **`CodeBlock`**: base y resaltado en la familia terminal — keywords cian,
+  strings verde `ok`, números ámbar, comentarios verde apagado.
+- **`Conversation`** (estado vacío): `JARVIS ❯ _` monoespaciado en verde.
+
+### Validación
+
+QML sin warnings; render de una conversación real (usuario + JARVIS +
+error) sin errores; `pytest test` verde; `ruff` limpio; `systemctl --user
+status jarvis` → `active (running)`; `journalctl` sin errores.
+NO verificado visualmente: Wayland bloquea la captura.

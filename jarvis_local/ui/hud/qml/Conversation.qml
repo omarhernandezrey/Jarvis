@@ -80,16 +80,16 @@ Item {
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
         Text {
-            text: "JARVIS"
-            color: Design.textSecondary
-            font.family: Design.fontSans
-            font.pixelSize: Design.fsDisplay
+            text: "JARVIS ❯ _"
+            color: Design.chatJarvis
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsLarge
             font.letterSpacing: 2
             style: Text.Outline; styleColor: Design.textEdge
         }
         Text {
             text: "consola conversacional — escribe abajo o mantén el micrófono"
-            color: Design.textMeta
+            color: Design.chatMeta
             font.family: Design.fontMono
             font.pixelSize: Design.fsSmall
             style: Text.Outline; styleColor: Design.textEdge

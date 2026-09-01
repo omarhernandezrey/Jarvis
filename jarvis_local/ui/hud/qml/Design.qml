@@ -63,6 +63,15 @@ QtObject {
     // borde de un widget teñido por su acento (alpha ~0.5)
     function widgetEdge(accent) { return Qt.rgba(accent.r, accent.g, accent.b, 0.5) }
 
+    // ── CONVERSACIÓN estilo TERMINAL ──────────────────────────────────────
+    // Monoespaciada y con colores ANSI vivos: la entrada del usuario en verde
+    // brillante (como el eco de un shell), la respuesta de JARVIS en verde
+    // fósforo legible, el prompt en cian, los errores en rojo.
+    readonly property color chatUser:   "#31E27A"   // eco de entrada — verde brillante
+    readonly property color chatJarvis: "#A7F0CE"   // prosa — verde fósforo legible
+    readonly property color chatPrompt: "#3FE0E0"   // el ❯ del prompt — cian
+    readonly property color chatMeta:   "#5E8C74"   // timestamp/meta — verde apagado
+
     // Texto: pertenece a la rampa (azul luminoso), nunca gris apagado.
     readonly property color textPrimary:   "#EDF4FF"   // cool near-white
     readonly property color textSecondary: "#A9C6EC"   // azul luminoso

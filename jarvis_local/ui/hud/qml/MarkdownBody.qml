@@ -9,6 +9,7 @@ Column {
     id: mdb
     property string raw: ""
     property real measure: 520          // ancho máx. de la caja de texto (~78 car.)
+    property color textColor: Design.chatJarvis   // color del cuerpo (por canal)
     spacing: Design.sp(2)
 
     function _segments(src) {
@@ -49,10 +50,10 @@ Column {
                 textFormat: Text.MarkdownText
                 wrapMode: Text.WordWrap
                 text: seg.modelData.code ? "" : seg.modelData.text
-                color: Design.textPrimary
-                font.family: Design.fontSans
+                color: mdb.textColor
+                font.family: Design.fontMono          // estilo terminal
                 font.pixelSize: Design.fsBody
-                lineHeight: 1.6
+                lineHeight: 1.5
                 lineHeightMode: Text.ProportionalHeight
                 // borde óptico: legible sobre cualquier wallpaper, sin blur
                 style: Text.Outline; styleColor: Design.textEdge

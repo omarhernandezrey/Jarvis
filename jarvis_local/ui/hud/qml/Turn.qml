@@ -1,8 +1,9 @@
 import QtQuick
 import "."
 
-// Un turno de la consola: canaleta izquierda (etiqueta de canal + regla
-// vertical alineada al primer renglón) y cuerpo a la derecha. Sin burbujas.
+// Un turno de la consola estilo TERMINAL: prompt de canal a la izquierda
+// (`USER ❯` / `JARVIS ❯`), regla vertical y cuerpo monoespaciado con colores
+// ANSI vivos. Sin burbujas.
 Item {
     id: turn
     property string channel: "user"
@@ -13,48 +14,51 @@ Item {
     property string kind: "chat"
     property real measure: 520
 
+    // color del canal: rojo error · verde brillante usuario · cian JARVIS
     readonly property color _accent: kind === "error" ? Design.alert
-        : channel === "user" ? Design.textSecondary : Design.cyan
+        : channel === "user" ? Design.chatUser : Design.chatPrompt
+    // color del cuerpo del mensaje
+    readonly property color _bodyColor: kind === "error" ? Design.alert
+        : channel === "user" ? Design.chatUser : Design.chatJarvis
 
     implicitHeight: col.implicitHeight + Design.sp(4)
 
-    // canaleta: etiqueta + regla vertical
+    // prompt del canal
     Text {
         id: chLabel
         x: 0
         y: 0
-        width: Design.sp(16)
-        text: channel === "user" ? "USER" : "JARVIS"
+        width: Design.sp(17)
+        text: (channel === "user" ? "USER" : "JARVIS") + " ❯"
         color: turn._accent
         font.family: Design.fontMono
         font.pixelSize: Design.fsMeta
         font.bold: true
-        font.letterSpacing: 0.8
+        font.letterSpacing: 0.6
         style: Text.Outline; styleColor: Design.textEdge
     }
     Rectangle {
-        x: Design.sp(16)
+        x: Design.sp(17)
         y: 2
         width: 1
         height: turn.implicitHeight - Design.sp(4)
         color: turn._accent
-        opacity: kind === "error" ? 0.9 : 0.6
+        opacity: kind === "error" ? 0.95 : 0.7
     }
 
     Column {
         id: col
-        x: Design.sp(19)
+        x: Design.sp(20)
         width: turn.measure
         spacing: Design.sp(1)
 
         Row {
             spacing: Design.sp(2)
             // mientras se genera y aún no hay texto: aviso de que está trabajando
-            // (el modelo en CPU puede tardar); desaparece al llegar el 1er token
             Text {
                 visible: turn.streaming && !turn.body.length
                 text: "procesando… (modelo en CPU)"
-                color: Design.textMeta
+                color: Design.warn
                 font.family: Design.fontMono
                 font.pixelSize: Design.fsMeta
                 style: Text.Outline; styleColor: Design.textEdge
@@ -64,16 +68,15 @@ Item {
                 visible: turn.body.length > 0
                 raw: turn.body
                 measure: turn.measure
+                textColor: turn._bodyColor
             }
-            // cursor de bloque mientras se genera; al terminar, desaparece
+            // cursor de bloque estilo terminal
             Text {
                 visible: turn.streaming
                 text: "▌"
-                color: Design.cyan
+                color: Design.chatUser
                 font.family: Design.fontMono
                 font.pixelSize: Design.fsBody
-                // latido del cursor: con easing (InOutSine), no lineal — un
-                // parpadeo lineal se lee como máquina.
                 SequentialAnimation on opacity {
                     running: turn.streaming
                     loops: Animation.Infinite
@@ -85,11 +88,11 @@ Item {
             }
         }
 
-        // metadatos: color terciario, tamaño 12, sin competir con el mensaje
+        // metadatos: verde apagado, sin competir con el mensaje
         Text {
             visible: !turn.streaming && (turn.timestamp.length || turn.meta.length)
             text: turn.timestamp + (turn.meta.length ? "   " + turn.meta : "")
-            color: Design.textMeta
+            color: Design.chatMeta
             font.family: Design.fontMono
             font.pixelSize: Design.fsMeta
             style: Text.Outline; styleColor: Design.textEdge
