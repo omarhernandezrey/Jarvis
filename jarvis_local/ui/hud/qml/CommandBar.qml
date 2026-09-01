@@ -76,6 +76,15 @@ Item {
         Behavior on border.color { ColorAnimation { duration: Design.durFast } }
         Behavior on border.width { NumberAnimation { duration: Design.durFast } }
 
+        // brillo de vidrio en el borde superior (look "widget moderno")
+        Rectangle {
+            anchors { top: parent.top; left: parent.left; right: parent.right
+                      leftMargin: parent.radius; rightMargin: parent.radius; topMargin: 1 }
+            height: 1
+            color: Qt.rgba(1, 1, 1, editor.activeFocus ? 0.16 : 0.09)
+            Behavior on color { ColorAnimation { duration: Design.durFast } }
+        }
+
         HoverHandler { id: fieldHover }
         // un toque en cualquier parte del campo enfoca el editor
         TapHandler { onTapped: editor.forceActiveFocus() }

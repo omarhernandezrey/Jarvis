@@ -42,10 +42,26 @@ QtObject {
     // Líneas de 1px: conectan el HUD con el núcleo. Tiñen a azul, no a gris.
     readonly property color hairline: Qt.rgba(0.36, 0.60, 0.98, 0.30)
 
-    // Semáforo de salud de subsistemas (los únicos colores fuera de la rampa).
-    readonly property color ok:    "#3BE59A"   // online
-    readonly property color warn:  "#FFC857"   // degradado
-    readonly property color alert: "#FF5468"   // fallo
+    // ── COLOR VIVO DEL HUD (fuera del orbe) ────────────────────────────────
+    // El orbe se queda en la rampa azul→cian. TODO LO DEMÁS (widgets, datos,
+    // texto) usa colores que se hacen notar: verde, naranja, rojo, violeta,
+    // ámbar. Cada dato del HUD tiene su color de firma.
+    readonly property color ok:      "#22E36B"   // online / bien — verde eléctrico
+    readonly property color warn:    "#FF9F1C"   // degradado — naranja vivo
+    readonly property color alert:   "#FF3B5C"   // fallo — rojo punzante
+    readonly property color acidLime: "#B6FF3B"  // rendimiento / throughput
+    readonly property color amber:   "#FFC53B"   // atención media
+    readonly property color violet:  "#B57BFF"   // memoria / contexto
+    readonly property color magenta: "#FF5CD0"   // voz / entrada
+    readonly property color sky:     "#4CC7FF"   // dato neutro presente (modelo…)
+
+    // Superficie de "widget moderno" para las celdas del HUD: vidrio oscuro
+    // muy translúcido, esquina redondeada, borde teñido por el acento.
+    readonly property color widgetFill:   Qt.rgba(0x0A / 255, 0x12 / 255, 0x22 / 255, 0.55)
+    readonly property color widgetStroke: Qt.rgba(0.55, 0.72, 0.95, 0.16)
+    readonly property int   widgetRadius: 8
+    // borde de un widget teñido por su acento (alpha ~0.5)
+    function widgetEdge(accent) { return Qt.rgba(accent.r, accent.g, accent.b, 0.5) }
 
     // Texto: pertenece a la rampa (azul luminoso), nunca gris apagado.
     readonly property color textPrimary:   "#EDF4FF"   // cool near-white

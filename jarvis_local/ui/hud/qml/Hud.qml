@@ -16,58 +16,77 @@ Item {
     property var keys: ["sistema", "modelo", "cpu", "ram", "latencia",
                         "tokens/s", "voz", "memoria", "herramientas"]
 
-    implicitHeight: vertical ? content.implicitHeight : Design.sp(16)
-    implicitWidth: vertical ? Design.sp(40) : content.implicitWidth
+    // Fila de widgets. `Row.implicitWidth` = suma real (sin la circularidad
+    // que tenía `Flow` bindeado a su propio ancho → se colapsaba en columna).
+    implicitHeight: content.implicitHeight
+    implicitWidth: content.implicitWidth
 
     function _has(v) { return v !== undefined && v !== null }
 
-    // (absent, value, accent) para una clave dada, a partir de `m`
+    // Umbral → color vivo (verde bien · ámbar medio · rojo mal).
+    function _grade(v, warnAt, badAt) {
+        if (v === undefined || v === null) return Design.sky
+        if (v >= badAt)  return Design.alert
+        if (v >= warnAt) return Design.warn
+        return Design.ok
+    }
+
+    // [absent, value, SIGNATURE, VALUE] — cada widget tiene un color de firma
+    // vivo permanente (barra + borde); el color del VALOR sigue el estado.
     function cell(key) {
         var mm = hud.m || {}
         switch (key) {
-        case "sistema":
-            return [!_has(mm.online), mm.online ? "en línea" : "sin conexión",
-                    mm.online ? Design.ok : Design.alert]
+        case "sistema": {
+            var on = !!mm.online
+            return [!_has(mm.online), on ? "EN LÍNEA" : "SIN CONEXIÓN",
+                    on ? Design.ok : Design.alert, on ? Design.ok : Design.alert]
+        }
         case "modelo":
-            return [!_has(mm.model), mm.model || "", Design.textPrimary]
+            return [!_has(mm.model), mm.model || "", Design.sky, Design.sky]
         case "cpu":
             return [!_has(mm.cpu), _has(mm.cpu) ? Math.round(mm.cpu) + "%" : "",
-                    _has(mm.cpu) && mm.cpu > 85 ? Design.warn : Design.textPrimary]
+                    Design.sky, _grade(mm.cpu, 70, 90)]
         case "ram":
             return [!_has(mm.ram), _has(mm.ram) ? Math.round(mm.ram) + "%" : "",
-                    _has(mm.ram) && mm.ram > 90 ? Design.warn : Design.textPrimary]
+                    Design.sky, _grade(mm.ram, 75, 92)]
         case "latencia":
             return [!_has(mm.latencyMs), _has(mm.latencyMs) ? mm.latencyMs + " ms" : "",
-                    Design.textPrimary]
+                    Design.amber, _grade(mm.latencyMs, 1500, 8000)]
         case "tokens/s":
             return [!_has(mm.tokensPerSecond),
                     _has(mm.tokensPerSecond) ? mm.tokensPerSecond.toFixed(1) : "",
-                    Design.cyan]
-        case "voz":
+                    Design.acidLime, Design.acidLime]
+        case "voz": {
+            var vt = mm.voice ? !!mm.voice.tts : false
+            var mic = mm.voice ? mm.voice.mic : "absent"
+            var vv = vt ? Design.ok
+                   : mic === "denied" ? Design.alert : Design.textDisabled
             return [!_has(mm.voice),
-                    mm.voice ? ((mm.voice.tts ? "lista" : "off")
-                        + (mm.voice.mic === "available" ? ""
-                           : mm.voice.mic === "denied" ? " · sin permiso" : " · sin mic")) : "",
-                    mm.voice && mm.voice.tts ? Design.ok : Design.textSecondary]
-        case "memoria":
+                    mm.voice ? ((vt ? "LISTA" : "OFF")
+                        + (mic === "available" ? "" : mic === "denied"
+                           ? " · SIN PERMISO" : " · SIN MIC")) : "",
+                    Design.magenta, vv]
+        }
+        case "memoria": {
+            var ar = mm.memory ? !!mm.memory.auto_recall : false
             return [!_has(mm.memory),
-                    mm.memory ? ((mm.memory.auto_recall ? "activa" : "inactiva")
+                    mm.memory ? ((ar ? "ACTIVA" : "INACTIVA")
                         + (_has(mm.memory.count) ? " · " + mm.memory.count : "")) : "",
-                    mm.memory && mm.memory.auto_recall ? Design.ok : Design.textSecondary]
+                    Design.violet, ar ? Design.violet : Design.textDisabled]
+        }
         case "herramientas":
             return [!(mm.tools && _has(mm.tools.count)),
                     mm.tools && _has(mm.tools.count)
-                        ? (mm.tools.count + (mm.tools.agent ? "" : " · parser")) : "",
-                    Design.textPrimary]
+                        ? (mm.tools.count + (mm.tools.agent ? "" : " · PARSER")) : "",
+                    Design.amber, Design.amber]
         }
-        return [true, "", Design.textPrimary]
+        return [true, "", Design.sky, Design.sky]
     }
 
-    Flow {
+    Row {
         id: content
-        anchors.fill: parent
-        flow: hud.vertical ? Flow.TopToBottom : Flow.LeftToRight
-        spacing: hud.vertical ? Design.sp(2) : Design.sp(5)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Design.sp(2.5)
         Repeater {
             model: hud.keys
             delegate: HudCell {
@@ -77,6 +96,7 @@ Item {
                 absent: c[0]
                 value: c[1]
                 accent: c[2]
+                valueColor: c[3]
                 vertical: hud.vertical
                 // "SYSTEM ONLINE" no es un LED fijo: late con el núcleo
                 pulse: modelData === "sistema" && !c[0]

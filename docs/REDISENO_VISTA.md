@@ -1484,3 +1484,65 @@ digital transmite "vida" o pasa desapercibido, ni si el conector Core↔HUD une
 la composición o sobra. Los cambios están razonados como decisiones de
 dirección artística; su efecto perceptual lo tiene que confirmar una mirada
 humana.
+
+## Fase 6b — Color vivo + widgets modernos (todo menos el orbe)
+
+Petición: el orbe se queda en azul/cian, pero el RESTO (texto, HUD, datos)
+debe usar colores vivos que se noten (verde, naranja, rojo, violeta…) y los
+elementos deben verse "estilo widget muy moderno", no básicos.
+
+### Paleta viva del HUD (`Design.qml`)
+
+El orbe intacto (rampa `coreDeep→azure→cyan→coreHot`). Fuera de él:
+
+| Token | Valor | Uso |
+|---|---|---|
+| `ok` | `#22E36B` verde eléctrico | online / bien |
+| `warn` | `#FF9F1C` naranja vivo | atención / EXECUTING |
+| `alert` | `#FF3B5C` rojo punzante | fallo |
+| `acidLime` | `#B6FF3B` | throughput (tokens/s) |
+| `amber` | `#FFC53B` | herramientas / latencia |
+| `violet` | `#B57BFF` | memoria / contexto |
+| `magenta` | `#FF5CD0` | voz / entrada |
+| `sky` | `#4CC7FF` | dato neutro presente (modelo, cpu, ram) |
+
+`widgetFill` / `widgetStroke` / `widgetRadius 8` / `widgetEdge(accent)` —
+tokens de la superficie "widget".
+
+### HudCell como widget moderno
+
+Cada dato del HUD deja de ser texto suelto: **vidrio oscuro translúcido
+(`widgetFill` 0.55)**, esquina `widgetRadius`, **borde teñido por su color de
+firma**, **barra de acento de 2.5 px a la izquierda**, brillo de vidrio de
+1 px en el borde superior. Etiqueta MAYÚSCULAS arriba (susurra) + valor
+`fsTitle` `wValue` abajo. Dos colores por celda: **firma** (barra+borde,
+permanente) y **valor** (verde/ámbar/rojo según estado, con `Behavior` de
+color).
+
+`Hud.qml`: layout `Row` (antes `Flow` bindeado a su propio ancho → se
+colapsaba en columna con celdas más anchas). `cell()` devuelve
+`[absent, value, firma, valorColor]`; CPU/RAM/latencia gradúan
+verde→ámbar→rojo por umbral. Alturas de banda a `sp(19)` para las celdas-
+widget. `topBandH` a `sp(19)` (recentra el orbe, sin solapes).
+
+### CoreStatus y CommandBar
+
+- `CoreStatus`: superficie de widget (borde teñido por el color de estado) +
+  colores vivos — STANDBY `sky` · LISTENING/SPEAKING `cyan` · PROCESSING
+  cian-azul · **EXECUTING `warn` naranja** ("operando tu sistema") · SYSTEM
+  ALERT rojo.
+- `CommandBar`: brillo de vidrio de 1 px en el borde superior (más marcado en
+  foco). El resto del campo ya tenía superficie + borde cian de F5.
+
+### Validación
+
+**Verificado por runtime (offscreen):** QML carga sin warnings; el HUD ya no
+se colapsa (`hud_w` 677 px con datos, antes 144); geometría a 1280×720/
+1366×768/1920×1080/2560×1440 + 430×360 → orbe centrado y dominante (388–906
+px), 0 solapes, dentro del viewport; `pytest test` verde; `ruff` limpio;
+`systemctl --user status jarvis` → `active (running)`; `journalctl` sin
+errores QML/Python.
+
+**NO verificado visualmente:** Wayland bloquea la captura. No he visto los
+widgets sobre el escritorio ni si los colores vivos "se hacen notar" sin
+saturar; el efecto lo confirma una mirada humana.

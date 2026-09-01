@@ -124,7 +124,7 @@ Window {
         // identidad (arriba) y la barra de comando flotante (abajo). Los
         // demás elementos flotan en los márgenes.
         readonly property int margin: Design.sp(6)
-        readonly property int topBandH: Design.sp(16)
+        readonly property int topBandH: Design.sp(19)
         readonly property int cmdReserve: cmdBar.implicitHeight + Design.sp(5)
         readonly property int stageTop: margin + topBandH + Design.sp(3)
         readonly property int stageBottom: Math.max(stageTop + 120, height - cmdReserve)
@@ -195,7 +195,7 @@ Window {
             x: rootItem.margin
             y: rootItem.stageBottom - height - Design.sp(1)
             width: Math.min(implicitWidth, parent.width - 2 * rootItem.margin)
-            height: Design.sp(16)
+            height: Design.sp(19)
             clip: true
         }
 

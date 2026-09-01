@@ -11,12 +11,13 @@ Item {
     id: root
     property string coreState: "idle"
 
-    // Colores = misma rampa que el núcleo por estado (azul profundo → cian).
+    // La palabra de estado SÍ usa color vivo (no es el orbe): cian para los
+    // modos de IA, naranja para "operando el sistema", rojo para fallo.
     readonly property var _map: ({
-        idle:      ["STANDBY",      Design.mix(Design.azure, Design.textSecondary, 0.45)],
+        idle:      ["STANDBY",      Design.sky],
         listening: ["LISTENING",    Design.cyan],
-        thinking:  ["PROCESSING",   Design.mix(Design.azure, Design.cyan, 0.45)],
-        executing: ["EXECUTING",    Design.mix(Design.cyan, Design.azure, 0.35)],
+        thinking:  ["PROCESSING",   Design.mix(Design.cyan, Design.azure, 0.35)],
+        executing: ["EXECUTING",    Design.warn],
         speaking:  ["SPEAKING",     Design.cyan],
         alert:     ["SYSTEM ALERT", Design.alert],
         offline:   ["OFFLINE",      Design.textDisabled]
@@ -25,16 +26,32 @@ Item {
     readonly property string _label: _entry[0]
     readonly property color  _accent: _entry[1]
 
-    implicitWidth: col.implicitWidth
-    implicitHeight: col.implicitHeight
+    implicitWidth: col.implicitWidth + Design.sp(6)
+    implicitHeight: col.implicitHeight + Design.sp(3)
 
     // El cambio de estado es UNA reacción del sistema: el color del núcleo
     // hace cross-fade de 220 ms (Design.stateXfade); aquí igual, para que
     // núcleo y lectura de estado transicionen juntos y no en desfase.
     onCoreStateChanged: ackFlash.restart()
 
+    // superficie de widget: vidrio oscuro, borde teñido por el color de estado
+    Rectangle {
+        anchors.fill: parent
+        radius: Design.widgetRadius
+        color: Design.widgetFill
+        border.width: 1
+        border.color: Design.widgetEdge(root._accent)
+        Behavior on border.color { ColorAnimation { duration: Design.stateXfade } }
+        Rectangle {
+            anchors { top: parent.top; left: parent.left; right: parent.right
+                      leftMargin: parent.radius; rightMargin: parent.radius; topMargin: 1 }
+            height: 1; color: Qt.rgba(1, 1, 1, 0.10)
+        }
+    }
+
     Column {
         id: col
+        anchors.centerIn: parent
         spacing: 2
         Text {
             text: "ESTADO"
