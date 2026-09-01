@@ -145,9 +145,28 @@ QtObject {
     readonly property int windowShadowGutter: 22
 
     // ── MOTION ───────────────────────────────────────────────────────────────
+    // Una sola escala temporal, sin literales sueltos por los .qml. De rápido a
+    // lento según la INTENCIÓN del movimiento, no al azar:
+    //   durMicro  micro-reacción (acuse, hover)        ~120 ms
+    //   durFast   feedback inmediato                    140 ms
+    //   durBase   transición normal (entrada de chat…)  220 ms
+    //   durSlow   transición amplia                     320 ms
+    //   stateXfade cambio de ESTADO del sistema         380 ms  (deliberado)
+    //   durHold   sostener un aviso ("copiado")        1400 ms
+    //   durBoot   secuencia de arranque                1100 ms
+    readonly property int durMicro: 120
     readonly property int durFast: 140
     readonly property int durBase: 220
     readonly property int durSlow: 320
+    readonly property int stateXfade: 380
+    readonly property int durHold: 1400
+    readonly property int durBoot: 1100
+
+    // Latido del cursor de streaming: regular pero con easing (no lineal, que
+    // se lee como máquina). Un ciclo = 2 * este valor.
+    readonly property int blinkHalf: 520
+    // Pulso del anillo del micro mientras escucha.
+    readonly property int micPulse: 1200
 
     // easing cubic-bezier(.2,.8,.2,1) — formato spline de QML: pares de control
     // + punto final (1,1). Se aplica como:
@@ -155,7 +174,11 @@ QtObject {
     readonly property int easeType: Easing.BezierSpline
     readonly property var easeCurve: [0.2, 0.8, 0.2, 1.0, 1.0, 1.0]
 
-    // Interpolación estándar entre estados del núcleo (brief, Fase 2): 220 ms,
-    // nunca corte seco.
-    readonly property int stateXfade: durBase
+    // ── ATENCIÓN ─────────────────────────────────────────────────────────────
+    // Ping 0..1 cuando el usuario "despierta" a JARVIS (foco en la barra de
+    // comando). Lo dispara CommandBar con una SequentialAnimation (sube a 1 y
+    // decae a 0 en ~700 ms, OutCubic). El núcleo lo suma a su energía de
+    // reposo: una subida breve = "acaba de prestar atención". No es un estado
+    // nuevo ni un dato inventado — es un evento de interacción real.
+    property real attention: 0.0
 }

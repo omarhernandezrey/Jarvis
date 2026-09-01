@@ -50,7 +50,7 @@ Item {
             SequentialAnimation {
                 id: ackFlash
                 NumberAnimation { target: valueRow; property: "opacity"
-                    to: 0.5; duration: 90; easing.type: Design.easeType
+                    to: 0.5; duration: Design.durMicro; easing.type: Design.easeType
                     easing.bezierCurve: Design.easeCurve }
                 NumberAnimation { target: valueRow; property: "opacity"
                     to: 1.0; duration: Design.stateXfade; easing.type: Design.easeType

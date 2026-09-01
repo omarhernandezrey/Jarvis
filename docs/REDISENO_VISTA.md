@@ -1124,3 +1124,85 @@ umbral de "parece una IA" o si aún pide otra pasada de motion design.
 `pytest test`: **verde** · `ruff check .` limpio · `systemctl --user status
 jarvis` → `active (running)` sin reinicios · `journalctl` sin errores
 QML/Python.
+
+## Auditoría de motion — Fase 3 (presencia y coherencia temporal)
+
+Fase exclusiva de motion design. No rediseño. Se mapearon TODAS las
+animaciones (`grep` de `Behavior`/`*Animation`/`Timer`/`loops`) y se buscaron
+timings arbitrarios, loops mecánicos y cambios instantáneos.
+
+**Mapa de animaciones — antes:**
+
+| Sitio | Qué | Duración | Problema |
+|---|---|---|---|
+| `Main.qml` bootAnim | `boot` 0→1 | `850` literal | sin token |
+| `CoreStatus.qml` ackFlash | dip de opacidad | `90` literal | medio-tokenizado |
+| `Turn.qml` cursor streaming | opacidad 1↔0.15 `loops:Infinite` | `480` **lineal** | parpadeo mecánico |
+| `MicButton.qml` pulso listening | opacidad 0.5→0 `loops:Infinite` | `1100` **lineal** | pulso mecánico |
+| `CommandBar.qml` barrido busy | `x` sweep `loops:Infinite` | `durSlow*3` | ok (ya token) |
+| `CodeBlock.qml` "copiado" | `PauseAnimation` | `1400` literal | one-shot, sin token |
+| `Core.qml` respiración idle | `_targetEnergy` | `sin(_t*0.5)` | **un solo seno = GIF** |
+
+**Cambios:**
+
+1. **Escala temporal única (`Design.qml`).** Tokens nuevos con intención
+   explícita: `durMicro 120` · `durFast 140` · `durBase 220` · `durSlow 320` ·
+   `stateXfade 380` · `durHold 1400` · `durBoot 1100` · `blinkHalf 520` ·
+   `micPulse 1200`. **`stateXfade` sube de 220 → 380**: un cambio de ESTADO del
+   sistema es más deliberado que una transición normal (banda 300–500 ms del
+   brief). Los literales 850/90/480/1100/1400 se sustituyen por el token que
+   les corresponde.
+
+2. **Respiración idle orgánica (`Core.qml`).** Un solo `sin(_t*0.5)` se lee
+   como bucle. Ahora `0.016·sin(_t·0.42) + 0.010·sin(_t·0.23+1.3)` — dos senos
+   lentos de frecuencias inconmensurables → batido de ~30 s, el ciclo no se
+   repite de forma perceptible. Coste: 2 `sin` por frame (despreciable).
+   Rango medido ~0.03–0.08 (subliminal; los estados activos van muy por
+   encima). Verificado por muestreo: la energía idle vaga suavemente, no
+   oscila con amplitud fija.
+
+3. **"Atención" — JARVIS reacciona a tu presencia (`Design.attention`,
+   `CommandBar`, `Core`).** Al enfocar la barra de comando, un ping 0→1 que
+   decae a 0 en ~700 ms (OutCubic, `SequentialAnimation` en CommandBar, sin
+   `Timer`). El núcleo lo suma a su energía de reposo (`+0.10·attention`): una
+   subida breve del núcleo, halo y campo = "acaba de prestar atención". No es
+   un estado Python nuevo ni un dato inventado — es un evento de interacción
+   real. Verificado: energía idle 0.075 → pico 0.129 tras el foco → vuelve a
+   0.079.
+
+4. **Latidos con easing, no lineales.** El cursor de streaming (`Turn.qml`) y
+   el pulso del micro (`MicButton.qml`) pasan de interpolación lineal a
+   `InOutSine` / `OutCubic`. Un parpadeo lineal se lee como máquina; con
+   easing respira.
+
+**Lo que NO cambió (y por qué):**
+
+- **HUD en cambio de estado**: NO se añadió una animación explícita. El HUD ya
+  cascada con el estado a través del modelo de luz: `Design.litHairline` /
+  `litText` siguen `Design.coreEnergy` cada frame, y como
+  listening/thinking/executing suben la energía del núcleo, las hairlines del
+  HUD se aclaran solas ~100 ms después. La reacción "viaja" núcleo→HUD sin
+  código de onda.
+- **Boot**: se subió de 850 a 1100 ms (más "inicializando", menos "instantáneo")
+  pero la secuencia sigue siendo la misma: oscuridad → el núcleo se enciende
+  desde un punto → su luz revela la interfaz por distancia. No es una pantalla
+  de terminal ni una intro. No se rehízo.
+- **TechGrid / atmósfera / bloom**: intensidades ya auditadas en F2, sin
+  cambios — el núcleo gana.
+
+### Validación
+
+**Verificado técnicamente:**
+- `pytest test` → verde (0 fallos). `ruff check .` limpio.
+- `systemctl --user status jarvis` → `active (running)`, sin reinicios;
+  `journalctl -n 100` sin errores QML/Python.
+- Offscreen: ping de atención sube y decae la energía del núcleo; respiración
+  idle no periódica trivial (6 muestras a ~10 s, valores que vagan);
+  geometría a 1920×1080 / 1366×768 / 1280×720 durante
+  listening/thinking/executing/speaking → 0 solapes, 0 overflow.
+
+**NO verificado visualmente:** Wayland/Mutter bloquea la captura del proceso.
+No he visto la respiración, el ping de atención, ni la cascada de luz en
+movimiento. Que el conjunto transmita "una inteligencia respondiendo a lo que
+sucede" — y no "varios elementos animados" — sólo lo puede confirmar una
+mirada humana con el servicio corriendo.

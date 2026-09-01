@@ -136,7 +136,7 @@ Window {
         NumberAnimation {
             id: bootAnim
             target: rootItem; property: "boot"
-            from: 0.0; to: 1.0; duration: 850
+            from: 0.0; to: 1.0; duration: Design.durBoot
             easing.type: Design.easeType; easing.bezierCurve: Design.easeCurve
             running: true
         }

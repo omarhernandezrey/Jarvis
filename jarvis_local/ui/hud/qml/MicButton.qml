@@ -92,7 +92,8 @@ Item {
         SequentialAnimation on opacity {
             running: mic.micState === "listening"
             loops: Animation.Infinite
-            NumberAnimation { from: 0.5; to: 0.0; duration: 1100 }
+            NumberAnimation { from: 0.5; to: 0.0; duration: Design.micPulse
+                easing.type: Easing.OutCubic }
         }
     }
 

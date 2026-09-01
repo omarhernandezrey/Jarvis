@@ -68,11 +68,15 @@ Item {
                 color: Design.cyan
                 font.family: Design.fontMono
                 font.pixelSize: Design.fsBody
+                // latido del cursor: con easing (InOutSine), no lineal — un
+                // parpadeo lineal se lee como máquina.
                 SequentialAnimation on opacity {
                     running: turn.streaming
                     loops: Animation.Infinite
-                    NumberAnimation { to: 0.15; duration: 480 }
-                    NumberAnimation { to: 1.0; duration: 480 }
+                    NumberAnimation { to: 0.18; duration: Design.blinkHalf
+                        easing.type: Easing.InOutSine }
+                    NumberAnimation { to: 1.0; duration: Design.blinkHalf
+                        easing.type: Easing.InOutSine }
                 }
             }
         }

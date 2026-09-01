@@ -132,8 +132,14 @@ Item {
             return 0.35 + 0.15 * (0.5 + 0.5 * Math.sin(_t * 3.2))
         if (coreState === "alert" || coreState === "offline")
             return 0.0
-        // idle: respiración subliminal, deliberada — no aleatoria
-        return 0.05 + 0.035 * (0.5 + 0.5 * Math.sin(_t * 0.5))
+        // idle: PRESENCIA, no un GIF. Respiración = suma de dos senos lentos
+        // de frecuencias inconmensurables → el ciclo no se repite de forma
+        // obvia (batido de ~30 s). Amplitud mínima. Más el "ping" de atención
+        // (Design.attention, decae solo): al enfocar la barra, el núcleo sube
+        // un instante — "acaba de prestar atención".
+        var breathe = 0.016 * Math.sin(_t * 0.42)
+                    + 0.010 * Math.sin(_t * 0.23 + 1.3)
+        return 0.055 + breathe + 0.10 * Design.attention
     }
     function _bands() {
         var s = spectrum

@@ -205,6 +205,17 @@ Item {
                 persistentSelection: true
                 opacity: enabled ? 1.0 : 0.45
 
+                // el usuario "despierta" a JARVIS: ping de atención. Sube a 1 y
+                // decae a 0 en ~700 ms; el núcleo lo suma a su energía de
+                // reposo (Core._targetEnergy).
+                onActiveFocusChanged: if (activeFocus) attnPing.restart()
+                SequentialAnimation {
+                    id: attnPing
+                    PropertyAction { target: Design; property: "attention"; value: 1.0 }
+                    NumberAnimation { target: Design; property: "attention"
+                        to: 0.0; duration: 700; easing.type: Easing.OutCubic }
+                }
+
                 property string _placeholder: bar.recording ? "escuchando…" : "escribe una orden"
                 Text {
                     anchors.fill: parent

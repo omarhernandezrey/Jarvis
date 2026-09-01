@@ -76,7 +76,7 @@ Item {
         // sin Timer suelto: una animación de una pasada (addendum §7)
         SequentialAnimation {
             id: resetAnim
-            PauseAnimation { duration: 1400 }
+            PauseAnimation { duration: Design.durHold }
             ScriptAction { script: copyState.copied = false }
         }
     }
