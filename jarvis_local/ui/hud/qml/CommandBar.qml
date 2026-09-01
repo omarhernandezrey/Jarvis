@@ -58,20 +58,23 @@ Item {
             top: parent.top; bottom: parent.bottom
         }
         radius: Design.radiusSurface
-        color: bar.busy ? Qt.rgba(1, 1, 1, 0.02)
-             : editor.activeFocus ? Qt.rgba(1, 1, 1, 0.05)
-             : Design.mix(Design.surfaceColor,
-                   Qt.rgba(Design.coreTint.r, Design.coreTint.g, Design.coreTint.b,
-                           Design.surfaceColor.a),
-                   Math.min(0.16, Design.lightLevel(bar._c.x, bar._c.y) * 0.18))
-        border.width: 1
+        // superficie SIEMPRE presente (la ventana es transparente): el foco
+        // sólo la ilumina un punto, nunca la vuelve invisible.
+        color: Design.mix(Design.surfaceColor,
+                   Qt.rgba(Design.coreTint.r, Design.coreTint.g, Design.coreTint.b, 0.82),
+                   Math.min(0.20,
+                       Design.lightLevel(bar._c.x, bar._c.y) * 0.14
+                       + (editor.activeFocus ? 0.10 : 0.0)))
+        border.width: editor.activeFocus ? 2 : 1.5
         border.color: bar.vizOn ? "transparent"
-             : bar.busy ? Design.glow(Design.azure, 0.55)
-             : editor.activeFocus ? Design.glow(Design.cyan, 0.6)
-             : fieldHover.hovered ? Design.glow(Design.textSecondary, 0.45)
-             : Design.litHairline(bar._c.x, bar._c.y)
+             : bar.busy ? Design.glow(Design.azure, 0.8)
+             : editor.activeFocus ? Design.glow(Design.cyan, 0.85)
+             : fieldHover.hovered ? Design.glow(Design.textSecondary, 0.6)
+             : Design.mix(Design.litHairline(bar._c.x, bar._c.y),
+                          Design.glow(Design.cyan, 0.35), 0.4)
 
         Behavior on border.color { ColorAnimation { duration: Design.durFast } }
+        Behavior on border.width { NumberAnimation { duration: Design.durFast } }
 
         HoverHandler { id: fieldHover }
         // un toque en cualquier parte del campo enfoca el editor
@@ -152,20 +155,26 @@ Item {
         // ── prompt (chevron trazado, sin depender de la fuente) ──────────
         Canvas {
             id: chevron
-            width: Design.sp(2.5); height: Design.sp(3)
+            width: Design.sp(2.75); height: Design.sp(3.25)
             x: Design.sp(4)
             y: bar._vpad + (bar.lineH - height) / 2
             onPaint: {
                 var ctx = getContext("2d"); ctx.reset()
-                ctx.strokeStyle = bar.busy ? "" + Design.azure
-                    : editor.activeFocus ? "" + Design.cyan
-                    : "" + Design.textSecondary
-                ctx.lineWidth = 1.5; ctx.lineCap = "round"; ctx.lineJoin = "round"
-                ctx.beginPath()
-                ctx.moveTo(width * 0.15, height * 0.1)
-                ctx.lineTo(width * 0.85, height * 0.5)
-                ctx.lineTo(width * 0.15, height * 0.9)
-                ctx.stroke()
+                var w = width, h = height
+                // contorno oscuro fino primero (borde óptico), luego el trazo
+                function stroke(col, lw) {
+                    ctx.strokeStyle = col; ctx.lineWidth = lw
+                    ctx.lineCap = "round"; ctx.lineJoin = "round"
+                    ctx.beginPath()
+                    ctx.moveTo(w * 0.18, h * 0.12)
+                    ctx.lineTo(w * 0.82, h * 0.5)
+                    ctx.lineTo(w * 0.18, h * 0.88)
+                    ctx.stroke()
+                }
+                stroke("" + Design.textEdge, 4.0)
+                stroke(bar.busy ? "" + Design.azure
+                       : editor.activeFocus ? "" + Design.cyan
+                       : "" + Design.textPrimary, 2.0)
             }
             Connections {
                 target: editor
@@ -204,6 +213,8 @@ Item {
                 selectByMouse: true
                 persistentSelection: true
                 opacity: enabled ? 1.0 : 0.45
+                // (TextEdit no soporta `style`; el contraste lo da la
+                //  superficie oscura del campo detrás)
 
                 // el usuario "despierta" a JARVIS: ping de atención. Sube a 1 y
                 // decae a 0 en ~700 ms; el núcleo lo suma a su energía de
@@ -221,8 +232,9 @@ Item {
                     anchors.fill: parent
                     visible: !editor.text
                     text: editor._placeholder
-                    color: Design.textMeta
+                    color: Design.textSecondary
                     font: editor.font
+                    style: Text.Outline; styleColor: Design.textEdge
                 }
 
                 onCursorRectangleChanged: {

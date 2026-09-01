@@ -22,12 +22,17 @@ QtObject {
 
     // Superficie translúcida con desenfoque. `surfaceColor` ya lleva su alpha
     // (0.72); `surfaceBlur` es el radio de blur para el MultiEffect que la pinta.
-    readonly property color surfaceColor: Qt.rgba(0x0B / 255, 0x12 / 255, 0x20 / 255, 0.72)
+    readonly property color surfaceColor: Qt.rgba(0x0A / 255, 0x11 / 255, 0x1E / 255, 0.82)
     readonly property real  surfaceBlur:  32
 
     // Líneas de 1px entre bloques. NUNCA recuadros: la etiqueta de un bloque va
-    // en su regla lateral, no flotando encima.
-    readonly property color hairline: Qt.rgba(0.62, 0.71, 0.82, 0.14)
+    // en su regla lateral, no flotando encima. Sobre ventana transparente el
+    // 0.14 era invisible; 0.26 se lee sin gritar.
+    readonly property color hairline: Qt.rgba(0.66, 0.75, 0.86, 0.26)
+
+    // Contorno de 1px para TEXTO sobre fondo transparente (style: Text.Outline).
+    // No es blur: es un borde nítido que separa el glifo del escritorio.
+    readonly property color textEdge: Qt.rgba(0.02, 0.04, 0.07, 0.72)
 
     // Actividad. `cyan` = primaria (estado activo), `azure` = secundaria/profundidad.
     readonly property color cyan:  "#4DE8FF"
@@ -38,10 +43,11 @@ QtObject {
     readonly property color warn:  "#FFC857"   // degradado
     readonly property color alert: "#FF4D5E"   // fallo
 
-    // Texto: primario / secundario / metadato.
-    readonly property color textPrimary:   "#C9D6E4"
-    readonly property color textSecondary: "#7E8FA3"
-    readonly property color textMeta:      "#4A5A6E"
+    // Texto: primario / secundario / metadato. Subidos para contraste sobre
+    // escritorio real (la ventana es transparente, no hay panel detrás).
+    readonly property color textPrimary:   "#E3ECF5"
+    readonly property color textSecondary: "#9DB0C4"
+    readonly property color textMeta:      "#7386A0"
 
     // Blanco puro: reservado al punto de luz del núcleo de partículas. No usar
     // para texto ni bordes.

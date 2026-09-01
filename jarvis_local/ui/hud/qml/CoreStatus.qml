@@ -41,6 +41,7 @@ Item {
             font.family: Design.fontMono
             font.pixelSize: Design.fsMeta
             font.letterSpacing: 1.5
+            style: Text.Outline; styleColor: Design.textEdge
         }
         Row {
             id: valueRow
@@ -70,9 +71,10 @@ Item {
                 text: root._label
                 color: root._accent
                 font.family: Design.fontMono
-                font.pixelSize: Design.fsTitle
+                font.pixelSize: Design.fsLarge     // lectura primaria: sube a 24
                 font.bold: true
-                font.letterSpacing: 1.5
+                font.letterSpacing: 2.0
+                style: Text.Outline; styleColor: Design.textEdge
                 Behavior on color { ColorAnimation {
                     duration: Design.stateXfade; easing.type: Design.easeType
                     easing.bezierCurve: Design.easeCurve } }

@@ -54,8 +54,10 @@ Item {
         anchors.fill: parent
         visible: false
         property var source: coreTex
-        property real threshold: 0.42
-        property real knee: 0.28
+        // umbral más alto → sólo florece lo REALMENTE brillante (menos halo
+        // general que difumina la lectura del núcleo).
+        property real threshold: 0.54
+        property real knee: 0.22
         fragmentShader: Qt.resolvedUrl("../shaders/bloom_extract.frag.qsb")
     }
     ShaderEffectSource {
@@ -89,8 +91,8 @@ Item {
         source: extractTex
         blurEnabled: true
         blur: 1.0
-        blurMax: 64
-        blurMultiplier: 2.2
+        blurMax: 48
+        blurMultiplier: 1.7
     }
     ShaderEffectSource {
         id: b1Tex; anchors.fill: parent; sourceItem: b1
@@ -105,8 +107,10 @@ Item {
         property var source: coreTex
         property var bloom0: b0Tex
         property var bloom1: b1Tex
-        property real k0: 0.75
-        property real k1: 0.5
+        // NITIDEZ > GLOW: el bloom complementa, no domina. El ojo ve primero
+        // el núcleo nítido y luego el halo.
+        property real k0: 0.42
+        property real k1: 0.22
         fragmentShader: Qt.resolvedUrl("../shaders/bloom_composite.frag.qsb")
     }
 }

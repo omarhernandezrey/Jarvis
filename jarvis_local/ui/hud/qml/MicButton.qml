@@ -13,7 +13,7 @@ Item {
 
     readonly property color _c: micState === "denied" ? Design.alert
         : micState === "listening" ? Design.cyan
-        : hover.hovered ? Design.textPrimary : Design.textSecondary
+        : hover.hovered ? Design.emitCore : Design.textPrimary
 
     // En reposo NO hay recuadro: sólo el icono (antes su propio contenedor lo
     // apretaba). El recuadro aparece al pasar el ratón o al escuchar.
@@ -40,36 +40,38 @@ Item {
         width: Design.sp(5.5); height: Design.sp(7)
         onPaint: {
             var ctx = getContext("2d"); ctx.reset()
-            ctx.strokeStyle = mic._c; ctx.fillStyle = mic._c
-            ctx.lineWidth = 1.5; ctx.lineCap = "round"; ctx.lineJoin = "round"
             var w = width, h = height, cx = w / 2
             var r = w * 0.22                    // radio de la cápsula
-            var capTop = r + 1.5               // el arco sube r → borde en y≈1.5
+            var capTop = r + 1.5
             var capBot = h * 0.46
-            // cápsula (píldora vertical)
-            ctx.beginPath()
-            ctx.moveTo(cx - r, capTop)
-            ctx.arc(cx, capTop, r, Math.PI, 0, false)
-            ctx.lineTo(cx + r, capBot)
-            ctx.arc(cx, capBot, r, 0, Math.PI, false)
-            ctx.closePath()
-            if (mic.micState === "listening") ctx.fill(); else ctx.stroke()
-            // soporte en U bajo la cápsula
             var br = w * 0.40
-            ctx.beginPath()
-            ctx.arc(cx, capBot, br, 0.16 * Math.PI, 0.84 * Math.PI, false)
-            ctx.stroke()
-            // tallo + base
             var footY = h - 2
-            ctx.beginPath()
-            ctx.moveTo(cx, capBot + br); ctx.lineTo(cx, footY)
-            ctx.moveTo(cx - w * 0.20, footY); ctx.lineTo(cx + w * 0.20, footY)
-            ctx.stroke()
-            if (mic.micState === "denied") {           // barra diagonal
+            // trazo del icono en dos pasadas: contorno oscuro (borde óptico
+            // sobre escritorio) + trazo de color. Sin blur.
+            function paint(col, lw, fillCap) {
+                ctx.strokeStyle = col; ctx.fillStyle = col
+                ctx.lineWidth = lw; ctx.lineCap = "round"; ctx.lineJoin = "round"
                 ctx.beginPath()
-                ctx.moveTo(w * 0.12, h * 0.10); ctx.lineTo(w * 0.88, h * 0.90)
+                ctx.moveTo(cx - r, capTop)
+                ctx.arc(cx, capTop, r, Math.PI, 0, false)
+                ctx.lineTo(cx + r, capBot)
+                ctx.arc(cx, capBot, r, 0, Math.PI, false)
+                ctx.closePath()
+                if (fillCap) ctx.fill(); else ctx.stroke()
+                ctx.beginPath()
+                ctx.arc(cx, capBot, br, 0.16 * Math.PI, 0.84 * Math.PI, false)
+                ctx.moveTo(cx, capBot + br); ctx.lineTo(cx, footY)
+                ctx.moveTo(cx - w * 0.20, footY); ctx.lineTo(cx + w * 0.20, footY)
                 ctx.stroke()
+                if (mic.micState === "denied") {
+                    ctx.beginPath()
+                    ctx.moveTo(w * 0.12, h * 0.10); ctx.lineTo(w * 0.88, h * 0.90)
+                    ctx.stroke()
+                }
             }
+            var listening = mic.micState === "listening"
+            paint("" + Design.textEdge, 4.0, listening)
+            paint("" + mic._c, 1.8, listening)
         }
         Connections {
             target: mic

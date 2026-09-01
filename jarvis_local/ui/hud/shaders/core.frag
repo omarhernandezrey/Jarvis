@@ -87,9 +87,10 @@ void main() {
     float rot = dashed > 0.5 ? 0.0 : tm;               // OFFLINE: inmóvil
     float s1 = sin(rad * 34.0 - rot * 1.6 + ang * 7.0 + ph);
     float s2 = sin(rad * 37.0 + rot * 2.0 - ang * 7.0 - ph * 0.6);
-    float arm1 = smoothstep(0.28, 0.96, s1);
-    float arm2 = smoothstep(0.28, 0.96, s2);
-    float field = max(arm1, arm2) * 0.62 + arm1 * arm2 * 0.9;   // brazos + nodos
+    // umbral más cerrado → brazos/nodos MÁS definidos (menos difusos)
+    float arm1 = smoothstep(0.34, 0.92, s1);
+    float arm2 = smoothstep(0.34, 0.92, s2);
+    float field = max(arm1, arm2) * 0.62 + arm1 * arm2 * 0.95;  // brazos + nodos
     float ring = smoothstep(1.02, 0.58, rad) * smoothstep(0.18, 0.46, rad);
     ring *= mix(0.35, 1.0, ringOpen);
     if (fragmented > 0.5) ring *= step(0.34, fract(ang * (5.0 / 6.2831) + 0.5 + tm * 0.05));
@@ -99,9 +100,19 @@ void main() {
     col   += fieldCol * field * ring * emanate * (0.5 + 1.3 * emission) * (0.45 + 0.9 * energy);
     alpha += field * ring * (0.30 + 0.70 * emission);
 
-    // halo central suave (independiente del SDF): vende la emisión
+    // halo central suave (independiente del SDF): vende la emisión. Peso
+    // REDUCIDO: antes lavaba el campo de interferencia; ahora sólo lo insinúa.
     float halo = smoothstep(0.60, 0.0, rad);
-    col += tint.rgb * halo * halo * (0.10 + 0.55 * energy) * emission;
+    col += tint.rgb * halo * halo * (0.05 + 0.30 * energy) * emission;
+
+    // ── BORDE DEFINIDO — anillo de energía fino en el limbo del orbe ──
+    // Da una silueta legible (ORBE vs ALREDEDOR) sin un círculo blanco
+    // artificial: usa el tinte, se integra con el campo, y aporta a alpha
+    // para que sea un borde real, no un brillo.
+    float rim = smoothstep(0.05, 0.0, abs(rad - 0.76));
+    vec3  rimCol = mix(tint.rgb, vec3(1.0), 0.30);
+    col   += rimCol * rim * (0.42 + 0.7 * emission) * (0.7 + 0.5 * energy);
+    alpha  = max(alpha, rim * (0.45 + 0.4 * emission));
 
     // ── 2) VOLUMEN INTERIOR (raymarch) — ES LUZ, no un objeto opaco ──
     if (rad < 0.74 && compact < 0.5) {

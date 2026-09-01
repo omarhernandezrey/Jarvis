@@ -26,7 +26,7 @@ ShaderEffect {
     blending: true
 
     layer.enabled: true
-    layer.samples: 2
+    layer.samples: 4          // silueta/anillos más limpios (antes 2 = aristas)
     layer.smooth: true
     // sin foco / minimizada: el layer no se re-renderiza (0 trabajo de GPU)
     layer.live: true

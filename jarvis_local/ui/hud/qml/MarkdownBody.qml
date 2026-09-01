@@ -54,6 +54,8 @@ Column {
                 font.pixelSize: Design.fsBody
                 lineHeight: 1.6
                 lineHeightMode: Text.ProportionalHeight
+                // borde óptico: legible sobre cualquier wallpaper, sin blur
+                style: Text.Outline; styleColor: Design.textEdge
                 onLinkActivated: (url) => Qt.openUrlExternally(url)
             }
             CodeBlock {

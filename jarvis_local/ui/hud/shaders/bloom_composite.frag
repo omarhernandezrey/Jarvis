@@ -20,8 +20,9 @@ void main() {
     vec3 b0 = texture(bloom0, qt_TexCoord0).rgb;
     vec3 b1 = texture(bloom1, qt_TexCoord0).rgb;
     vec3 rgb = c.rgb + b0 * k0 + b1 * k1;
-    // tonemap suave: evita el "blanco quemado" y conserva el tinte
-    rgb = rgb / (1.0 + rgb * 0.55);
+    // tonemap MUY suave: sólo recorta el blanco quemado; deja que el centro
+    // nítido del núcleo conserve su intensidad (antes 0.55 lo aplanaba).
+    rgb = rgb / (1.0 + rgb * 0.34);
     float bloomA = max(b0.r, max(b0.g, b0.b)) * k0 + max(b1.r, max(b1.g, b1.b)) * k1;
     float a = clamp(max(c.a, bloomA), 0.0, 1.0);
     // difuminar los bordes del propio recuadro: sin arista visible del layer

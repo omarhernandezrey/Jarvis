@@ -1300,3 +1300,98 @@ sin reinicios; `journalctl` sin errores QML/Python.
 No he visto la ventana transparente sobre el escritorio, ni si el scrim de la
 conversación da contraste suficiente sobre un wallpaper real, ni si el orbe
 "flota" o se ve recortado. Eso lo tiene que confirmar una mirada humana.
+
+## Fase 5 — Nitidez: NITIDEZ > GLOW
+
+Problema: "todo se ve borroso por el glow". El orbe grande perdía fuerza; el
+HUD se desvanecía sobre el escritorio transparente.
+
+### 1. Causa técnica de la borrosidad
+
+Auditado el pipeline (`CoreBloom.qml` + los 3 shaders). **NO era resolución de
+render**: `CoreShader` usa `layer.enabled` sin `layer.textureSize`, ningún
+`ShaderEffectSource` reduce `sourceSize`/`textureSize`, `devicePixelRatio 1.0`
+→ el orbe se renderiza a tamaño real. El único downscale es el interno de los
+`MultiEffect` de blur, que es correcto (el bloom debe ser suave).
+
+La borrosidad venía de la **presentación**:
+1. **Pesos de composición altos**: `k0=0.75, k1=0.5` — el bloom sumaba hasta
+   ~125 % encima del núcleo nítido; el ojo veía primero el halo.
+2. **Tonemap agresivo**: `rgb / (1 + rgb·0.55)` comprimía el centro brillante
+   del núcleo hacia el nivel del halo difuso → poco contraste núcleo/halo.
+3. **Halo central del shader** (`core.frag`): peso `0.10 + 0.55·energy`, una
+   mancha suave que lavaba el campo de interferencia.
+4. **Sin borde**: el orbe se desvanecía por caída del `field`; no había una
+   silueta legible (ORBE vs ALREDEDOR).
+5. **Umbral de bloom bajo** (`threshold 0.42`) → demasiada zona "florecía".
+
+### 2. Cambios de render
+
+| Qué | Antes | Ahora |
+|---|---|---|
+| `bloom_composite` `k0` / `k1` | 0.75 / 0.50 | **0.42 / 0.22** |
+| `bloom_composite` tonemap | `/(1+rgb·0.55)` | **`/(1+rgb·0.34)`** (centro conserva intensidad) |
+| `bloom_extract` `threshold` / `knee` | 0.42 / 0.28 | **0.54 / 0.22** (sólo florece lo muy brillante) |
+| `b1` blur | `blurMax 64`, `mult 2.2` | **48 / 1.7** (halo más contenido) |
+| `CoreShader` `layer.samples` | 2 | **4** (silueta/anillos más limpios) |
+| `core.frag` umbral de brazos | `smoothstep(0.28,0.96)` | **`smoothstep(0.34,0.92)`** (moiré más definido) |
+| `core.frag` halo central | `0.10 + 0.55·energy` | **`0.05 + 0.30·energy`** |
+| `core.frag` **BORDE** | — | **anillo de energía fino** en `rad≈0.76` (tinte, aporta a alpha; NO un círculo blanco) |
+
+Shaders recompilados con `python -m jarvis_local.ui.hud.shaders.build`.
+El shader avanzado (SDF/raymarch/Fresnel/especular anisótropo/interferencia)
+se conserva íntegro — sólo se ajustó cómo se presenta.
+
+### 3. Cambios de contraste
+
+- `Design.textPrimary` `#C9D6E4→#E3ECF5` · `textSecondary` `#7E8FA3→#9DB0C4` ·
+  `textMeta` `#4A5A6E→#7386A0` (invisibles sobre escritorio real).
+- `Design.hairline` alfa `0.14 → 0.26`.
+- `Design.surfaceColor` alfa `0.72 → 0.82` (barra de comando / píldora no se
+  transparentan sobre wallpaper).
+- Nuevo token `Design.textEdge` = `rgba(0.02,0.04,0.07,0.72)` — **contorno de
+  1 px** (`style: Text.Outline`) para todo el texto sobre fondo transparente.
+  **No es blur**: es un borde nítido que separa el glifo del escritorio.
+
+### 4. Cambios en el HUD
+
+- **Contorno óptico** (`Text.Outline` + `textEdge`) en: HudCell (etiqueta y
+  valor), CoreStatus (etiqueta y palabra de estado), Turn (canaleta USER/
+  JARVIS, metadatos, aviso "procesando"), MarkdownBody (prosa del chat),
+  Conversation (estado vacío), CommandBar (placeholder). El `TextEdit` del
+  editor NO lo lleva (no soporta `style`) — su contraste lo da la superficie
+  oscura del campo.
+- **Jerarquía tipográfica**: `CoreStatus` sube a 24 px negrita + tracking 2.0
+  (lectura primaria); HudCell valor pasa a **negrita** en horizontal; canaleta
+  USER/JARVIS a negrita.
+- **CommandBar**: superficie SIEMPRE presente (antes el foco la ponía a
+  `rgba(1,1,1,0.05)` ≈ invisible); borde de reposo 1.5 px con tinte cyan,
+  2 px en foco; chevron redibujado en dos pasadas (contorno oscuro + trazo)
+  y con color `textPrimary` en reposo.
+- **MicButton**: icono redibujado en dos pasadas (contorno `textEdge` +
+  trazo); color de reposo `textPrimary` (antes `textSecondary`), hover
+  `emitCore`.
+
+### 5. Archivos modificados
+
+`shaders/`: `bloom_composite.frag(.qsb)`, `bloom_extract` implícito vía
+CoreBloom, `core.frag(.qsb)` · `qml/`: `CoreBloom.qml`, `CoreShader.qml`,
+`Design.qml`, `HudCell.qml`, `CoreStatus.qml`, `Turn.qml`, `MarkdownBody.qml`,
+`Conversation.qml`, `CommandBar.qml`, `MicButton.qml` · `docs/REDISENO_VISTA.md`.
+
+### 6-9. Validación
+
+**Verificado por runtime (offscreen):** shaders recompilan sin errores GLSL;
+QML carga sin warnings; geometría a 1280×720 / 1366×768 / 1920×1080 /
+2560×1440 sin cambios (orbe centrado, ratio 0.55–0.64, 0 solapes, dentro del
+viewport); ciclo de estados sin errores de shader; `devicePixelRatio 1.0`, sin
+`textureSize`/`sourceSize` reducido en el pipeline (el orbe NO se renderiza a
+menor resolución); `pytest test` verde; `ruff` limpio; `systemctl --user
+status jarvis` → `active (running)` sin reinicios; `journalctl` sin errores
+QML/Python.
+
+**NO verificado visualmente:** Wayland/Mutter bloquea la captura del proceso.
+No he visto si el núcleo se lee nítido, si el borde del orbe define la silueta,
+ni si los contornos de texto dan suficiente contraste sobre un wallpaper real.
+Los cambios están razonados sobre la causa técnica; su efecto perceptual lo
+tiene que confirmar una mirada humana.

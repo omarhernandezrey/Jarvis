@@ -28,6 +28,9 @@ Item {
         color: turn._accent
         font.family: Design.fontMono
         font.pixelSize: Design.fsMeta
+        font.bold: true
+        font.letterSpacing: 0.8
+        style: Text.Outline; styleColor: Design.textEdge
     }
     Rectangle {
         x: Design.sp(16)
@@ -35,7 +38,7 @@ Item {
         width: 1
         height: turn.implicitHeight - Design.sp(4)
         color: turn._accent
-        opacity: kind === "error" ? 0.8 : 0.45
+        opacity: kind === "error" ? 0.9 : 0.6
     }
 
     Column {
@@ -54,6 +57,7 @@ Item {
                 color: Design.textMeta
                 font.family: Design.fontMono
                 font.pixelSize: Design.fsMeta
+                style: Text.Outline; styleColor: Design.textEdge
             }
             MarkdownBody {
                 id: md
@@ -88,6 +92,7 @@ Item {
             color: Design.textMeta
             font.family: Design.fontMono
             font.pixelSize: Design.fsMeta
+            style: Text.Outline; styleColor: Design.textEdge
         }
     }
 }

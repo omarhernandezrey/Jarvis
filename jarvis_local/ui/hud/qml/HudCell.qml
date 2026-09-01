@@ -40,16 +40,18 @@ Item {
             color: Design.textMeta
             font.family: Design.fontMono
             font.pixelSize: Design.fsMeta
+            font.letterSpacing: 0.5
+            style: Text.Outline; styleColor: Design.textEdge   // borde óptico, no blur
         }
         Row {
             spacing: Design.sp(1.5)
             Rectangle {
                 visible: cell.pulse && !cell.absent
-                width: 5; height: 5; radius: 2.5
+                width: 6; height: 6; radius: 3
                 anchors.verticalCenter: valueText.verticalCenter
                 color: cell.accent
                 // respira con la energía real del núcleo, nunca a 0 del todo
-                opacity: 0.35 + 0.6 * Math.min(1.0, 0.25 + Design.coreEnergy * 1.6)
+                opacity: 0.4 + 0.6 * Math.min(1.0, 0.3 + Design.coreEnergy * 1.6)
             }
             Text {
                 id: valueText
@@ -57,6 +59,8 @@ Item {
                 color: cell.absent ? Design.textMeta : cell.accent
                 font.family: Design.fontMono          // dígitos ya tabulares (mono)
                 font.pixelSize: cell.vertical ? Design.fsBody : Design.fsLarge
+                font.bold: !cell.vertical              // valor grande = definido
+                style: Text.Outline; styleColor: Design.textEdge
             }
         }
     }
