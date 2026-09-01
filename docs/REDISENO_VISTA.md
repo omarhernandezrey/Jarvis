@@ -844,3 +844,53 @@ tarda ~100 s** en esta CPU. Los comandos por parser y la voz son instantáneos.
 
 Suite de vista: **22 verde**. Suite completa: **589 passed, 7 skipped**.
 `ruff check .` limpio.
+
+## P0 · seguimiento 4 — autoarranque roto + la barra de comando no escribía
+
+### Bug 5 — JARVIS no arrancaba al encender el equipo
+
+`~/.config/autostart/jarvis.desktop` (fuera del repo) seguía ejecutando
+`python -m jarvis_local.ui.desktop`, el entry point de la GUI de Tkinter que se
+**eliminó** en el commit `c7be772` (ADDENDUM fase 1). En cada arranque:
+`No module named jarvis_local.ui.desktop` → JARVIS nunca aparecía.
+**Fix (config del sistema, no del repo):** `Exec=` ahora
+`python -m jarvis_local.ui.hud` + `X-GNOME-Autostart-Delay=3`. Validado con
+`desktop-file-validate` y probado el `Exec` en limpio.
+
+### Bug 6 — no se podía insertar texto en la barra de comando
+
+`CommandBar.qml` no daba `activeFocus` al `TextEdit` en ningún momento: ni al
+cargar, ni con un clic (el `selectByMouse` dentro de un `Flickable` no basta;
+`rootItem` retenía el foco y sólo corría su `Keys.onPressed`). Escribir no hacía
+nada. El fix de la ventana sin marco (seg. 2) era necesario pero no suficiente.
+**Fix:**
+- `Component.onCompleted: editor.forceActiveFocus()` — la barra toma el foco al
+  aparecer.
+- `Connections` sobre `Window.window.onActiveChanged` — Wayland/GNOME entrega el
+  foco de teclado de forma asíncrona; al recuperarlo se lo devuelve al editor.
+- `TapHandler` en el campo → `forceActiveFocus()` (recuperación manual con un
+  toque).
+- `Flickable.interactive: editor.lineCount > 6` — no intercepta el puntero
+  salvo que el texto desborde de verdad.
+Test: `test_command_bar_has_focus_on_load_and_accepts_typing` (sin forzar el
+foco: comprueba `activeFocus` tras cargar y que lo tecleado llega al editor).
+
+### Rediseño de la barra de comando
+
+El usuario la vio "fea" y con el micrófono encajonado dentro del campo de texto.
+Nueva estructura:
+- **Campo** en su propio contenedor (`Rectangle`, `radiusSurface`, borde
+  hairline que se ilumina en foco/hover, `ColorAnimation` suave).
+- **Micrófono** como botón **aparte**, fuera del campo, a la derecha con
+  separación `sp(3)`; `MicButton` ya trae su propio recuadro.
+- Prompt = **chevron trazado** con `Canvas` (1.5 px), sin depender de la fuente
+  (el `❯` se veía como `)` con la Nerd Font). Se tiñe con el estado
+  (cyan en foco · azure generando · secundario en reposo).
+- Padding vertical `sp(4)` a cada lado; alto mínimo `sp(9)` para alojar el
+  micrófono centrado.
+- El visualizador de grabación traza ahora el perímetro **del campo**, no de
+  toda la barra.
+
+### Tests
+
+Suite de vista: **23 verde** (nuevo: foco de la barra). `ruff check .` limpio.

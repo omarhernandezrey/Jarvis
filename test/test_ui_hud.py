@@ -202,6 +202,39 @@ def test_qml_conversation_listview_reflects_model():
         engine.deleteLater()
 
 
+def test_command_bar_has_focus_on_load_and_accepts_typing():
+    """P0 (Fase 9 seg. 4): "no puedo insertar texto". La barra de comando debe
+    RECIBIR el foco de teclado al cargar (sin que nadie lo fuerce) y aceptar
+    lo que se teclea. Antes: nada le daba `activeFocus` → escribir no hacía
+    nada; sólo funcionaba si un test llamaba a `forceActiveFocus()`.
+    """
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtQuick import QQuickItem
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        _app.processEvents()
+
+        editor = next(o for o in win.findChildren(QQuickItem)
+                      if "QQuickTextEdit" in o.metaObject().className())
+
+        # foco automático al aparecer — NADIE lo forzó aquí
+        assert editor.property("activeFocus") is True, \
+            "la barra de comando no tomó el foco al cargar"
+
+        for ch in "hola":
+            _app.sendEvent(editor, QKeyEvent(QEvent.KeyPress, 0, Qt.NoModifier, ch))
+        _app.processEvents()
+        assert editor.property("text") == "hola", "lo tecleado no llegó al editor"
+    finally:
+        engine._runtime.shutdown()      # noqa: SLF001
+        engine.deleteLater()
+
+
 def test_command_bar_enter_reaches_chat_send():
     """P0 (Fase 9): pulsar Enter en la barra de comando llega a Chat.send()."""
     from PySide6.QtCore import QEvent, Qt
