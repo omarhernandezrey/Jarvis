@@ -189,7 +189,8 @@ def test_config_has_voice_section():
     cfg = reload_config()
     voice = cfg.get("voice", {})
     assert voice["stt_model"] == "small"
-    assert voice["tts_enabled"] is False
+    # El usuario quiere que JARVIS hable sus respuestas (Fase 9 seg. 5).
+    assert voice["tts_enabled"] is True
     assert "stt_noise_floor" in voice
     assert "stt_min_threshold" in voice
 
