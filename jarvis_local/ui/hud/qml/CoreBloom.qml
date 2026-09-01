@@ -21,7 +21,10 @@ Item {
     property real dashed: 0
     property real reduced: 0
     property real compact: 0
-    property color tint: "#2B7FFF"
+    property color tint: "#37D2FF"
+    property color tintDeep: "#0A2A6E"
+    property color tintHot: "#DCF6FF"
+    property real spin: 0.5
     property bool live: true          // false → todo el pipeline se congela
     property bool bypass: false       // ruta de degradación (§7): sólo el shader
 
@@ -38,6 +41,7 @@ Item {
         bandLow: bloom.bandLow; bandMid: bloom.bandMid; bandHigh: bloom.bandHigh
         fragmented: bloom.fragmented; dashed: bloom.dashed
         reduced: bloom.reduced; compact: bloom.compact; tint: bloom.tint
+        tintDeep: bloom.tintDeep; tintHot: bloom.tintHot; spin: bloom.spin
     }
     ShaderEffectSource {
         id: coreTex

@@ -1395,3 +1395,92 @@ No he visto si el núcleo se lee nítido, si el borde del orbe define la silueta
 ni si los contornos de texto dan suficiente contraste sobre un wallpaper real.
 Los cambios están razonados sobre la causa técnica; su efecto perceptual lo
 tiene que confirmar una mirada humana.
+
+## Fase 6 — Dirección artística: rampa cromática + profundidad + presencia
+
+Problema: pese a F4/F5, la interfaz seguía leyéndose como "app transparente con
+orbe y textos". Faltaba IDENTIDAD cromática (todo cian-claro + gris muerto),
+PROFUNDIDAD (color plano) y PRESENCIA por estado.
+
+### Dirección artística adoptada
+
+Todo el universo visual de JARVIS es **UNA rampa de azul profundo → cian
+eléctrico → casi-blanco**. El casi-blanco es SÓLO highlight (punto del núcleo,
+dato crítico), nunca un plano grande. Nada de gris apagado: los textos
+secundarios pertenecen a la misma rampa (azul luminoso).
+
+### Nueva paleta (`Design.qml`, centralizada — punto 32 del brief)
+
+| Token | Antes | Ahora | Rol |
+|---|---|---|---|
+| `coreDeep` | — | `#0A2A6E` | ultramar del limbo/atmósfera |
+| `azure` | `#2B7FFF` | `#1D5CFF` | azul eléctrico (profundidad media) |
+| `cyan` | `#4DE8FF` | `#37D2FF` | cian eléctrico (actividad primaria) |
+| `coreHot` | — | `#DCF6FF` | cian casi-blanco — SÓLO highlight |
+| `hairline` | gris `0.66,0.75,0.86 @0.26` | azul `0.36,0.60,0.98 @0.30` | conecta HUD↔Core |
+| `textPrimary` | `#E3ECF5` | `#EDF4FF` | cool near-white |
+| `textSecondary` | `#9DB0C4` | `#A9C6EC` | azul luminoso (no gris) |
+| `textMeta` | `#7386A0` | `#84A6D0` | azul-gris, legible |
+| `textDisabled` | (era `textMeta`) | `#51678A` | dato ausente, oscuro pero legible |
+
+Tipografía centralizada: `fsStatus 26` nuevo; pesos `wLabel/wValue/wStatus`
+(Medium/DemiBold/Bold); tracking `trkLabel 1.2` / `trkStatus 2.4`.
+
+### Cambios del Core
+
+- **3 uniforms nuevos** en `core.frag` (+ `CoreShader`/`CoreBloom`/`Core`
+  pass-through): `tintDeep` (limbo), `tintHot` (highlight), `spin` (0..1
+  velocidad de giro por estado).
+- **Profundidad cromática**: el campo ya no es color plano —
+  `mix(tintDeep → tint → tintHot)` por radio: azul profundo en el limbo, cian
+  de estado a media distancia, casi-blanco SÓLO muy cerca del centro y sólo
+  con energía. El usuario percibe volumen.
+- **El Core ya NO es casi-blanco**: se sustituyeron los `mix(tint, vec3(1.0))`
+  por `mix(tint, tintHot)` con factores menores; el único blanco puro que
+  queda es el *glint* especular anisótropo y el **punto** del centro
+  (`smoothstep(0.10,0.0,...)` — diminuto).
+- **Personalidad por estado** (`Core.qml` states): tinte + tinte profundo +
+  `spin` propios. idle `#164BCC` spin 0.30 (lentísimo) · listening `#37D2FF`
+  spin 0.85 · thinking `#2991FF` spin 0.55 (concentrado) · executing `#2EA9FF`
+  frío spin 1.15 (rápido/mecánico) · speaking `#37D2FF` spin 0.70 · alert rojo
+  · offline `#51678A` spin 0.
+- **Campo de energía**: dos arcos orbitales lentos fuera del cuerpo del orbe
+  (`rad≈0.855`, `0.945`), rotando, alfa baja — "campo estabilizado", no una
+  bola de glow. Coste: 4 trig extra por fragmento.
+- **Latido digital** (`_targetEnergy` idle): cada ~5.2 s un "lub-dub" muy
+  sutil (dos golpes exponenciales + silencio) sobre la respiración lenta.
+  Señal de vida, no parpadeo. Sólo en reposo.
+
+### Cambios del HUD
+
+- Todo el texto adopta la paleta nueva (azul luminoso, no gris) + `Text.
+  Outline` (F5) + pesos/tracking de los tokens.
+- `HudCell`: valor a peso `wValue`, dato ausente a `textDisabled`.
+- `CoreStatus`: palabra de estado a 26 px `wStatus` tracking 2.4; colores por
+  estado = la misma rampa que el núcleo.
+- **Conector Core↔HUD**: una línea de 1 px que baja del clúster de identidad
+  hacia el núcleo, iluminada por la luz del propio Core — "el HUD sale del
+  Core". Restringido: un solo conector, sin brackets de videojuego.
+
+### Archivos modificados
+
+`shaders/core.frag(.qsb)` · `qml/`: `Design.qml`, `CoreShader.qml`,
+`CoreBloom.qml`, `Core.qml`, `CoreStatus.qml`, `HudCell.qml`, `Main.qml` ·
+`docs/REDISENO_VISTA.md`. (Fondo, transparencia, composición, tests: intactos.)
+
+### Validación
+
+**Verificado por runtime (offscreen):** shaders recompilan sin errores GLSL;
+QML carga sin warnings; rampa cromática medida por estado (idle `#164BCC` …
+speaking `#37D2FF`, NINGÚN estado casi-blanco) con `spin` distinto por estado;
+geometría a 1280×720/1366×768/1920×1080/2560×1440 + regresiones sin cambios
+(orbe centrado, 0 solapes, dentro del viewport); `pytest test` verde; `ruff`
+limpio; `systemctl --user status jarvis` → `active (running)` sin reinicios;
+`journalctl` sin errores QML/Python/shader.
+
+**NO verificado visualmente:** Wayland/Mutter bloquea la captura del proceso.
+No he visto si la profundidad cromática se percibe como volumen, si el latido
+digital transmite "vida" o pasa desapercibido, ni si el conector Core↔HUD une
+la composición o sobra. Los cambios están razonados como decisiones de
+dirección artística; su efecto perceptual lo tiene que confirmar una mirada
+humana.

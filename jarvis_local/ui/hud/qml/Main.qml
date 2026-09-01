@@ -176,6 +176,16 @@ Window {
             height: rootItem.topBandH
             clip: true
         }
+        // conector: una línea de 1px que "amarra" la identidad al núcleo — el
+        // HUD sale del Core. Iluminada por la luz del propio núcleo.
+        Rectangle {
+            width: 1
+            x: Math.round(rootItem.orbCX)
+            y: hud.y + hud.height
+            height: Math.max(0, (rootItem.orbCY - rootItem.orbSize / 2) - y - Design.sp(2))
+            color: Design.litHairline(x, y + height / 2)
+            opacity: 0.6 * Design.reveal(x, y + height / 2)
+        }
 
         // ── MÉTRICAS EN VIVO (flotan abajo-izquierda, junto al comando) ──
         Hud {

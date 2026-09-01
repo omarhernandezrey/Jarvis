@@ -20,7 +20,10 @@ ShaderEffect {
     property real aspect: width / Math.max(1, height)
     property real reduced: 0           // 0/1
     property real compact: 0           // 0/1
-    property color tint: "#2B7FFF"
+    property color tint: "#37D2FF"
+    property color tintDeep: "#0A2A6E"     // limbo/atmósfera
+    property color tintHot: "#DCF6FF"      // highlight (sólo el punto)
+    property real spin: 0.5                // 0..1 velocidad de giro por estado
 
     fragmentShader: Qt.resolvedUrl("../shaders/core.frag.qsb")
     blending: true

@@ -11,14 +11,15 @@ Item {
     id: root
     property string coreState: "idle"
 
+    // Colores = misma rampa que el núcleo por estado (azul profundo → cian).
     readonly property var _map: ({
-        idle:      ["STANDBY",      Design.textSecondary],
+        idle:      ["STANDBY",      Design.mix(Design.azure, Design.textSecondary, 0.45)],
         listening: ["LISTENING",    Design.cyan],
-        thinking:  ["PROCESSING",   Design.mix(Design.azure, Design.cyan, 0.5)],
-        executing: ["EXECUTING",    Design.mix(Design.cyan, Design.emitCore, 0.18)],
+        thinking:  ["PROCESSING",   Design.mix(Design.azure, Design.cyan, 0.45)],
+        executing: ["EXECUTING",    Design.mix(Design.cyan, Design.azure, 0.35)],
         speaking:  ["SPEAKING",     Design.cyan],
         alert:     ["SYSTEM ALERT", Design.alert],
-        offline:   ["OFFLINE",      Design.textMeta]
+        offline:   ["OFFLINE",      Design.textDisabled]
     })
     readonly property var _entry: _map[coreState] || _map.idle
     readonly property string _label: _entry[0]
@@ -40,7 +41,8 @@ Item {
             color: Design.textMeta
             font.family: Design.fontMono
             font.pixelSize: Design.fsMeta
-            font.letterSpacing: 1.5
+            font.weight: Design.wLabel
+            font.letterSpacing: Design.trkLabel
             style: Text.Outline; styleColor: Design.textEdge
         }
         Row {
@@ -71,9 +73,9 @@ Item {
                 text: root._label
                 color: root._accent
                 font.family: Design.fontMono
-                font.pixelSize: Design.fsLarge     // lectura primaria: sube a 24
-                font.bold: true
-                font.letterSpacing: 2.0
+                font.pixelSize: Design.fsStatus    // lectura primaria: 26
+                font.weight: Design.wStatus
+                font.letterSpacing: Design.trkStatus
                 style: Text.Outline; styleColor: Design.textEdge
                 Behavior on color { ColorAnimation {
                     duration: Design.stateXfade; easing.type: Design.easeType

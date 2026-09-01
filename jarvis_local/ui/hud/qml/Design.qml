@@ -25,33 +25,33 @@ QtObject {
     readonly property color surfaceColor: Qt.rgba(0x0A / 255, 0x11 / 255, 0x1E / 255, 0.82)
     readonly property real  surfaceBlur:  32
 
-    // Líneas de 1px entre bloques. NUNCA recuadros: la etiqueta de un bloque va
-    // en su regla lateral, no flotando encima. Sobre ventana transparente el
-    // 0.14 era invisible; 0.26 se lee sin gritar.
-    readonly property color hairline: Qt.rgba(0.66, 0.75, 0.86, 0.26)
-
     // Contorno de 1px para TEXTO sobre fondo transparente (style: Text.Outline).
     // No es blur: es un borde nítido que separa el glifo del escritorio.
-    readonly property color textEdge: Qt.rgba(0.02, 0.04, 0.07, 0.72)
+    readonly property color textEdge: Qt.rgba(0.02, 0.04, 0.07, 0.78)
 
-    // Actividad. `cyan` = primaria (estado activo), `azure` = secundaria/profundidad.
-    readonly property color cyan:  "#4DE8FF"
-    readonly property color azure: "#2B7FFF"
+    // ── RAMPA DE ENERGÍA (Fase 6) ──────────────────────────────────────────
+    // TODO el universo cromático de JARVIS es UNA rampa de azul profundo →
+    // cian eléctrico → casi-blanco. El casi-blanco es SÓLO highlight (punto
+    // del núcleo, dato crítico), nunca un plano grande. Nada de gris muerto.
+    readonly property color coreDeep: "#0A2A6E"   // ultramar profundo (atmósfera/limbo)
+    readonly property color azure:    "#1D5CFF"   // azul eléctrico (profundidad media)
+    readonly property color cyan:     "#37D2FF"   // cian eléctrico (actividad primaria)
+    readonly property color coreHot:  "#DCF6FF"   // cian casi-blanco — SÓLO highlight
+    readonly property color emitCore: "#FFFFFF"   // blanco puro — sólo el punto del núcleo
 
-    // Semáforo de salud de subsistemas.
-    readonly property color ok:    "#35E08A"   // online
+    // Líneas de 1px: conectan el HUD con el núcleo. Tiñen a azul, no a gris.
+    readonly property color hairline: Qt.rgba(0.36, 0.60, 0.98, 0.30)
+
+    // Semáforo de salud de subsistemas (los únicos colores fuera de la rampa).
+    readonly property color ok:    "#3BE59A"   // online
     readonly property color warn:  "#FFC857"   // degradado
-    readonly property color alert: "#FF4D5E"   // fallo
+    readonly property color alert: "#FF5468"   // fallo
 
-    // Texto: primario / secundario / metadato. Subidos para contraste sobre
-    // escritorio real (la ventana es transparente, no hay panel detrás).
-    readonly property color textPrimary:   "#E3ECF5"
-    readonly property color textSecondary: "#9DB0C4"
-    readonly property color textMeta:      "#7386A0"
-
-    // Blanco puro: reservado al punto de luz del núcleo de partículas. No usar
-    // para texto ni bordes.
-    readonly property color emitCore: "#FFFFFF"
+    // Texto: pertenece a la rampa (azul luminoso), nunca gris apagado.
+    readonly property color textPrimary:   "#EDF4FF"   // cool near-white
+    readonly property color textSecondary: "#A9C6EC"   // azul luminoso
+    readonly property color textMeta:      "#84A6D0"   // azul-gris, aún legible
+    readonly property color textDisabled:  "#51678A"   // oscuro pero legible (dato ausente)
 
     // Fuente de luz única y coherente: arriba-centro. Coordenadas normalizadas
     // (0..1) sobre el área que se esté iluminando. Todos los gradientes de
@@ -127,13 +127,24 @@ QtObject {
     readonly property string fontSans: "Ubuntu"
 
     // Escala tipográfica: jerarquía real, nunca todo igual.
-    //   meta 12 · small 13 · body 15 · title 18 · large 24 · display 40
+    //   meta 12 · small 13 · body 15 · title 18 · large 24 · status 26 · display 40
     readonly property int fsMeta:    12
     readonly property int fsSmall:   13
     readonly property int fsBody:    15
     readonly property int fsTitle:   18
     readonly property int fsLarge:   24
+    readonly property int fsStatus:  26     // la palabra de estado de JARVIS
     readonly property int fsDisplay: 40
+
+    // Pesos: etiqueta HUD susurra (Medium), valor domina (DemiBold), estado
+    // manda (Bold). Nunca todo el mismo peso.
+    readonly property int wLabel:  Font.Medium
+    readonly property int wValue:  Font.DemiBold
+    readonly property int wStatus: Font.Bold
+
+    // Tracking (letter-spacing) para el lenguaje "HUD digital".
+    readonly property real trkLabel: 1.2
+    readonly property real trkStatus: 2.4
 
     // ── ESPACIADO ────────────────────────────────────────────────────────────
     // Todo múltiplo de 4. Usar `Design.sp(n)` en vez de literales.

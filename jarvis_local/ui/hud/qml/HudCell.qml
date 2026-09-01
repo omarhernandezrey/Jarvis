@@ -40,7 +40,8 @@ Item {
             color: Design.textMeta
             font.family: Design.fontMono
             font.pixelSize: Design.fsMeta
-            font.letterSpacing: 0.5
+            font.weight: Design.wLabel
+            font.letterSpacing: Design.trkLabel
             style: Text.Outline; styleColor: Design.textEdge   // borde óptico, no blur
         }
         Row {
@@ -56,10 +57,10 @@ Item {
             Text {
                 id: valueText
                 text: cell.absent ? "—" : cell.value
-                color: cell.absent ? Design.textMeta : cell.accent
+                color: cell.absent ? Design.textDisabled : cell.accent
                 font.family: Design.fontMono          // dígitos ya tabulares (mono)
                 font.pixelSize: cell.vertical ? Design.fsBody : Design.fsLarge
-                font.bold: !cell.vertical              // valor grande = definido
+                font.weight: cell.vertical ? Design.wLabel : Design.wValue
                 style: Text.Outline; styleColor: Design.textEdge
             }
         }

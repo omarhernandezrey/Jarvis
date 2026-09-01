@@ -54,7 +54,12 @@ Item {
     Binding { target: Design; property: "coreTint";   value: root.pTint }
 
     // ── parámetros por estado (interpolados) ──────────────────────────────
-    property color pTint: Design.azure
+    //  Fase 6: cada estado tiene TINTE (rampa azul→cian), TINTE PROFUNDO del
+    //  limbo, y VELOCIDAD DE GIRO (spin) propia. El casi-blanco NO es un
+    //  estado — es un highlight que pinta el shader en el punto del centro.
+    property color pTint:      Design.mix(Design.azure, Design.coreDeep, 0.35)
+    property color pTintDeep:  Design.coreDeep
+    property real  pSpin:      0.30
     property real  pRingOpen: 0.0
     property real  pEmission: 0.45
     property real  pFragmented: 0.0
@@ -66,14 +71,15 @@ Item {
     Behavior on pConverge    { CoreNum {} }
     Behavior on pFragmented  { CoreNum {} }
     Behavior on pDashed      { CoreNum {} }
-    Behavior on pTint {
-        ColorAnimation {
-            duration: Design.stateXfade
-            easing.type: Design.easeType
-            easing.bezierCurve: Design.easeCurve
-        }
-    }
+    Behavior on pSpin        { CoreNum {} }
+    Behavior on pTint     { CoreCol {} }
+    Behavior on pTintDeep { CoreCol {} }
     component CoreNum: NumberAnimation {
+        duration: Design.stateXfade
+        easing.type: Design.easeType
+        easing.bezierCurve: Design.easeCurve
+    }
+    component CoreCol: ColorAnimation {
         duration: Design.stateXfade
         easing.type: Design.easeType
         easing.bezierCurve: Design.easeCurve
@@ -81,34 +87,47 @@ Item {
 
     state: root.coreState
     states: [
+        // IDLE — azul eléctrico profundo, giro lentísimo: "está aquí, esperando"
         State { name: "idle";      PropertyChanges { target: root
-            pTint: Design.azure; pRingOpen: 0.35; pEmission: 0.42
+            pTint: Design.mix(Design.azure, Design.coreDeep, 0.35)
+            pTintDeep: Design.coreDeep; pSpin: 0.30
+            pRingOpen: 0.35; pEmission: 0.42
             pFragmented: 0; pDashed: 0; pConverge: 0 } },
+        // LISTENING — cian eléctrico, giro sensible
         State { name: "listening"; PropertyChanges { target: root
-            pTint: Design.cyan; pRingOpen: 1.0; pEmission: 0.9
+            pTint: Design.cyan
+            pTintDeep: Design.mix(Design.azure, Design.coreDeep, 0.3); pSpin: 0.85
+            pRingOpen: 1.0; pEmission: 0.9
             pFragmented: 0; pDashed: 0; pConverge: 0 } },
+        // THINKING — cian + azul, giro concentrado, campo convergido
         State { name: "thinking";  PropertyChanges { target: root
-            pTint: Design.mix(Design.azure, Design.cyan, 0.5); pRingOpen: 0.62
-            pEmission: 0.75; pFragmented: 0; pDashed: 0; pConverge: 1 } },
+            pTint: Design.mix(Design.azure, Design.cyan, 0.45)
+            pTintDeep: Design.coreDeep; pSpin: 0.55
+            pRingOpen: 0.62; pEmission: 0.75
+            pFragmented: 0; pDashed: 0; pConverge: 1 } },
+        // SPEAKING — cian; el shader añade los highlights blancos del centro
         State { name: "speaking";  PropertyChanges { target: root
-            pTint: Design.cyan; pRingOpen: 0.7; pEmission: 1.0
+            pTint: Design.cyan
+            pTintDeep: Design.mix(Design.azure, Design.coreDeep, 0.25); pSpin: 0.70
+            pRingOpen: 0.7; pEmission: 1.0
             pFragmented: 0; pDashed: 0; pConverge: 0 } },
-        // herramienta/parser ejecutando algo real (abrir app, clima, etc.):
-        // cian MÁS FRÍO (tirando a blanco) = "instrumento trabajando", distinto
-        // del cian cálido de speaking; campo semiabierto (converge 0.35, no la
-        // convergencia total de thinking) + pulso de energía más rápido y
-        // regular (ver _targetEnergy) = firma mecánica, no conversacional.
-        // No toca dashed/fragmented (reservados a offline/alert: congelan o
-        // rompen el campo, lo contrario de "activo").
+        // EXECUTING — cian FRÍO tirando a azul (instrumento), giro rápido y
+        // preciso, campo semiabierto. Distinto de speaking por color, geometría
+        // y ritmo. No toca dashed/fragmented (reservados a offline/alert).
         State { name: "executing"; PropertyChanges { target: root
-            pTint: Design.mix(Design.cyan, Design.emitCore, 0.18)
+            pTint: Design.mix(Design.cyan, Design.azure, 0.35)
+            pTintDeep: Design.mix(Design.coreDeep, Design.azure, 0.4); pSpin: 1.15
             pRingOpen: 0.46; pEmission: 0.92
             pFragmented: 0; pDashed: 0; pConverge: 0.4 } },
         State { name: "alert";     PropertyChanges { target: root
-            pTint: Design.alert; pRingOpen: 0.3; pEmission: 0.0
+            pTint: Design.alert
+            pTintDeep: Design.mix(Design.alert, Design.coreDeep, 0.5); pSpin: 0.4
+            pRingOpen: 0.3; pEmission: 0.0
             pFragmented: 1; pDashed: 0; pConverge: 0 } },
         State { name: "offline";   PropertyChanges { target: root
-            pTint: Design.textMeta; pRingOpen: 0.0; pEmission: 0.0
+            pTint: Design.textDisabled
+            pTintDeep: Qt.rgba(0.04, 0.08, 0.14, 1.0); pSpin: 0.0
+            pRingOpen: 0.0; pEmission: 0.0
             pFragmented: 0; pDashed: 1; pConverge: 0 } }
     ]
 
@@ -132,14 +151,18 @@ Item {
             return 0.35 + 0.15 * (0.5 + 0.5 * Math.sin(_t * 3.2))
         if (coreState === "alert" || coreState === "offline")
             return 0.0
-        // idle: PRESENCIA, no un GIF. Respiración = suma de dos senos lentos
-        // de frecuencias inconmensurables → el ciclo no se repite de forma
-        // obvia (batido de ~30 s). Amplitud mínima. Más el "ping" de atención
-        // (Design.attention, decae solo): al enfocar la barra, el núcleo sube
-        // un instante — "acaba de prestar atención".
-        var breathe = 0.016 * Math.sin(_t * 0.42)
-                    + 0.010 * Math.sin(_t * 0.23 + 1.3)
-        return 0.055 + breathe + 0.10 * Design.attention
+        // idle: PRESENCIA. Dos capas:
+        //  · respiración — suma de dos senos lentos inconmensurables (batido
+        //    ~30 s, no se repite de forma obvia). Amplitud mínima.
+        //  · latido digital — cada ~5.2 s un "lub-dub" muy sutil (dos golpes
+        //    exponenciales seguidos y luego silencio). Señal de vida, no
+        //    parpadeo. Sólo en reposo.
+        var breathe = 0.014 * Math.sin(_t * 0.42)
+                    + 0.009 * Math.sin(_t * 0.23 + 1.3)
+        var hp = _t / 5.2 - Math.floor(_t / 5.2)          // fase 0..1 del latido
+        var beat = 0.028 * Math.exp(-hp * 26.0)
+                 + 0.018 * Math.exp(-Math.pow(hp - 0.16, 2.0) * 90.0)
+        return 0.050 + breathe + beat + 0.10 * Design.attention
     }
     function _bands() {
         var s = spectrum
@@ -197,6 +220,9 @@ Item {
         reduced: root.reducedMotion ? 1 : 0
         compact: root.compact ? 1 : 0
         tint: root.pTint
+        tintDeep: root.pTintDeep
+        tintHot: Design.coreHot           // highlight constante (misma rampa)
+        spin: root.pSpin
         live: root.loopActive
         bypass: root.degraded
     }

@@ -32,6 +32,9 @@ layout(std140, binding = 0) uniform buf {
     float reduced;     // 0/1   prefers-reduced-motion: congela el movimiento
     float compact;     // 0/1   modo insignia (Fase 6): sin volumen interior
     vec4  tint;        // color del estado (rgb; a sin usar)
+    vec4  tintDeep;    // azul profundo del limbo / atmósfera (Fase 6)
+    vec4  tintHot;     // cian casi-blanco: SÓLO highlight cercano al centro
+    float spin;        // 0..1 velocidad de giro por estado (personalidad)
 };
 
 // ---- ruido de valor 3D (para el desplazamiento de la superficie) ----
@@ -84,7 +87,8 @@ void main() {
     // ── 1) CAMPO DE INTERFERENCIA — dos espirales radiales contrarrotantes ──
     // Su superposición (moiré) ES la visualización: el DATO modula la FASE.
     float ph  = energy * 6.2831 + flux * 3.5 + (bandLow - bandHigh) * 2.4;
-    float rot = dashed > 0.5 ? 0.0 : tm;               // OFFLINE: inmóvil
+    // giro con PERSONALIDAD por estado: idle lentísimo, executing rápido/preciso
+    float rot = dashed > 0.5 ? 0.0 : tm * mix(0.35, 1.35, spin);
     float s1 = sin(rad * 34.0 - rot * 1.6 + ang * 7.0 + ph);
     float s2 = sin(rad * 37.0 + rot * 2.0 - ang * 7.0 - ph * 0.6);
     // umbral más cerrado → brazos/nodos MÁS definidos (menos difusos)
@@ -96,21 +100,35 @@ void main() {
     if (fragmented > 0.5) ring *= step(0.34, fract(ang * (5.0 / 6.2831) + 0.5 + tm * 0.05));
     if (dashed > 0.5)     ring *= step(0.5, fract(rad * 26.0)) * 0.6;
     float emanate = smoothstep(1.0, 0.12, rad);        // más brillo cerca del núcleo
-    vec3 fieldCol = mix(tint.rgb, vec3(1.0), 0.15 * energy);
-    col   += fieldCol * field * ring * emanate * (0.5 + 1.3 * emission) * (0.45 + 0.9 * energy);
+
+    // ── PROFUNDIDAD CROMÁTICA — el orbe NO es un color plano ni "casi blanco".
+    // Azul profundo en el limbo → tinte de estado a media distancia →
+    // highlight (casi-blanco) SÓLO muy cerca del centro y sólo con energía.
+    vec3 depthCol = mix(tintDeep.rgb, tint.rgb, smoothstep(0.98, 0.30, rad));
+    depthCol = mix(depthCol, tintHot.rgb,
+                   smoothstep(0.26, 0.02, rad) * (0.30 + 0.50 * energy));
+    col   += depthCol * field * ring * emanate * (0.5 + 1.3 * emission) * (0.45 + 0.9 * energy);
     alpha += field * ring * (0.30 + 0.70 * emission);
 
     // halo central suave (independiente del SDF): vende la emisión. Peso
     // REDUCIDO: antes lavaba el campo de interferencia; ahora sólo lo insinúa.
     float halo = smoothstep(0.60, 0.0, rad);
-    col += tint.rgb * halo * halo * (0.05 + 0.30 * energy) * emission;
+    col += mix(tint.rgb, tintDeep.rgb, 0.25) * halo * halo * (0.05 + 0.28 * energy) * emission;
 
-    // ── BORDE DEFINIDO — anillo de energía fino en el limbo del orbe ──
-    // Da una silueta legible (ORBE vs ALREDEDOR) sin un círculo blanco
-    // artificial: usa el tinte, se integra con el campo, y aporta a alpha
-    // para que sea un borde real, no un brillo.
+    // ── CAMPO DE ENERGÍA — dos arcos orbitales lentos fuera del cuerpo del
+    // orbe. NO una bola de glow: líneas de un campo estabilizado.
+    float orb1 = smoothstep(0.020, 0.0, abs(rad - 0.855))
+               * (0.55 + 0.45 * sin(ang * 3.0 + tm * 0.5 * mix(0.4, 1.2, spin)));
+    float orb2 = smoothstep(0.016, 0.0, abs(rad - 0.945))
+               * (0.55 + 0.45 * sin(ang * 2.0 - tm * 0.33));
+    vec3 fieldRingCol = mix(tintDeep.rgb, tint.rgb, 0.62);
+    col   += fieldRingCol * (orb1 * 0.24 + orb2 * 0.15) * (0.45 + 0.8 * emission);
+    alpha  = max(alpha, (orb1 * 0.20 + orb2 * 0.13) * (0.4 + 0.5 * emission));
+
+    // ── BORDE DEFINIDO — anillo de energía fino en el limbo del cuerpo ──
+    // Silueta legible (ORBE vs ALREDEDOR). Cian-caliente, NO blanco puro.
     float rim = smoothstep(0.05, 0.0, abs(rad - 0.76));
-    vec3  rimCol = mix(tint.rgb, vec3(1.0), 0.30);
+    vec3  rimCol = mix(tint.rgb, tintHot.rgb, 0.32);
     col   += rimCol * rim * (0.42 + 0.7 * emission) * (0.7 + 0.5 * energy);
     alpha  = max(alpha, rim * (0.45 + 0.4 * emission));
 
@@ -144,12 +162,13 @@ void main() {
             float aniso = pow(ndh, 36.0) * exp(-tdh * tdh * 5.0);
             float sweep = pow(0.5 + 0.5 * sin(ang * 2.0 - tm * 0.7), 7.0);
 
-            vec3 glow = tint.rgb * (0.14 + 0.7 * energy) * (0.45 + 0.55 * thick);   // plasma interno
-            glow += mix(tint.rgb, vec3(1.0), 0.35) * fres * (0.55 + 1.1 * energy);   // borde encendido
-            glow += vec3(1.0) * aniso * sweep * (0.45 + 0.7 * energy);               // material que barre
+            vec3 plasmaCol = mix(tintDeep.rgb, tint.rgb, 0.7);
+            vec3 glow = plasmaCol * (0.14 + 0.7 * energy) * (0.45 + 0.55 * thick);   // plasma interno
+            glow += mix(tint.rgb, tintHot.rgb, 0.4) * fres * (0.45 + 0.95 * energy); // borde encendido (cian-caliente)
+            glow += vec3(1.0) * aniso * sweep * (0.38 + 0.6 * energy);               // glint especular — el único blanco
             glow += tint.rgb * diff * 0.10;
-            glow += mix(tint.rgb, vec3(1.0), 0.6)
-                    * smoothstep(0.11, 0.0, length(p)) * (0.28 + 0.5 * energy);      // centro caliente
+            glow += mix(tintHot.rgb, vec3(1.0), 0.5)
+                    * smoothstep(0.10, 0.0, length(p)) * (0.30 + 0.55 * energy);     // PUNTO caliente del núcleo (pequeño)
             glow *= em;
 
             col += glow;                                       // ADITIVO: emite
@@ -160,7 +179,7 @@ void main() {
     // insignia: punto de luz interior en vez del volumen
     if (compact > 0.5) {
         float d = smoothstep(0.40, 0.0, rad);
-        col   += mix(tint.rgb, vec3(1.0), 0.4) * d * (0.30 + 0.9 * emission) * (0.6 + energy);
+        col   += mix(tint.rgb, tintHot.rgb, 0.45) * d * (0.30 + 0.9 * emission) * (0.6 + energy);
         alpha  = max(alpha, d * (0.45 + 0.55 * emission));
     }
 
