@@ -9,6 +9,7 @@ import difflib
 import glob
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -42,6 +43,26 @@ _LINUX_DESKTOP_DIRS = [
 ]
 
 _cache: list | None = None
+
+# Nombre común (marca ajena o genérico) -> qué buscar en el índice real. En
+# este equipo la ofimática es LibreOffice: "abre word" debe abrir Writer, no
+# "Passwords and Keys". Se prueban en orden; si ninguno resuelve, se usa el
+# nombre tal cual (así en Windows "word" sigue encontrando el Word real).
+_SYNONYMS: dict[str, list[str]] = {
+    "word": ["libreoffice writer"],
+    "excel": ["libreoffice calc"],
+    "powerpoint": ["libreoffice impress"],
+    "power point": ["libreoffice impress"],
+    "access": ["libreoffice base"],
+    "office": ["libreoffice"],
+    "libreoffice": ["libreoffice"],
+    "libre office": ["libreoffice"],
+    "ofimatica": ["libreoffice"],
+    "procesador de texto": ["libreoffice writer"],
+    "hoja de calculo": ["libreoffice calc"],
+    "presentaciones": ["libreoffice impress"],
+    "presentacion": ["libreoffice impress"],
+}
 
 
 def _is_launchable(name: str, appid: str) -> bool:
@@ -119,10 +140,15 @@ def scan_installed_apps() -> list:
 def refresh_index(force: bool = False) -> list:
     """Reconstruye el indice si no existe, esta viejo o force=True."""
     global _cache
-    if not force and os.path.exists(INDEX_PATH):
-        age = time.time() - os.path.getmtime(INDEX_PATH)
-        if age < INDEX_MAX_AGE_SECONDS:
-            return get_index()
+    if not force:
+        # ya cargado en esta sesion: no re-escanear a mitad de camino
+        # (los tests inyectan un indice falso en _cache).
+        if _cache is not None:
+            return _cache
+        if os.path.exists(INDEX_PATH):
+            age = time.time() - os.path.getmtime(INDEX_PATH)
+            if age < INDEX_MAX_AGE_SECONDS:
+                return get_index()
     apps = scan_installed_apps()
     os.makedirs(os.path.dirname(INDEX_PATH), exist_ok=True)
     with open(INDEX_PATH, "w", encoding="utf-8") as f:
@@ -146,23 +172,39 @@ def get_index() -> list:
     return refresh_index(force=True)
 
 
-def find_app(query: str) -> list:
+def find_app(query: str, use_synonyms: bool = True) -> list:
     """Busca apps por nombre. Devuelve [{name, appid, norm}] ordenado
-    por relevancia: exacto > prefijo > contiene > palabras > difuso."""
+    por relevancia: exacto > prefijo > contiene > palabras > difuso.
+
+    Con `use_synonyms`, un nombre conocido (p.ej. "word", "office") se
+    reescribe primero a lo que hay instalado (LibreOffice); si eso no
+    resuelve, se busca el nombre tal cual.
+    """
     q = _normalize(query)
     if not q:
         return []
-    index = get_index()
+    if use_synonyms and q in _SYNONYMS:
+        for alt in _SYNONYMS[q]:
+            hit = find_app(alt, use_synonyms=False)
+            if hit:
+                return hit
+    # refresh_index respeta la antigüedad (7 días): barato si está fresco,
+    # re-escanea si caducó. Antes se leía get_index() a secas y el índice
+    # podía quedar meses obsoleto → apps nuevas (p.ej. LibreOffice) invisibles.
+    index = refresh_index()
 
     exact, prefix, contains, words = [], [], [], []
     q_words = set(q.split())
+    # "contiene" sólo cuenta si empieza en frontera de palabra: así "word" NO
+    # cae en "passwords and keys" (era el bug de "abre word").
+    contains_re = re.compile(r"\b" + re.escape(q))
     for app in index:
         norm = app["norm"]
         if norm == q:
             exact.append(app)
         elif norm.startswith(q):
             prefix.append(app)
-        elif q in norm:
+        elif contains_re.search(norm):
             contains.append(app)
         elif q_words and q_words.issubset(set(norm.split())):
             words.append(app)

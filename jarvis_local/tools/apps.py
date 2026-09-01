@@ -139,7 +139,8 @@ def open_app(name: str) -> ActionPlan:
 
 
 def _open_installed_app(name: str) -> ActionPlan:
-    """Abre una app instalada (menu inicio) por nombre con busqueda difusa."""
+    """Abre una app instalada (menu inicio) por nombre con busqueda difusa.
+    `find_app` ya aplica sinonimos ("word" -> LibreOffice Writer, etc.)."""
     from jarvis_local.tools.app_index import find_app, launch_app
     try:
         matches = find_app(name)

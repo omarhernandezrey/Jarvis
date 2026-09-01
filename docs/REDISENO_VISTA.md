@@ -924,3 +924,52 @@ sube a `sp(3)` + `sp(1)` de margen desde el borde; alto mínimo de la barra a
 ### Tests
 
 Suite de vista: **23 verde**. `ruff check .` limpio.
+
+## P0 · seguimiento 6 — "abre word" abría lo que no era + micrófono cortado arriba
+
+### Bug 7 — "abre word" abría "Passwords and Keys"
+
+Cadena del fallo:
+1. `find_app("word")` usaba `q in norm`, que casa a mitad de palabra:
+   "word" ⊂ "pass**word**s and keys" → devolvía esa app.
+2. El índice de apps estaba **obsoleto** (cache de julio, 34 apps): `find_app`
+   leía `get_index()` sin comprobar antigüedad, así que LibreOffice —instalado
+   después— era invisible.
+3. No había traducción de nombres ajenos ("word", "excel") a lo que hay
+   instalado.
+
+**Fixes** (`tools/app_index.py` + `tools/apps.py`):
+- `contains` ahora exige **frontera de palabra** (`\bword`): "word" ya no cae
+  en "passwords".
+- `find_app` llama a `refresh_index()` (respeta los 7 días; re-escanea si
+  caducó) en vez de `get_index()` a secas. Con guarda: si `_cache` ya está
+  cargado en la sesión, no re-escanea (los tests inyectan índice falso).
+- **Sinónimos** en `find_app(query, use_synonyms=True)`: `word→libreoffice
+  writer`, `excel→libreoffice calc`, `powerpoint→libreoffice impress`,
+  `access→libreoffice base`, `office/libreoffice/ofimática→libreoffice`,
+  además de "procesador de texto", "hoja de cálculo", "presentaciones". Si el
+  sinónimo no resuelve (p.ej. Windows con Word real), cae al nombre tal cual.
+
+Verificado en este equipo: `abre word` → *LibreOffice 26.2 Writer*, `abre
+excel` → *Calc*, `abre powerpoint` → *Impress*, `abre libre office` →
+*LibreOffice* (start center). `parse_intent` de todos ellos → `tool_execute
+open_app`.
+
+### Bug 8 — el icono del micrófono salía cortado por arriba
+
+El arco superior de la cápsula del micro (`ctx.arc(cx, h*0.12, w*0.28, π, 0)`)
+subía hasta `y ≈ h*0.12 − w*0.28`, **negativo** → el `Canvas` lo recortaba.
+Se veía el micrófono sin la parte de arriba. **Fix:** icono redibujado con
+todo el trazado dentro de `[0,w]×[0,h]` (cápsula-píldora con el arco a
+`y ≈ 1.5`, soporte en U, tallo y base), y `Canvas` un poco mayor
+(`sp(5.5)×sp(7)`).
+
+### Autoarranque
+
+`~/.config/autostart/jarvis.desktop` → `python -m jarvis_local.ui.hud` (ya en
+seg. 4). Sigue vigente.
+
+### Tests
+
+Suite de vista: **23 verde**. `test_app_index` + `test_apps` + `test_intent` +
+`test_fase4/5` + `test_router`: **verde**. `ruff check .` limpio.

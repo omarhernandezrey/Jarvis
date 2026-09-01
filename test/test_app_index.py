@@ -21,6 +21,20 @@ _FAKE_INDEX = [
     {"name": "Telegram Desktop", "appid": "Telegram!App", "norm": "telegram desktop"},
 ]
 
+# Índice tipo Linux con LibreOffice y una app cuyo nombre contiene "word".
+_FAKE_INDEX_LINUX = [
+    {"name": "Passwords and Keys", "appid": "org.gnome.seahorse.Application.desktop",
+     "norm": "passwords and keys"},
+    {"name": "LibreOffice 26.2 Writer", "appid": "libreoffice_writer.desktop",
+     "norm": "libreoffice 26.2 writer"},
+    {"name": "LibreOffice 26.2 Calc", "appid": "libreoffice_calc.desktop",
+     "norm": "libreoffice 26.2 calc"},
+    {"name": "LibreOffice 26.2 Impress", "appid": "libreoffice_impress.desktop",
+     "norm": "libreoffice 26.2 impress"},
+    {"name": "LibreOffice 26.2", "appid": "libreoffice_libreoffice.desktop",
+     "norm": "libreoffice 26.2"},
+]
+
 
 def _with_fake_index(fn):
     old = app_index._cache
@@ -72,6 +86,40 @@ def test_find_nothing():
     def check():
         assert find_app("zzz_app_inexistente_9x") == []
         assert find_app("") == []
+    _with_fake_index(check)
+
+
+def _with_index(idx, fn):
+    old = app_index._cache
+    app_index._cache = list(idx)
+    try:
+        fn()
+    finally:
+        app_index._cache = old
+
+
+def test_contains_needs_word_boundary():
+    """'word' NO debe casar dentro de 'passwords' (era el bug de 'abre word')."""
+    def check():
+        names = [m["name"] for m in find_app("word", use_synonyms=False)]
+        assert "Passwords and Keys" not in names
+    _with_index(_FAKE_INDEX_LINUX, check)
+
+
+def test_synonyms_map_office_to_libreoffice():
+    def check():
+        assert find_app("word")[0]["name"] == "LibreOffice 26.2 Writer"
+        assert find_app("excel")[0]["name"] == "LibreOffice 26.2 Calc"
+        assert find_app("powerpoint")[0]["name"] == "LibreOffice 26.2 Impress"
+        assert find_app("libre office")[0]["name"].startswith("LibreOffice")
+        assert find_app("office")[0]["name"].startswith("LibreOffice")
+    _with_index(_FAKE_INDEX_LINUX, check)
+
+
+def test_synonyms_off_falls_back_to_raw_name():
+    """Con el índice Windows (Word real) y sin LibreOffice, 'word' → Word."""
+    def check():
+        assert find_app("word")[0]["name"] == "Word"
     _with_fake_index(check)
 
 

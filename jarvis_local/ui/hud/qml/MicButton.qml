@@ -31,33 +31,43 @@ Item {
         Behavior on color { ColorAnimation { duration: Design.durFast } }
     }
 
-    // icono vectorial trazado (sin emojis)
+    // icono vectorial trazado (sin emojis). Todo el dibujo queda DENTRO de los
+    // límites del Canvas: antes el arco superior de la cápsula se salía por
+    // arriba (y negativa) y el recorte lo escondía → "micrófono cortado arriba".
     Canvas {
         id: ico
         anchors.centerIn: parent
-        width: Design.sp(4.5); height: Design.sp(5.5)
+        width: Design.sp(5.5); height: Design.sp(7)
         onPaint: {
             var ctx = getContext("2d"); ctx.reset()
             ctx.strokeStyle = mic._c; ctx.fillStyle = mic._c
-            ctx.lineWidth = 1.5; ctx.lineCap = "round"
+            ctx.lineWidth = 1.5; ctx.lineCap = "round"; ctx.lineJoin = "round"
             var w = width, h = height, cx = w / 2
-            // cápsula
+            var r = w * 0.22                    // radio de la cápsula
+            var capTop = r + 1.5               // el arco sube r → borde en y≈1.5
+            var capBot = h * 0.46
+            // cápsula (píldora vertical)
             ctx.beginPath()
-            ctx.moveTo(cx - w * 0.28, h * 0.12)
-            ctx.arc(cx, h * 0.12, w * 0.28, Math.PI, 0)
-            ctx.lineTo(cx + w * 0.28, h * 0.42)
-            ctx.arc(cx, h * 0.42, w * 0.28, 0, Math.PI)
+            ctx.moveTo(cx - r, capTop)
+            ctx.arc(cx, capTop, r, Math.PI, 0, false)
+            ctx.lineTo(cx + r, capBot)
+            ctx.arc(cx, capBot, r, 0, Math.PI, false)
             ctx.closePath()
             if (mic.micState === "listening") ctx.fill(); else ctx.stroke()
-            // arco inferior + pie
+            // soporte en U bajo la cápsula
+            var br = w * 0.40
             ctx.beginPath()
-            ctx.arc(cx, h * 0.42, w * 0.42, 0.15 * Math.PI, 0.85 * Math.PI)
-            ctx.moveTo(cx, h * 0.42 + w * 0.42); ctx.lineTo(cx, h * 0.9)
-            ctx.moveTo(cx - w * 0.22, h * 0.9); ctx.lineTo(cx + w * 0.22, h * 0.9)
+            ctx.arc(cx, capBot, br, 0.16 * Math.PI, 0.84 * Math.PI, false)
+            ctx.stroke()
+            // tallo + base
+            var footY = h - 2
+            ctx.beginPath()
+            ctx.moveTo(cx, capBot + br); ctx.lineTo(cx, footY)
+            ctx.moveTo(cx - w * 0.20, footY); ctx.lineTo(cx + w * 0.20, footY)
             ctx.stroke()
             if (mic.micState === "denied") {           // barra diagonal
                 ctx.beginPath()
-                ctx.moveTo(w * 0.05, h * 0.05); ctx.lineTo(w * 0.95, h * 0.95)
+                ctx.moveTo(w * 0.12, h * 0.10); ctx.lineTo(w * 0.88, h * 0.90)
                 ctx.stroke()
             }
         }
