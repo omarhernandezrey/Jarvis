@@ -94,13 +94,16 @@ Item {
             pTint: Design.cyan; pRingOpen: 0.7; pEmission: 1.0
             pFragmented: 0; pDashed: 0; pConverge: 0 } },
         // herramienta/parser ejecutando algo real (abrir app, clima, etc.):
-        // apertura de anillo y convergencia a medio camino entre "listening"
-        // y "thinking" + pulso de energía más rápido (ver _targetEnergy) =
-        // firma distinta sin tocar dashed/fragmented (reservados a
-        // offline/alert: congelan o rompen el campo, lo contrario de "activo").
+        // cian MÁS FRÍO (tirando a blanco) = "instrumento trabajando", distinto
+        // del cian cálido de speaking; campo semiabierto (converge 0.35, no la
+        // convergencia total de thinking) + pulso de energía más rápido y
+        // regular (ver _targetEnergy) = firma mecánica, no conversacional.
+        // No toca dashed/fragmented (reservados a offline/alert: congelan o
+        // rompen el campo, lo contrario de "activo").
         State { name: "executing"; PropertyChanges { target: root
-            pTint: Design.cyan; pRingOpen: 0.5; pEmission: 0.88
-            pFragmented: 0; pDashed: 0; pConverge: 0.35 } },
+            pTint: Design.mix(Design.cyan, Design.emitCore, 0.18)
+            pRingOpen: 0.46; pEmission: 0.92
+            pFragmented: 0; pDashed: 0; pConverge: 0.4 } },
         State { name: "alert";     PropertyChanges { target: root
             pTint: Design.alert; pRingOpen: 0.3; pEmission: 0.0
             pFragmented: 1; pDashed: 0; pConverge: 0 } },

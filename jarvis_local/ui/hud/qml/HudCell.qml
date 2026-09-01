@@ -10,6 +10,9 @@ Item {
     property bool absent: false
     property color accent: Design.textPrimary
     property bool vertical: false      // Fase 6: banda superior vs. regla lateral
+    // punto de presencia antes del valor: NO es un LED estático — su opacidad
+    // respira con `Design.coreEnergy` (dato real que ya mueve el núcleo).
+    property bool pulse: false
 
     implicitWidth: Math.max(labelText.implicitWidth, valueText.implicitWidth)
                    + Design.sp(7)
@@ -38,12 +41,23 @@ Item {
             font.family: Design.fontMono
             font.pixelSize: Design.fsMeta
         }
-        Text {
-            id: valueText
-            text: cell.absent ? "—" : cell.value
-            color: cell.absent ? Design.textMeta : cell.accent
-            font.family: Design.fontMono          // dígitos ya tabulares (mono)
-            font.pixelSize: cell.vertical ? Design.fsBody : Design.fsLarge
+        Row {
+            spacing: Design.sp(1.5)
+            Rectangle {
+                visible: cell.pulse && !cell.absent
+                width: 5; height: 5; radius: 2.5
+                anchors.verticalCenter: valueText.verticalCenter
+                color: cell.accent
+                // respira con la energía real del núcleo, nunca a 0 del todo
+                opacity: 0.35 + 0.6 * Math.min(1.0, 0.25 + Design.coreEnergy * 1.6)
+            }
+            Text {
+                id: valueText
+                text: cell.absent ? "—" : cell.value
+                color: cell.absent ? Design.textMeta : cell.accent
+                font.family: Design.fontMono          // dígitos ya tabulares (mono)
+                font.pixelSize: cell.vertical ? Design.fsBody : Design.fsLarge
+            }
         }
     }
 }

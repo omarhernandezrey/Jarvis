@@ -35,6 +35,19 @@ Item {
 
         onCountChanged: if (stick) Qt.callLater(positionViewAtEnd)
 
+        // un turno nuevo no aparece de golpe: sube su opacidad — parte de la
+        // misma reacción del sistema (misma curva que el cross-fade del
+        // núcleo), no un pop.
+        add: Transition {
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0
+                duration: Design.durBase; easing.type: Design.easeType
+                easing.bezierCurve: Design.easeCurve }
+        }
+        displaced: Transition {
+            NumberAnimation { property: "y"; duration: Design.durBase
+                easing.type: Design.easeType; easing.bezierCurve: Design.easeCurve }
+        }
+
         onContentYChanged: {
             // si el usuario sube, se libera el anclaje; al volver al fondo, engancha
             if (!movingVertically && !flickingVertically)

@@ -1054,3 +1054,73 @@ rediseñados en seguimientos 2 y 4 de esta misma fase (foco, chevron trazado,
 micrófono separado con recuadro sólo en hover, canaleta USER/JARVIS). No se
 repitió trabajo sobre ellos; el esfuerzo de esta iteración fue a los huecos
 reales: el estado `executing` y la lectura de estado.
+
+## Auditoría visual — Fase 2 (coherencia y presencia)
+
+Petición: auditar sin volver a empezar. ¿JARVIS parece un sistema de IA vivo o
+una app de escritorio con efectos? Respuesta honesta del análisis de código:
+
+**Lo que ya estaba bien (no se tocó):** `core.frag` no es "un círculo bonito"
+— campo de interferencia moiré + volumen SDF raymarcheado con superficie
+ruidosa + especular anisótropo + Fresnel; los estados modulan fase/geometría,
+no sólo color. Composición con punto focal claro (núcleo con aire, HUD lateral
+susurra, conversación se queda el espacio). Conversación con autoscroll
+anclado, píldora "volver al final", estado vacío. Barra de comando con chevron
+trazado, foco animado, micrófono separado. Telemetría real, sin datos
+inventados. Todo esto es sólido.
+
+**Huecos reales encontrados y corregidos:**
+
+1. **Desfase de movimiento.** `CoreStatus` (añadido en la fase anterior)
+   cambiaba color y palabra **al instante** mientras el núcleo hace cross-fade
+   de 220 ms → el cambio de estado NO se sentía como una sola reacción.
+   Fix: `Behavior on color` (220 ms, misma curva que el núcleo) en el punto y
+   el texto + un acuse de 90 ms (una caída de opacidad y vuelta, un solo
+   pulso, no un parpadeo). Ahora núcleo y lectura de estado transicionan
+   juntos.
+
+2. **`SYSTEM ONLINE` era un LED estático.** La celda "sistema" del HUD sólo
+   cambiaba de color texto; el brief original pedía explícitamente "no un
+   punto verde estático, una señal sutil de actividad". Fix: `HudCell` gana
+   `pulse` — un punto de 5 px antes del valor cuya opacidad respira con
+   `Design.coreEnergy` (dato real, cero coste). Se activa sólo en "sistema"
+   cuando `online === true`.
+
+3. **Turnos de chat aparecían de golpe.** `ListView` sin `add`/`displaced`
+   Transition → un mensaje nuevo hacía "pop". Fix: transición `add` de
+   opacidad 0→1 (220 ms, misma curva del sistema) y `displaced` para que los
+   turnos existentes se reacomoden con la misma curva. El chat entra como
+   parte de la reacción, no como una lista que salta.
+
+4. **`EXECUTING` demasiado cerca de `SPEAKING`.** Ambos eran `Design.cyan`
+   puro, distinguiéndose sólo por `pRingOpen`/`pConverge`. El brief pedía que
+   "ejecutar algo en tu computador" fuera inequívocamente distinto de "hablar
+   contigo". Fix: `executing` pasa a un cian **más frío** (`mix(cyan,
+   emitCore, 0.18)` → ~`#6DECFF`, tirando a blanco = "instrumento") con
+   `pConverge` 0.4 y pulso de energía rápido y regular; `speaking` mantiene
+   el cian cálido y sigue la envolvente de audio real (irregular). Ahora
+   difieren en color, geometría Y carácter de movimiento. `CoreStatus` usa
+   el mismo tinte por estado que el núcleo (antes "PROCESSING" salía azure
+   puro mientras el núcleo brillaba azure-cian).
+
+**Inspección visual — limitación real:** Wayland/Mutter bloquea la captura de
+pantalla del proceso (documentado desde la Fase 0). La verificación fue por
+`Runtime` headless (offscreen): geometría a 1920×1080 / 1366×768 / 1280×720
+(0 solapes, todo dentro de los límites, jerarquía conservada) y ciclo completo
+de estados leyendo `Core.pTint`/`pRingOpen`/`pConverge` y `CoreStatus._label`
+tras cada transición. **Una inspección headless no sustituye ver la interfaz en
+movimiento**: el criterio final de "¿se siente vivo?" lo tiene que dar una
+mirada humana con el servicio corriendo.
+
+**Conclusión honesta:** con estos cuatro arreglos la interfaz gana coherencia
+de movimiento (los elementos reaccionan como un sistema, no por separado) y
+cierra el hueco de "presencia" del indicador online. La base ya era técnicamente
+avanzada; lo que le faltaba no eran más efectos sino que los que hay actuaran
+al unísono. Queda pendiente de validación humana si el conjunto ya cruza el
+umbral de "parece una IA" o si aún pide otra pasada de motion design.
+
+### Validación
+
+`pytest test`: **verde** · `ruff check .` limpio · `systemctl --user status
+jarvis` → `active (running)` sin reinicios · `journalctl` sin errores
+QML/Python.

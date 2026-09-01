@@ -76,6 +76,9 @@ Item {
                 value: c[1]
                 accent: c[2]
                 vertical: hud.vertical
+                // "SYSTEM ONLINE" no es un LED fijo: late con el núcleo
+                pulse: modelData === "sistema" && !c[0]
+                       && hud.m !== undefined && hud.m.online === true
             }
         }
     }
