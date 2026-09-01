@@ -3,13 +3,15 @@ import QtQuick.Window
 import QtQuick.Effects
 import "."
 
-// Composición del HUD.
-//  · Ventana SIN marco del SO (addendum §8.1): chrome propio, esquinas a 12px,
-//    sombra proyectada, redimensionado por el compositor.
-//  · Responsive por reorganización (4 modos): wide ≥1600 · mid 1100–1599 ·
-//    narrow <1100 · badge alto <720. Cero solapes / overflow.
-//  · Un ÚNICO FrameAnimation global mueve `tick`; la atmósfera se aplica como
-//    `layer.effect` de toda la escena (y redondea las esquinas).
+// Composición del HUD (Fase 4).
+//  · Ventana 100% TRANSPARENTE y sin marco: el escritorio se ve detrás. La
+//    superficie GL lleva alfa (app.py: QSurfaceFormat.setAlphaBufferSize).
+//  · EL ORBE ES EL PROTAGONISTA: centrado en la ventana, tamaño adaptativo
+//    (mínimo/ideal/máximo). Todo lo demás flota a su alrededor como HUD
+//    holográfico: identidad arriba, métricas y estado en las esquinas,
+//    conversación en columna lateral (o apilada abajo si no cabe), barra de
+//    comando flotante centrada abajo. Sin fondo global, sin panel, sin caja.
+//  · Un ÚNICO FrameAnimation global mueve `tick`.
 Window {
     id: win
     width: 1360
@@ -19,39 +21,20 @@ Window {
     visible: true
     title: "J.A.R.V.I.S"
 
-    // Sin marco sólo si se pide explícitamente (context `Frameless`). En algunas
-    // sesiones Wayland/GNOME una ventana FramelessWindowHint + transparente
-    // deja de recibir foco de teclado → no se puede escribir. Por defecto:
-    // ventana normal decorada por el SO (funciona en todas partes).
-    readonly property bool frameless: (typeof Frameless !== "undefined") && Frameless === true
-    color: frameless ? "transparent" : Design.bgVoid
-    flags: frameless ? (Qt.Window | Qt.FramelessWindowHint) : Qt.Window
+    // Transparencia REAL: sin fondo, sin marco del SO. El chrome propio
+    // (arrastrar / cerrar / redimensionar) lo pone WindowChrome.
+    color: "transparent"
+    flags: Qt.Window | Qt.FramelessWindowHint
 
     readonly property bool maxed: visibility === Window.Maximized
-    readonly property int gutter: (frameless && !maxed) ? Design.windowShadowGutter : 0
 
     property real pointerX: 0
     property real pointerY: 0
-
-    // sombra proyectada (el compositor no la da sin decoración del SO)
-    MultiEffect {
-        anchors.fill: rootItem
-        source: rootItem
-        visible: win.frameless && !win.maxed
-        shadowEnabled: true
-        shadowColor: "#000000"
-        shadowOpacity: 0.5
-        shadowBlur: 1.0
-        blurMax: 40
-        shadowVerticalOffset: 8
-        autoPaddingEnabled: true
-    }
 
     Item {
         id: rootItem
         objectName: "rootItem"
         anchors.fill: parent
-        anchors.margins: win.gutter
         focus: true
 
         // ── reloj y actividad (addendum §3 y §7) ─────────────────────────
@@ -66,7 +49,6 @@ Window {
             && (!reducedMotion || (Vm && (Vm.state === "listening"
                                           || Vm.state === "speaking")))
         property real tick: 0
-        readonly property real grainTick: Math.floor(tick * 24) / 24
 
         // ÚNICO FrameAnimation de todo el sistema. Además mide los fps para la
         // ruta de degradación (§7): no es un `if` teórico, se dispara de verdad.
@@ -104,18 +86,11 @@ Window {
           : perfOverride === -1 ? false
           : (_softwareBackend || _degradedLatch)
 
-        // atmósfera global: con foco + movimiento y sin degradar
-        readonly property bool atmosphereOn: motionActive && !degraded
-        // el layer va SIEMPRE activo (redondea las esquinas de la ventana sin
-        // marco); cuando `atmosphereOn` es falso, el shader queda casi neutro.
-        layer.enabled: true
-        layer.effect: Atmosphere {
-            time: rootItem.grainTick
-            cornerRadius: (win.frameless && !win.maxed) ? Design.radiusWindow : 0
-            grainAmt: rootItem.atmosphereOn ? 0.026 : 0.0
-            aberration: rootItem.atmosphereOn ? 1.2 : 0.0
-            vignette: rootItem.atmosphereOn ? 0.30 : 0.10
-        }
+        // La atmósfera global (viñeta/grano/aberración) se aplicaba como
+        // `layer.effect` de TODA la escena. Con la ventana transparente eso
+        // pintaría un marco oscuro en los bordes — justo lo que NO se quiere.
+        // El orbe conserva su propio bloom (CoreBloom); no hay post-proceso
+        // de ventana.
 
         // alcance de la luz del núcleo, en función del tamaño de la ventana
         Binding {
@@ -144,34 +119,40 @@ Window {
             if (!rootItem.booted) { bootAnim.stop(); rootItem.boot = 1.0 }
         }
 
-        readonly property int pad: Design.sp(5)
-        readonly property string mode: win.height < 720 ? "badge"
-            : win.width >= 1600 ? "wide"
-            : win.width < 1100 ? "narrow" : "mid"
-        readonly property bool singleCol: mode === "narrow" || mode === "badge"
-        readonly property int hudSideW: Design.sp(42)
-        readonly property int headerH: mode === "badge" ? Design.sp(20) : Design.sp(22)
-        readonly property int bandH: Design.sp(16)
+        // ── SISTEMA DE ZONAS ─────────────────────────────────────────────
+        // El orbe se centra en un "escenario" = ventana menos la franja de
+        // identidad (arriba) y la barra de comando flotante (abajo). Los
+        // demás elementos flotan en los márgenes.
+        readonly property int margin: Design.sp(6)
+        readonly property int topBandH: Design.sp(16)
+        readonly property int cmdReserve: cmdBar.implicitHeight + Design.sp(5)
+        readonly property int stageTop: margin + topBandH + Design.sp(3)
+        readonly property int stageBottom: Math.max(stageTop + 120, height - cmdReserve)
+        readonly property int stageH: stageBottom - stageTop
+        readonly property int stageW: Math.max(120, width - 2 * margin)
 
-        // ── planos de profundidad ────────────────────────────────────────
-        Rectangle {
-            anchors.fill: parent; anchors.margins: -4
-            x: win.pointerX * 2; y: win.pointerY * 2
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: Design.bgAbyss }
-                GradientStop { position: 1.0; color: Design.bgVoid }
-            }
-        }
-        Rectangle {
-            anchors.fill: parent
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: Design.glow(Design.azure, 0.10) }
-                GradientStop { position: 0.4; color: "transparent" }
-            }
-        }
-        // retícula técnica: profundidad de "centro de mando", casi subliminal
-        // (se pinta una vez por tamaño, cero coste por frame — ver TechGrid.qml)
-        TechGrid { anchors.fill: parent }
+        // conversación: columna lateral si CABE a la derecha del orbe sin
+        // solaparlo; si no, apilada bajo el orbe.
+        readonly property int convW: Math.round(Math.min(Design.sp(94), width * 0.28))
+        // tamaño del orbe = protagonista: 72% del lado más corto disponible,
+        // con mínimo (240) y máximo (960). El orbe SIEMPRE domina la composición.
+        readonly property real _orbFactor: 0.72
+        readonly property real _orbIfSide:
+            Math.min(Math.max(240, Math.min(stageW, stageH) * _orbFactor),
+                     stageH * 0.98, stageW * 0.96, 960)
+        readonly property real _orbXIfSide: (width - _orbIfSide) / 2
+        readonly property bool stackedChat:
+            (_orbXIfSide + _orbIfSide + Design.sp(4)) > (width - convW - margin)
+
+        // altura del escenario asignada al orbe (todo, o la parte de arriba
+        // si el chat se apila debajo)
+        readonly property real orbStageH: stackedChat ? stageH * 0.55 : stageH
+        readonly property real orbSize:
+            Math.min(Math.max(240, Math.min(stageW, orbStageH) * _orbFactor),
+                     orbStageH * 0.98, stageW * 0.96, 960)
+        readonly property real orbCX: width / 2
+        readonly property real orbCY: stageTop + orbStageH / 2
+
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
@@ -183,71 +164,46 @@ Window {
             onExited: { win.pointerX = 0; win.pointerY = 0 }
         }
 
-        // ── HUD ──────────────────────────────────────────────────────────
+        // ── HUD DE IDENTIDAD (flota arriba, centrado) ────────────────────
         Hud {
             objectName: "hud"
             id: hud
-            opacity: Design.reveal(x + width / 2, y + height / 2)   // arranque
-            vertical: rootItem.mode === "wide"
-            // en single, el HUD va a la derecha de la insignia del núcleo
-            x: rootItem.singleCol ? rootItem.pad + rootItem.headerH + Design.sp(4)
-                                  : rootItem.pad
-            y: rootItem.pad
-            width: rootItem.mode === "wide" ? rootItem.hudSideW
-                 : rootItem.singleCol ? Math.max(0, parent.width - x - rootItem.pad)
-                 : parent.width - 2 * rootItem.pad
-            height: rootItem.mode === "wide" ? parent.height - 2 * rootItem.pad
-                  : rootItem.singleCol ? rootItem.headerH
-                  : rootItem.bandH
+            keys: ["sistema", "modelo", "voz", "memoria", "herramientas"]
+            opacity: Design.reveal(x + width / 2, y + height / 2)
+            x: Math.round((parent.width - width) / 2)
+            y: rootItem.margin
+            width: Math.min(implicitWidth, parent.width - 2 * rootItem.margin)
+            height: rootItem.topBandH
             clip: true
         }
 
-        Hairline {   // regla bajo la banda superior (mid) / bajo el header (single)
-            visible: rootItem.mode === "mid" || rootItem.singleCol
-            x: rootItem.pad
-            width: parent.width - 2 * rootItem.pad
-            y: rootItem.singleCol ? rootItem.pad + rootItem.headerH + Design.sp(2)
-                                  : rootItem.pad + rootItem.bandH + Design.sp(3)
+        // ── MÉTRICAS EN VIVO (flotan abajo-izquierda, junto al comando) ──
+        Hud {
+            id: hudMetrics
+            keys: ["cpu", "ram", "latencia", "tokens/s"]
+            opacity: 0.9 * Design.reveal(x + width / 2, y + height / 2)
+            x: rootItem.margin
+            y: rootItem.stageBottom - height - Design.sp(1)
+            width: Math.min(implicitWidth, parent.width - 2 * rootItem.margin)
+            height: Design.sp(16)
+            clip: true
         }
 
-        // ── NÚCLEO ───────────────────────────────────────────────────────
+        // ── EL ORBE — protagonista, centrado en el escenario ─────────────
         Item {
             id: coreZone
             objectName: "coreZone"
-            x: {
-                if (rootItem.mode === "wide") return rootItem.pad + rootItem.hudSideW + Design.sp(6)
-                return rootItem.pad
-            }
-            y: {
-                if (rootItem.mode === "wide") return rootItem.pad
-                if (rootItem.mode === "mid") return rootItem.pad + rootItem.bandH + Design.sp(6)
-                return rootItem.pad          // single: insignia en el header
-            }
-            width: {
-                // densidad asimétrica: el núcleo tiene AIRE, la conversación
-                // (donde vive el contenido) se queda con el espacio
-                if (rootItem.singleCol) return rootItem.headerH
-                if (rootItem.mode === "wide")
-                    return (parent.width - x - rootItem.pad) * 0.38
-                return (parent.width - 2 * rootItem.pad) * 0.34
-            }
-            height: {
-                if (rootItem.singleCol) return rootItem.headerH
-                if (rootItem.mode === "wide") return parent.height - 2 * rootItem.pad
-                return parent.height - y - rootItem.pad
-            }
+            width: rootItem.orbSize
+            height: rootItem.orbSize
+            x: rootItem.orbCX - width / 2
+            y: rootItem.orbCY - height / 2
 
             Core {
                 id: core
-                anchors.centerIn: parent
-                // el orbe tiene AIRE en su zona; el bloom (margen negativo del
-                // CoreBloom) queda dentro sin recortarse contra la ventana
-                width: Math.min(coreZone.width, coreZone.height)
-                       * (rootItem.singleCol ? 1.05 : 0.82)
-                height: width
-                bootIgnite: Math.min(1.0, rootItem.boot / 0.42)   // se enciende primero
+                anchors.fill: parent
+                bootIgnite: Math.min(1.0, rootItem.boot / 0.42)
                 degraded: rootItem.degraded
-                compact: rootItem.singleCol
+                compact: false
                 coreState: Vm ? Vm.state : "idle"
                 audioLevel: Vm ? Vm.audio.level : 0
                 spectrum: Vm ? Vm.audio.spectrum : []
@@ -255,54 +211,76 @@ Window {
                                  ? Vm.metrics.tokensPerSecond : 0
                 pointer: Qt.point(win.pointerX, win.pointerY)
                 time: rootItem.tick
-                loopRunning: rootItem.motionActive       // 0 fps sin foco / minimizada
+                loopRunning: rootItem.motionActive
                 reducedMotion: rootItem.reducedMotion
             }
-
-            CoreStatus {
-                visible: !rootItem.singleCol
-                opacity: Design.reveal(parent.x + Design.sp(4),
-                                       parent.y + parent.height - Design.sp(4))
-                anchors { left: parent.left; bottom: parent.bottom }
-                coreState: Vm ? Vm.state : "idle"
-            }
         }
 
-        Hairline {   // regla vertical entre núcleo y conversación (wide/mid)
-            vertical: true
-            visible: !rootItem.singleCol
-            x: coreZone.x + coreZone.width + Design.sp(4)
-            y: coreZone.y
-            height: coreZone.height
+        // estado del orbe: justo debajo, centrado — "modo actual de JARVIS"
+        CoreStatus {
+            id: coreStatus
+            opacity: Design.reveal(x + width / 2, y + height / 2)
+            coreState: Vm ? Vm.state : "idle"
+            x: Math.round(rootItem.orbCX - width / 2)
+            y: Math.round(rootItem.orbCY + rootItem.orbSize * 0.5 + Design.sp(2))
         }
 
-        // ── CONVERSACIÓN + BARRA DE COMANDO ──────────────────────────────
+        // ── CONVERSACIÓN — capa flotante (columna lateral o apilada) ─────
         Item {
             id: convZone
             objectName: "convZone"
-            opacity: Design.reveal(x + width / 2, y + height / 2)   // se revela al final
-            x: rootItem.singleCol ? rootItem.pad
-               : coreZone.x + coreZone.width + Design.sp(5)
-            y: {
-                if (rootItem.mode === "wide") return rootItem.pad
-                if (rootItem.mode === "mid") return rootItem.pad + rootItem.bandH + Design.sp(6)
-                return rootItem.pad + rootItem.headerH + Design.sp(5)   // single
+            opacity: Design.reveal(x + width / 2, y + height / 2)
+            readonly property real _orbBottom:
+                rootItem.orbCY + rootItem.orbSize / 2
+            x: rootItem.stackedChat
+               ? rootItem.margin
+               : Math.round(rootItem.width - rootItem.convW - rootItem.margin)
+            y: rootItem.stackedChat
+               ? Math.round(Math.max(coreStatus.y + coreStatus.height + Design.sp(2),
+                                     _orbBottom + Design.sp(4)))
+               : rootItem.stageTop
+            width: rootItem.stackedChat
+                   ? rootItem.stageW
+                   : rootItem.convW
+            // apilada: deja libre la fila de métricas (abajo-izquierda)
+            height: Math.max(0, rootItem.stageBottom - y
+                    - (rootItem.stackedChat ? hudMetrics.height + Design.sp(2) : 0))
+
+            // scrim localizado SÓLO detrás del texto: sin él, texto claro sobre
+            // un wallpaper claro es ilegible. Muy suave, con bordes difuminados,
+            // NO un panel. (El brief lo permite explícitamente.)
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -Design.sp(2)
+                radius: Design.radiusSurface
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "transparent" }
+                    GradientStop { position: 0.12; color: Qt.rgba(0, 0, 0, 0.30) }
+                    GradientStop { position: 0.88; color: Qt.rgba(0, 0, 0, 0.30) }
+                    GradientStop { position: 1.0; color: "transparent" }
+                }
+                opacity: convo.hasContent ? 0.9 : 0.0
+                Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
             }
-            width: parent.width - x - rootItem.pad
-            height: parent.height - y - rootItem.pad
 
             Conversation {
                 id: convo
                 anchors { left: parent.left; right: parent.right; top: parent.top
-                          bottom: cmdBar.top; bottomMargin: Design.sp(3) }
-                measure: Math.min(640, width - Design.sp(6))
+                          bottom: parent.bottom }
+                measure: Math.min(620, width - Design.sp(8))
             }
-            CommandBar {
-                id: cmdBar
-                objectName: "cmdBar"
-                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                showViz: rootItem.mode === "badge"
-            }
+        }
+
+        // ── BARRA DE COMANDO — flotante, compacta, centrada abajo ────────
+        CommandBar {
+            id: cmdBar
+            objectName: "cmdBar"
+            opacity: Design.reveal(x + width / 2, y + height / 2)
+            width: Math.round(Math.min(Design.sp(170), parent.width - 2 * rootItem.margin))
+            x: Math.round((parent.width - width) / 2)
+            y: parent.height - height - rootItem.margin
+            showViz: rootItem.stackedChat && rootItem.stageH < 320
         }
 
         Keys.onPressed: (e) => {
@@ -319,7 +297,8 @@ Window {
             id: swBanner
             visible: false
             z: 999
-            anchors { top: parent.top; horizontalCenter: parent.horizontalCenter }
+            anchors { bottom: cmdBar.top; bottomMargin: Design.sp(3)
+                      horizontalCenter: parent.horizontalCenter }
             width: swText.implicitWidth + Design.sp(6)
             height: swText.implicitHeight + Design.sp(3)
             color: Qt.rgba(Design.warn.r, Design.warn.g, Design.warn.b, 0.14)
@@ -350,14 +329,13 @@ Window {
         }
     }
 
-    // chrome propio: arrastre, controles, redimensionado por el compositor.
-    // Sólo en modo sin marco; con ventana normal, el compositor pone el suyo.
+    // chrome propio: arrastre, controles de ventana, redimensionado por el
+    // compositor. La ventana no tiene decoración del SO — esto es lo único
+    // que permite mover/cerrar/redimensionar.
     WindowChrome {
         win: win
         anchors.fill: parent
         z: 500
-        visible: win.frameless
-        enabled: win.frameless
     }
 
     Component.onCompleted: win.requestActivate()

@@ -609,15 +609,14 @@ def test_degradation_path_bypasses_bloom():
         _app.processEvents()
         assert root.property("degraded") is False
         assert cb.property("bypass") is False
-        assert root.property("atmosphereOn") is True
 
         # forzar degradado → sin bloom, el shader del núcleo se ve directo
+        # (la atmósfera global se eliminó en Fase 4: ventana transparente)
         root.setProperty("perfOverride", 1)
         _app.processEvents()
         assert root.property("degraded") is True
         assert cb.property("bypass") is True
         assert cs.property("visible") is True
-        assert root.property("atmosphereOn") is False
     finally:
         engine._runtime.shutdown()  # noqa: SLF001
         engine.deleteLater()

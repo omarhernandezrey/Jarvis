@@ -20,6 +20,15 @@ _QML_DIR = Path(__file__).parent / "qml"
 
 def _configure_environment() -> None:
     os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
+    # Transparencia REAL de la ventana (Fase 4): la superficie GL necesita un
+    # canal alfa; sin esto, `color: "transparent"` en el Window pinta negro.
+    try:
+        from PySide6.QtGui import QSurfaceFormat
+        fmt = QSurfaceFormat.defaultFormat()
+        fmt.setAlphaBufferSize(8)
+        QSurfaceFormat.setDefaultFormat(fmt)
+    except Exception:
+        pass
 
 
 class Runtime:

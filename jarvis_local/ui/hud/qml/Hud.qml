@@ -10,9 +10,11 @@ Item {
     property var m: Vm ? Vm.metrics : ({})
     property bool vertical: false
 
-    // etiquetas en minúscula: la etiqueta susurra, el valor (24 px) domina
-    readonly property var keys: ["sistema", "modelo", "cpu", "ram", "latencia",
-                                 "tokens/s", "voz", "memoria", "herramientas"]
+    // etiquetas en minúscula: la etiqueta susurra, el valor (24 px) domina.
+    // La lista es configurable: Fase 4 la parte en dos clústeres flotantes
+    // (identidad arriba · métricas en vivo abajo).
+    property var keys: ["sistema", "modelo", "cpu", "ram", "latencia",
+                        "tokens/s", "voz", "memoria", "herramientas"]
 
     implicitHeight: vertical ? content.implicitHeight : Design.sp(16)
     implicitWidth: vertical ? Design.sp(40) : content.implicitWidth

@@ -8,6 +8,8 @@ import "."
 Item {
     id: root
     property real measure: 560
+    // ¿hay al menos un turno? (para el scrim localizado de Main en fondo transp.)
+    readonly property bool hasContent: list.count > 0
 
     ListView {
         id: list

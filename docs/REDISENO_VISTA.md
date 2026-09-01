@@ -1206,3 +1206,97 @@ No he visto la respiración, el ping de atención, ni la cascada de luz en
 movimiento. Que el conjunto transmita "una inteligencia respondiendo a lo que
 sucede" — y no "varios elementos animados" — sólo lo puede confirmar una
 mirada humana con el servicio corriendo.
+
+## Fase 4 — Orbe protagonista + HUD flotante + ventana 100% transparente
+
+Cambio de COMPOSICIÓN (no de lógica). El shader, los estados, la telemetría,
+la conversación, la barra de comando, la voz y systemd no se tocan.
+
+### Layout anterior
+
+Columna asimétrica: HUD en franja lateral/superior, núcleo en `coreZone` que
+ocupaba ~0.34–0.38 del ancho a un lado, conversación quedándose con el resto.
+Fondo = dos `Rectangle` con gradiente a pantalla completa (`bgAbyss`→`bgVoid`)
++ `TechGrid` + atmósfera global (`layer.effect` sobre toda la escena). La
+ventana era opaca (`color: Design.bgVoid`), con marco del SO por defecto y modo
+sin marco tras un flag. Cuatro modos responsive (wide/mid/narrow/badge) con
+lógica de posición por `mode`.
+
+### Problemas
+
+- **La ventana era una app oscura**: `Design.bgVoid` a pantalla completa +
+  gradientes + atmósfera con viñeta = "un cuadro oscuro con un orbe dentro",
+  justo lo contrario de "un orbe sobre el escritorio".
+- **El orbe no era el protagonista**: vivía en una columna lateral al ~34% del
+  ancho; la conversación pesaba más.
+- **Todo eran cajas pegadas** a los bordes con `anchors`; nada "flotaba".
+
+### Nuevo sistema de composición
+
+- **Ventana 100% transparente**: `Window.color: "transparent"`,
+  `flags: Qt.Window | Qt.FramelessWindowHint`. Transparencia REAL:
+  `app.py::_configure_environment` fija `QSurfaceFormat.setAlphaBufferSize(8)`
+  antes de crear la `QGuiApplication` (sin canal alfa en la superficie GL,
+  `"transparent"` pinta negro). El escritorio se ve detrás. `WindowChrome`
+  (arrastre + botones + 8 bordes de redimensionado) es lo único que da
+  control de ventana, ya que no hay decoración del SO.
+- **Sin fondo global**: se eliminan los dos `Rectangle` de gradiente, el
+  `TechGrid` de Main y la atmósfera global (`layer.effect`). El orbe conserva
+  su propio bloom (`CoreBloom`). No hay post-proceso de ventana.
+- **Sistema de zonas**: el orbe se centra en un "escenario" = ventana menos la
+  franja de identidad (arriba) y la barra de comando flotante (abajo). Tamaño
+  del orbe = `clamp(240, min(escenario)·0.72, 960)` — SIEMPRE domina.
+- **HUD partido en dos clústeres flotantes** (`Hud.qml` gana `keys`
+  configurable): identidad (`sistema·modelo·voz·memoria·herramientas`)
+  centrada arriba; métricas en vivo (`cpu·ram·latencia·tokens/s`) abajo-izq.,
+  junto a la barra de comando.
+- **`CoreStatus`** flota centrado justo bajo el orbe = "modo actual de JARVIS".
+- **Conversación = capa flotante**: columna a la derecha del orbe si cabe sin
+  solaparlo; si no, apilada bajo el orbe. **Sin panel**: un scrim localizado
+  (gradiente horizontal negro ~0.30 alfa con bordes difuminados, sólo cuando
+  hay contenido) para legibilidad sobre wallpaper claro — el brief lo permite
+  explícitamente; NO es un fondo global.
+- **Barra de comando**: flotante, centrada abajo, `min(680, ancho−2·margen)`.
+
+### Tamaño del orbe por resolución (medido offscreen)
+
+| Resolución | Orbe | Ratio (lado corto) | Modo chat | Centrado |
+|---|---|---|---|---|
+| 1280×720  | 397 px | 0.55 | columna lateral | sí (x = w/2) |
+| 1366×768  | 431 px | 0.56 | columna lateral | sí |
+| 1360×820 (default) | 469 px | 0.57 | columna lateral | sí |
+| 1920×1080 | 656 px | 0.61 | columna lateral | sí |
+| 2560×1440 | 915 px | 0.64 | columna lateral | sí |
+
+En todos: `overlap(orbe, chat) = overlap(orbe, cmd) = overlap(orbe, hud) = 0`,
+todo dentro del viewport. Casos del test de regresión (430×360, 1000×760,
+1360×820, 1700×900): 0 solapes, el orbe se encoge y el chat se apila cuando
+la ventana es muy pequeña.
+
+### Componentes redistribuidos
+
+`Hud` (identidad) → top-center · `Hud` (métricas) → bottom-left · `Core` →
+center · `CoreStatus` → bajo el orbe · `Conversation` → columna derecha (o
+apilada) · `CommandBar` → bottom-center. Ninguno con `anchors.fill: parent`.
+
+### Archivos modificados
+
+`jarvis_local/ui/hud/app.py` (alfa en la superficie) ·
+`qml/Main.qml` (composición completa: transparencia, zonas, orbe centrado,
+HUD partido, chat flotante) · `qml/Hud.qml` (`keys` configurable) ·
+`qml/Conversation.qml` (`hasContent`) · `test/test_ui_hud.py` (quitadas 2
+asserciones de `atmosphereOn`, feature eliminada) · `docs/REDISENO_VISTA.md`.
+
+### Validación
+
+**Verificado por runtime (offscreen):** carga QML sin warnings; geometría a
+1280×720 / 1366×768 / 1920×1080 / 2560×1440 + casos de regresión → orbe
+centrado (x = ancho/2 exacto), dominante (ratio 0.55–0.64), 0 solapes
+críticos, dentro del viewport; ciclo de estados sin errores; `pytest test`
+verde; `ruff` limpio; `systemctl --user status jarvis` → `active (running)`
+sin reinicios; `journalctl` sin errores QML/Python.
+
+**NO verificado visualmente:** Wayland/Mutter bloquea la captura del proceso.
+No he visto la ventana transparente sobre el escritorio, ni si el scrim de la
+conversación da contraste suficiente sobre un wallpaper real, ni si el orbe
+"flota" o se ve recortado. Eso lo tiene que confirmar una mirada humana.
