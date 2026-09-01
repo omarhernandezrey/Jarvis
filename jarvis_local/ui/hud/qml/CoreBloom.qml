@@ -25,6 +25,9 @@ Item {
     property color tintDeep: "#0A2A6E"
     property color tintHot: "#DCF6FF"
     property real spin: 0.5
+    property real pointerX: 0
+    property real pointerY: 0
+    property real transPhase: 0
     property bool live: true          // false → todo el pipeline se congela
     property bool bypass: false       // ruta de degradación (§7): sólo el shader
 
@@ -42,6 +45,8 @@ Item {
         fragmented: bloom.fragmented; dashed: bloom.dashed
         reduced: bloom.reduced; compact: bloom.compact; tint: bloom.tint
         tintDeep: bloom.tintDeep; tintHot: bloom.tintHot; spin: bloom.spin
+        pointerX: bloom.pointerX; pointerY: bloom.pointerY
+        transPhase: bloom.transPhase
     }
     ShaderEffectSource {
         id: coreTex

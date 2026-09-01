@@ -53,6 +53,18 @@ Item {
     Binding { target: Design; property: "coreEnergy"; value: root._energy }
     Binding { target: Design; property: "coreTint";   value: root.pTint }
 
+    // ── onda de choque en el cambio de estado (Fase 7) ────────────────────
+    // Un frente sale del centro y se disipa en ~650 ms. Es una REACCIÓN, no
+    // un bucle: se dispara una vez por transición.
+    property real _transPhase: 0
+    onCoreStateChanged: transAnim.restart()
+    SequentialAnimation {
+        id: transAnim
+        PropertyAction { target: root; property: "_transPhase"; value: 1.0 }
+        NumberAnimation { target: root; property: "_transPhase"
+            to: 0.0; duration: 650; easing.type: Easing.OutCubic }
+    }
+
     // ── parámetros por estado (interpolados) ──────────────────────────────
     //  Fase 6: cada estado tiene TINTE (rampa azul→cian), TINTE PROFUNDO del
     //  limbo, y VELOCIDAD DE GIRO (spin) propia. El casi-blanco NO es un
@@ -223,6 +235,9 @@ Item {
         tintDeep: root.pTintDeep
         tintHot: Design.coreHot           // highlight constante (misma rampa)
         spin: root.pSpin
+        pointerX: root.pointer.x
+        pointerY: root.pointer.y
+        transPhase: root._transPhase
         live: root.loopActive
         bypass: root.degraded
     }

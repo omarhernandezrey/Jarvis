@@ -19,6 +19,11 @@ void main() {
     vec4 c  = texture(source, qt_TexCoord0);
     vec3 b0 = texture(bloom0, qt_TexCoord0).rgb;
     vec3 b1 = texture(bloom1, qt_TexCoord0).rgb;
+    // (6) BLOOM BICOLOR: el bloom estrecho tira a cian-caliente; el ancho, a
+    // azul profundo. El glow gana la misma rampa que el cuerpo, no un tinte
+    // plano.
+    b0 *= vec3(1.00, 1.04, 1.10);
+    b1 *= vec3(0.72, 0.86, 1.16);
     vec3 rgb = c.rgb + b0 * k0 + b1 * k1;
     // tonemap MUY suave: sólo recorta el blanco quemado; deja que el centro
     // nítido del núcleo conserve su intensidad (antes 0.55 lo aplanaba).

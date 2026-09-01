@@ -1578,3 +1578,48 @@ QML sin warnings; render de una conversación real (usuario + JARVIS +
 error) sin errores; `pytest test` verde; `ruff` limpio; `systemctl --user
 status jarvis` → `active (running)`; `journalctl` sin errores.
 NO verificado visualmente: Wayland bloquea la captura.
+
+## Fase 7 — Pulido del orbe (8 mejoras)
+
+Sin tocar composición ni transparencia. Todo en `core.frag` + 3 uniforms
+nuevos (`pointerX`, `pointerY`, `transPhase`) y una línea en `bloom_composite`.
+
+1. **Paralaje del volumen** — el `pointer` (ratón, ya llegaba pero sin usar)
+   desplaza el origen del raymarch y la dirección de luz interior en sentido
+   contrario → el orbe se lee como **esfera con profundidad**, no como disco.
+2. **Onda de choque de estado** — `Core.qml` pone `_transPhase` a 1 en cada
+   cambio de `coreState` y lo anima a 0 en 650 ms (OutCubic). El shader dibuja
+   un frente `smoothstep` que sale del centro → "el sistema acaba de
+   reaccionar". Una vez por transición, no un bucle.
+3. **Rim iluminado** — el anillo del limbo ya no es uniforme: más brillante en
+   el arco superior-izquierdo (`dot(normalize(uv), dir_luz)`) → silueta de
+   esfera iluminada.
+4. **Anillo de forma de onda con audio real** — `bandLow/Mid/High` (que ya
+   llegaban) modulan un rizo en `rad≈0.80` por ángulo. Sólo visible con
+   `bandSum > 0.02` → aparece en listening/speaking, invisible en reposo.
+5. **Fleco cromático del rim** — el anillo se muestrea a `rad ± 0.013` para R y
+   B → desdoble espectral sutil, borde de campo de energía. Sólo en el rim.
+6. **Bloom bicolor** — en `bloom_composite`: el bloom estrecho tira a
+   cian-caliente (`×[1.00,1.04,1.10]`), el ancho a azul profundo
+   (`×[0.72,0.86,1.16]`). El glow gana la rampa, no un tinte plano.
+7. **Dither anti-banding** — 1 línea al final: rompe el escalonado de 8 bits en
+   los degradados suaves.
+8. **Respiración de la geometría** — el radio base del SDF (`0.60`) inhala/
+   exhala `±0.012·sin(t·0.8)`, atenuado con energía alta → sobre todo en
+   reposo la esfera respira de verdad (no `scale`, el volumen).
+
+### Validación
+
+**Verificado por runtime:** shaders recompilan sin errores GLSL; QML sin
+warnings; `_transPhase` pulsa a ~1 y decae en cada cambio de estado;
+`pointerX/Y` propagan al shader; geometría a 1280×720/1920×1080/2560×1440
+sin cambios (orbe centrado y dominante, 0 solapes); `pytest test` verde;
+`ruff` limpio; `systemctl --user status jarvis` → `active (running)` sin
+reinicios; `RHI OpenGL`, `journalctl` sin errores de shader/QRhi (los 3
+uniforms nuevos cargan bien en la GPU real).
+
+**NO verificado visualmente:** Wayland bloquea la captura del proceso; el
+render offscreen por software no dibuja el shader del orbe. No he visto el
+paralaje, la onda de choque, el fleco cromático ni el rizo de audio. Están
+razonados y validados técnicamente; el ajuste fino (amplitudes, radios)
+necesita mirarlo.

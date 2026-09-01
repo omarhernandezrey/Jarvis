@@ -24,6 +24,9 @@ ShaderEffect {
     property color tintDeep: "#0A2A6E"     // limbo/atmósfera
     property color tintHot: "#DCF6FF"      // highlight (sólo el punto)
     property real spin: 0.5                // 0..1 velocidad de giro por estado
+    property real pointerX: 0              // -1..1 paralaje del volumen
+    property real pointerY: 0
+    property real transPhase: 0            // 1→0 tras cambio de estado (onda)
 
     fragmentShader: Qt.resolvedUrl("../shaders/core.frag.qsb")
     blending: true
