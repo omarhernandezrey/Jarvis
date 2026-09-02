@@ -72,3 +72,38 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
     print("OK: Todos los tests de respuestas instantaneas pasaron.")
+
+
+# ---------- B1: el saludo respeta lo que dijo el usuario y, si no, el reloj ----
+
+import jarvis_local.fast_response as _fr  # noqa: E402
+
+
+class _FakeNow:
+    def __init__(self, hour):
+        self._h = hour
+
+    def __call__(self):
+        import datetime as _dt
+        return _dt.datetime(2026, 9, 3, self._h, 30, 0)
+
+
+def _at_hour(monkeypatch, hour):
+    monkeypatch.setattr(_fr, "datetime", type("D", (), {"now": staticmethod(_FakeNow(hour))}))
+
+
+def test_saludo_explicito_gana_al_reloj(monkeypatch):
+    # A las 09:30, "buenas noches" debe responder DE NOCHE (lo dijo el usuario).
+    _at_hour(monkeypatch, 9)
+    assert "noches" in fast_respond("buenas noches").lower()
+    assert "tardes" in fast_respond("buenas tardes").lower()
+    assert "dias" in fast_respond("buenos dias").lower()
+
+
+def test_saludo_generico_usa_el_reloj(monkeypatch):
+    _at_hour(monkeypatch, 8)
+    assert "dias" in fast_respond("hola").lower()
+    _at_hour(monkeypatch, 15)
+    assert "tardes" in fast_respond("hola jarvis").lower()
+    _at_hour(monkeypatch, 23)
+    assert "noches" in fast_respond("hey").lower()

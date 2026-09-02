@@ -235,7 +235,7 @@ del agente).
 
 # FASE B — Arreglar funcionalidad advertida que no funciona
 
-## B1 — Saludo instantáneo según la hora real
+## B1 — Saludo instantáneo según la hora real  ✅ COMPLETADA
 **Rama:** `fix/fast-response-saludo-hora`
 **Archivo:** `jarvis_local/fast_response.py`
 

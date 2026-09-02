@@ -81,13 +81,24 @@ def fast_respond(message: str) -> str | None:
 
     # --- SALUDOS ---
     if _RE_SALUDO.search(m) and _es_solo_cortesia(m, _RE_SALUDO.pattern):
-        hora = datetime.now().hour
-        if hora < 12:
-            return f"Buenos dias, {_sr()}. Sistemas en linea y listos. En que le puedo asistir?"
-        elif hora < 18:
-            return f"Buenas tardes, {_sr()}. Todos los sistemas operando normalmente. Como puedo ayudarle?"
+        # Si el usuario dijo EXPLICITAMENTE "buenos dias/tardes/noches", se le
+        # responde en el mismo registro (puede ser turno de noche, o cortesia a
+        # una hora rara). Si solo dijo "hola", se usa la hora real del reloj.
+        if re.search(r'\bbuen[oa]s?\s+noches\b', m):
+            franja = "noche"
+        elif re.search(r'\bbuen[oa]s?\s+tardes\b', m):
+            franja = "tarde"
+        elif re.search(r'\bbuen[oa]s?\s+dias\b', m):
+            franja = "manana"
         else:
-            return f"Buenas noches, {_sr()}. JARVIS en linea. En que le puedo ser de ayuda?"
+            h = datetime.now().hour
+            franja = "manana" if h < 12 else "tarde" if h < 18 else "noche"
+
+        if franja == "manana":
+            return f"Buenos dias, {_sr()}. Sistemas en linea y listos. En que le puedo asistir?"
+        if franja == "tarde":
+            return f"Buenas tardes, {_sr()}. Todos los sistemas operando normalmente. Como puedo ayudarle?"
+        return f"Buenas noches, {_sr()}. JARVIS en linea. En que le puedo ser de ayuda?"
 
     # --- HORA ---
     if _RE_HORA.search(m):
