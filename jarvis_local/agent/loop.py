@@ -36,6 +36,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
+from jarvis_local.agent import decision_cache
 from jarvis_local.agent.decision_log import log_decision
 from jarvis_local.agent.prompts import (
     AGENT_SYSTEM_PROMPT,
@@ -247,6 +248,25 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
         log_decision(user_message, conf, [], [], "sin_herramientas_plausibles")
         return AgentResult(text="", confidence=conf)
 
+    # --- CACHE DE DECISIONES (C6) ---
+    # Frase repetida en poco tiempo -> reusar la herramienta elegida la ultima
+    # vez y saltarse los 20-70 s de tool-calling. La EJECUCION siempre se
+    # rehace (datos frescos). No aplica a frases anaforicas (el referente
+    # cambia) ni a ordenes vagas.
+    _anafora = bool(history and _ANAFORA.search(user_message))
+    if not _anafora:
+        cacheado = decision_cache.get(user_message)
+        if cacheado is not None:
+            c_tool, c_args = cacheado
+            nombres = {t.get("function", {}).get("name") for t in tools}
+            if c_tool in nombres:
+                texto, pendiente = execute(c_tool, c_args)
+                log_decision(user_message, conf, [c_tool], [texto],
+                             "cache_hit", llm_calls=0, llm_secs=0.0)
+                return AgentResult(
+                    text=texto, tools_used=[c_tool],
+                    pending_confirmation=pendiente, confidence=conf)
+
     system = AGENT_SYSTEM_PROMPT
     if history and _ANAFORA.search(user_message):
         # "y en Bogota?", "abreme la segunda": sin esta pista el modelo pierde
@@ -346,6 +366,11 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
                              "pendiente_confirmacion")
                 return AgentResult(text=texto, tools_used=usadas,
                                    pending_confirmation=True, confidence=conf)
+
+            # C6: recordar la ELECCION (no el resultado) para la proxima vez
+            # que se pida esto mismo. Las anaforicas no se cachean.
+            if not _anafora:
+                decision_cache.put(user_message, name, args)
 
             messages.append({"role": "tool", "name": name, "content": texto})
 

@@ -34,6 +34,7 @@ from jarvis_local.storage.semantic import embeddings_available
 sin_embeddings = not embeddings_available()
 skip_sin_ollama = pytest.mark.skipif(sin_embeddings,
                                      reason="embeddings no disponibles")
+# la cache de decisiones del agente (C6) la vacia un fixture autouse de conftest
 
 
 # ---------------------------------------------------------------------------
@@ -305,3 +306,26 @@ def test_comparador_de_casos():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+@skip_sin_ollama
+def test_c6_cache_de_decisiones_evita_segunda_llamada_al_llm():
+    """TAREA C6: repetir una frase (aunque cambie mayus/tildes/signos) reusa la
+    herramienta elegida y NO vuelve a pagar el tool-calling. La ejecucion si se
+    rehace (datos frescos)."""
+    from jarvis_local.agent import decision_cache
+
+    decision_cache.clear()
+    client = _cliente(
+        _llamada("contar_chiste", {}),   # solo para la 1a; la 2a es cache hit
+    )
+    r1 = run_agent(client, "cuentame un chiste")
+    assert r1.tools_used == ["contar_chiste"]
+    assert client.chat_with_tools.call_count == 1
+
+    r2 = run_agent(client, "Cuéntame un chiste!")   # variante -> misma clave
+    assert r2.tools_used == ["contar_chiste"]
+    assert client.chat_with_tools.call_count == 1   # NO hubo segunda llamada
+    assert r2.text                                  # la herramienta si se ejecuto
+
+    decision_cache.clear()
