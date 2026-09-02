@@ -200,20 +200,24 @@ Batería: **90 passed, 6 xfailed**. `ruff` limpio · suite sin regresiones.
 ejecuta AMBAS: `open_website("youtube.com")` + `play_song("lofi")`.
 Batería: **95 passed, 6 xfailed**. `ruff` limpio · suite sin regresiones.
 
-## A6 — `"lanza / inicia / ejecuta <app>"` no debe irse a `run_command`
+## A6 — `"lanza / inicia <app>"` no debe irse a `run_command`  ✅ COMPLETADA
 **Rama:** `fix/parser-lanza-app`
-**Archivo:** `jarvis_local/intent/parser.py` (`_parse_fase4`, orden de `run_command` vs `open_app`)
+**Archivo:** `jarvis_local/intent/parser.py` (`_extract_app_candidate`, bloque ABRIR APP)
 
-- [ ] Descubierto en A1: `parse_intent("lanza android studio")` → `run_command`.
-  `"lanza/inicia/arranca/ejecuta <X>"` donde `<X>` **no** es un binario/comando
-  conocido debe ir a `open_app`, no a la terminal.
-- [ ] Heurística: si el resto no contiene `/`, `-`, `.exe`, ni es un comando de
-  la whitelist, tratarlo como nombre de app.
-- [ ] Quitar el `xfail` de `"lanza android studio"` en `test_parser_coverage.py`.
+- [x] `_SHELL_SHAPE` en `_extract_app_candidate`: candidato con flags (`-l`),
+  rutas (`/`), operadores (`;&|$\``) o extensión de script (`.sh/.py/.bat/…`)
+  → NO es una app → fluye a `run_command` y su blocklist.
+- [x] En el bloque ABRIR APP: si `find_app` falla y no es sitio conocido y el
+  objeto NO es vago (`_VAGO_OBJ`: "algo", "una aplicacion"…) → `open_app` con el
+  candidato (open_app hace su propia resolución difusa y avisa con claridad).
+  `"lanza android studio"` → `open_app`, no `run_command`.
+- [x] `"abre algo"` sigue → `ambiguous` (test_ambiguous_open intacto).
+- [x] Quitado `xfail` `_A6` + 4 casos nuevos (vago, shell-shape).
 
-**Pruebas:** #1, #2, #3, #5 (`Jarvis.chat("lanza android studio")` intenta abrir
-la app, no ejecuta shell), #7 (`"ejecuta rm -rf /"` sigue yendo a `run_command`
-y BLOQUEADO).
+**e2e:** `"lanza android studio"` → ruta `tool`, 0,03 s, `open_app` → *"no
+encontré ninguna app parecida a 'android studio'"* (honesto — no está instalada;
+lo pule B7), NO ejecuta shell ni pasa al agente. `"ejecuta rm -rf /"` →
+BLOQUEADO. Batería: **100 passed, 5 xfailed**. `ruff` limpio.
 
 ## A7 — Estado del sistema en lenguaje coloquial
 **Rama:** `fix/parser-sistema-coloquial`

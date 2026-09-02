@@ -68,6 +68,18 @@ _SITIO_CONOCIDO = {
 _NOT_APP_WORDS = ("archivo", "carpeta", "fichero", "documento", "directorio",
                   "comando", "script", "ruta")
 
+# Objeto vago: "abre algo" no nombra una app -> aclarar, no adivinar.
+_VAGO_OBJ = {
+    "algo", "una cosa", "alguna cosa", "cualquier cosa", "una app",
+    "una aplicacion", "alguna app", "alguna aplicacion", "un programa",
+    "algun programa", "eso", "esto", "aquello", "lo que sea",
+}
+
+# Pinta de comando de shell (flags, rutas, operadores, extension de script):
+# NO es una app -> que lo maneje run_command y su blocklist.
+_SHELL_SHAPE = re.compile(r'(?:\s-{1,2}[a-z]|[/;&|`$]|\.(?:sh|py|bat|cmd|ps1)\b|\bsudo\b)',
+                          re.IGNORECASE)
+
 
 def _extract_app_candidate(text: str) -> str | None:
     """Extrae el posible nombre de app despues del verbo de apertura."""
@@ -80,6 +92,8 @@ def _extract_app_candidate(text: str) -> str | None:
         return None
     cand = m.group(1).strip().strip('"\'').rstrip('.!?').strip()
     if not cand or any(w in cand.lower() for w in _NOT_APP_WORDS):
+        return None
+    if _SHELL_SHAPE.search(cand):
         return None
     return cand
 
@@ -909,6 +923,17 @@ def parse_intent(message: str) -> IntentResult:
                     kind="tool_execute", tool="open_website",
                     arguments={"site": sitio},
                     reason=f"Abrir {cand} en el navegador")
+            # No está en el índice ni es sitio conocido, pero el verbo fue
+            # abrir/lanzar/iniciar (no "ejecuta") y el objeto es un nombre
+            # concreto: es una app que quizá no está indexada. Que lo intente
+            # open_app (hace su propia resolución difusa y avisa con claridad si
+            # no la encuentra), en vez de mandarlo a la terminal. Así
+            # "lanza android studio" abre la app, no ejecuta un comando basura.
+            if _sin_tildes(cand).lower().strip() not in _VAGO_OBJ:
+                return IntentResult(
+                    kind="tool_execute", tool="open_app",
+                    arguments={"app": cand},
+                    reason=f"Abrir {cand}")
 
     # --- LISTAR ARCHIVOS ---
     # El objeto ("archivos", "carpeta"...) es OBLIGATORIO y los verbos van con
