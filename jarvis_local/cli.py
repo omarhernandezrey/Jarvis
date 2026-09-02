@@ -603,10 +603,14 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
 def main():
     import sys
 
-    # Re-autorizar Google Calendar (abre el navegador una vez). Se usa cuando
-    # el token OAuth caduco: "python -m jarvis_local.cli --reauth-calendar".
+    # Re-autorizar servicios OAuth (abren el navegador una vez). Se usan cuando
+    # el token caduco: "python -m jarvis_local.cli --reauth-calendar" / "--reauth-spotify".
     if "--reauth-calendar" in sys.argv:
         from jarvis_local.tools.gcalendar import reauthorize
+        print(reauthorize())
+        return
+    if "--reauth-spotify" in sys.argv:
+        from jarvis_local.tools.spotify import reauthorize
         print(reauthorize())
         return
 

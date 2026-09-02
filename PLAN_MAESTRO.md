@@ -306,7 +306,7 @@ respuesta útil), #8.
 #3, #5 (con el token actual real: debe dar el mensaje accionable, no un
 *traceback*).
 
-## B6 — Spotify: re-autorización accionable (defensivo)
+## B6 — Spotify: re-autorización accionable (defensivo)  ✅ COMPLETADA
 **Rama:** `fix/spotify-reauth`
 **Archivo:** `jarvis_local/tools/spotify.py`
 

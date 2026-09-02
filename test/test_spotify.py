@@ -370,7 +370,8 @@ def test_play_song_expired_token_401():
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = play_song("cualquier cosa")
         assert plan.status == ActionStatus.ERROR
-        assert "credencial" in plan.result.lower()
+        # B6: un 401 ahora da el comando de re-autorizacion, no un texto vago
+        assert "--reauth-spotify" in plan.result
 
 
 def test_play_song_rate_limited_429():
