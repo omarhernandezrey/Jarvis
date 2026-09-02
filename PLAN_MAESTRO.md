@@ -346,7 +346,7 @@ respuesta útil), #8.
 
 **Pruebas:** #1, #2 (el log tiene los campos), #3.
 
-## C2 — Podar el bucle del agente
+## C2 — Podar el bucle del agente  ✅ COMPLETADA
 **Rama:** `fix/agente-bucle`
 **Archivo:** `jarvis_local/agent/loop.py` (`MAX_STEPS`, `MAX_REINTENTOS`)
 

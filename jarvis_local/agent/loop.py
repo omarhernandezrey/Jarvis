@@ -46,9 +46,17 @@ from jarvis_local.agent.prompts import (
 from jarvis_local.agent.registry import execute, get_tool, tool_names
 from jarvis_local.agent.retriever import confidence, select_tools
 
-MAX_STEPS = 3       # herramientas encadenadas por peticion
-MAX_REINTENTOS = 2  # correcciones al modelo ante salida invalida
-AGENT_TIMEOUT = 30  # timeout en segundos para llamadas al LLM
+# TAREA C2: cada llamada al modelo cuesta 20-70 s en CPU (medido, C1). Se
+# poda el bucle a lo minimo util:
+#   - 1 accion simple = 1 llamada (el modelo elige la herramienta y listo).
+#   - 1 reintento como maximo si la salida es invalida (antes 2).
+#   - las peticiones multi-accion NO pasan por aqui: las divide
+#     dividir_acciones() y cada clausula entra por su cuenta, con su propio
+#     presupuesto (MAX_STEPS_ENCADENADO).
+MAX_STEPS = 2               # pasos (herramientas encadenadas) por clausula
+MAX_STEPS_ENCADENADO = 4    # nº maximo de clausulas de una peticion multi-accion
+MAX_REINTENTOS = 1          # correcciones al modelo ante salida invalida
+AGENT_TIMEOUT = 30          # timeout en segundos para llamadas al LLM
 
 # El modelo a veces escribe el tool call como texto en vez de usar el canal de
 # tool_calls. Ese JSON no debe llegarle nunca al usuario.
@@ -185,7 +193,7 @@ def _run_encadenado(client, clausulas: list[str],
     textos: list[str] = []
     ctx = list(history or [])
 
-    for clausula in clausulas[:MAX_STEPS]:
+    for clausula in clausulas[:MAX_STEPS_ENCADENADO]:
         # El contexto acumulado solo se le pasa a la clausula si lo NECESITA
         # ("abre la primera oferta" -> hay que saber de que lista). Una clausula
         # autonoma ("abre Chrome") no lo necesita, y darselo empeora las cosas:
