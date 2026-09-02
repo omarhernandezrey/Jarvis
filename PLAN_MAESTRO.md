@@ -167,18 +167,21 @@ Suite completa: sin regresiones. `ruff` limpio.
 30–80 s). `"va a llover en Cartagena"` → **1,2 s** (auditoría: 82 s).
 `ruff` limpio · batería y suite sin regresiones.
 
-## A4 — `"crea (una) nota …"` / `"nueva nota …"` → notas
+## A4 — `"crea (una) nota …"` / `"nueva nota …"` → notas  ✅ COMPLETADA
 **Rama:** `fix/parser-crea-nota`
-**Archivo:** `jarvis_local/intent/parser.py:526`
+**Archivo:** `jarvis_local/intent/parser.py` (`_parse_fase4`, `m_note`)
 
-- [ ] Añadir a los disparadores de `take_note`: `crea(me)? (una )?nota`,
-  `nueva nota`, `apúntame`, `guarda(me)? (una )?nota`.
-- [ ] No colisionar con recordatorios (`"crea un recordatorio"` sigue yendo a
-  `set_reminder`).
-- [ ] Quitar el `xfail`; añadir variantes.
+- [x] Disparadores nuevos de `take_note`: `crea|nueva|haz|hazme|guarda|guardame|
+  escribe|escribeme (me)? (una)? nota`, `nota nueva`, `apuntame`. Separadores
+  `de|que|con|sobre|:`.
+- [x] Verificado que NO colisiona: `"crea un recordatorio"` → `set_reminder`;
+  `"crea un archivo notas.txt"` → `create_file` (ambos se resuelven antes o no
+  contienen "nota" tras el verbo).
+- [x] Quitados los 3 `xfail` `_A4` + 5 casos nuevos (2 de no-colisión).
 
-**Pruebas:** #1–#5, más un caso que confirme que `"créame un recordatorio para
-mañana"` sigue yendo a `set_reminder`.
+**e2e:** `Jarvis.chat("crea una nota comprar pan y leche")` → ruta `tool`,
+**0,03 s**, `take_note("comprar pan y leche")`.
+Batería: **90 passed, 6 xfailed**. `ruff` limpio · suite sin regresiones.
 
 ## A5 — Multi-acción con verbos de reproducción, verificada e2e
 **Rama:** `fix/parser-multiaccion-reproducir`

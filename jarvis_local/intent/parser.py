@@ -554,8 +554,16 @@ def _parse_fase4(m: str) -> IntentResult | None:
                             reason="Consultar WolframAlpha")
 
     # --- TOMAR NOTA ---
-    m_note = re.search(r'\b(?:toma\s+nota|apunta|anota)\b\s*(?:de\s+|que\s+|:\s*)?(.+)',
-                       m, re.IGNORECASE)
+    # Los recordatorios ("crea un recordatorio") ya se resolvieron antes en la
+    # cascada, así que aquí "crea/nueva/guarda ... nota" es siempre take_note.
+    m_note = re.search(
+        r'\b(?:'
+        r'toma\s+nota|apunta|anota|apuntame'
+        r'|(?:crea|nueva|haz|hazme|guarda|guardame|escribe|escribeme)\s*(?:me\s+)?'
+        r'(?:una?\s+)?nota'
+        r'|nota\s+nueva'
+        r')\b\s*(?:de\s+|que\s+|con\s+|sobre\s+|:\s*)?(.+)',
+        m, re.IGNORECASE)
     if m_note:
         return IntentResult(kind="tool_execute", tool="take_note",
                             arguments={"text": m_note.group(1).strip()},
