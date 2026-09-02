@@ -484,6 +484,19 @@ def _parse_fase4(m: str) -> IntentResult | None:
         return IntentResult(kind="tool_execute", tool="spotify_play",
                             arguments={"song": m_play.group(1).strip().rstrip('.!?')},
                             reason="Reproducir en Spotify")
+    # "pon <cancion/artista>" a secas: volumen, recordatorios, multimedia y
+    # ventanas ya se resolvieron antes en la cascada; "pon musica [de X]" y
+    # "pon X en youtube" tambien. Lo que llega aqui es "pon bohemian rhapsody",
+    # "pon algo de Shakira", "ponme reggaeton" -> Spotify. El lookahead evita
+    # tragarse "pon una nota" / "pon un recordatorio".
+    m_pon = re.search(
+        r'^\s*pon(?:me|le)?\s+'
+        r'(?!(?:una?\s+|el\s+|la\s+)?(?:nota|recordatorio|alarma|temporizador|cronometro)\b)'
+        r'(?:la\s+cancion\s+|la\s+de\s+|algo\s+de\s+|una\s+de\s+)?(.+)', low)
+    if m_pon:
+        return IntentResult(kind="tool_execute", tool="spotify_play",
+                            arguments={"song": m_pon.group(1).strip().rstrip('.!?')},
+                            reason="Reproducir en Spotify")
 
     # --- NOTICIAS ---
     if re.search(r'\b(noticias|titulares)\b', low):

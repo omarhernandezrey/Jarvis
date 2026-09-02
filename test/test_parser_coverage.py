@@ -27,7 +27,6 @@ from jarvis_local.intent.parser import (
     parse_intent,
 )
 
-_A2 = pytest.mark.xfail(strict=True, reason="TAREA A2 — 'pon <cancion>' → spotify")
 _A3 = pytest.mark.xfail(strict=True, reason="TAREA A3 — clima en lenguaje natural")
 _A4 = pytest.mark.xfail(strict=True, reason="TAREA A4 — 'crea/nueva nota' → take_note")
 _A6 = pytest.mark.xfail(strict=True, reason="TAREA A6 — 'lanza <app>' se va a run_command")
@@ -76,10 +75,12 @@ CASES = [
     ("reproduce a Bad Bunny", "spotify_play"),
     ("pon musica de los Beatles", "spotify_play"),
     ("pon musica", "play_music"),
-    pytest.param("pon bohemian rhapsody", "spotify_play", marks=_A2),
-    pytest.param("pon algo de Shakira", "spotify_play", marks=_A2),
-    pytest.param("pon la de Queen", "spotify_play", marks=_A2),
-    pytest.param("ponme reggaeton", "spotify_play", marks=_A2),
+    ("pon bohemian rhapsody", "spotify_play"),          # A2
+    ("pon algo de Shakira", "spotify_play"),            # A2
+    ("pon la de Queen", "spotify_play"),                # A2
+    ("ponme reggaeton", "spotify_play"),               # A2
+    ("pon la cancion despacito", "spotify_play"),       # A2
+    ("pon una de Soda Stereo", "spotify_play"),         # A2
 
     # ---- web ----
     ("busca en google gatos", "google_search"),
