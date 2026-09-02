@@ -118,21 +118,21 @@ producción tocado.
 > Efecto: frases comunes y ya "conocidas" que hoy se escapan al agente lento
 > (30–110 s) pasan a resolverse en el parser determinista (< 3 s). Bajo riesgo.
 
-## A1 — Batería de cobertura del parser
+## A1 — Batería de cobertura del parser  ✅ COMPLETADA (merge a `main`)
 **Rama:** `test/parser-coverage`
 
-- [ ] Crear `test/test_parser_coverage.py`: tabla parametrizada de **≥ 60 frases
-  reales** en español coloquial (variantes de cada herramienta) con el
-  `kind`/`tool` esperado.
-- [ ] Los casos que HOY funcionan → aserción normal (deben seguir pasando).
-- [ ] Los casos rotos identificados en la auditoría (B5–B8 y otros) →
-  `@pytest.mark.xfail(strict=True, reason="TAREA A2/A3/A4/A5")`. Cada tarea
-  siguiente **quita su xfail** al arreglarlo.
-- [ ] Incluir casos negativos: conversación pura (`"de qué color es el cielo"`)
-  debe dar `kind=chat`.
+- [x] `test/test_parser_coverage.py`: **80 casos** (frases coloquiales) →
+  `tool`/`kind` esperado, más un bloque `MULTI` para `dividir_acciones()`.
+- [x] Casos que HOY funcionan → aserción normal.
+- [x] Casos rotos → `pytest.mark.xfail(strict=True, reason="TAREA A2/A3/A4/A6/A7/B2/B3")`.
+  Cada tarea quita su xfail.
+- [x] Casos negativos (conversación pura → `kind=chat`).
+- [x] **Hallazgos nuevos** al construir la batería → añadidas **TAREA A6**
+  (`"lanza <app>"` se iba a `run_command`) y **TAREA A7** (estado del sistema
+  coloquial → `chat`).
 
-**Pruebas:** #1, #2 (verde, con los xfail esperados), #3.
-**Verificación:** `pytest test/test_parser_coverage.py -q` reporta N passed + M xfailed, 0 failed.
+**Resultado:** `pytest test/test_parser_coverage.py` → **64 passed, 16 xfailed,
+0 failed**. Suite completa: sin regresiones.
 
 ## A2 — `"pon <canción>"` → Spotify
 **Rama:** `fix/parser-pon-cancion`
@@ -172,16 +172,47 @@ producción tocado.
 **Pruebas:** #1–#5, más un caso que confirme que `"créame un recordatorio para
 mañana"` sigue yendo a `set_reminder`.
 
-## A5 — Multi-acción reconoce verbos de reproducción
+## A5 — Multi-acción con verbos de reproducción, verificada e2e
 **Rama:** `fix/parser-multiaccion-reproducir`
-**Archivo:** `jarvis_local/intent/parser.py:634` (`dividir_acciones` / `es_multi_accion`)
+**Archivo:** `jarvis_local/intent/parser.py:634`, `jarvis_local/jarvis.py` (`_chat_encadenado`)
 
-- [ ] Añadir `pon|ponme|reproduce|toca|reproducir` a los verbos que marcan el
-  inicio de una segunda cláusula (`"abre youtube y pon lofi"` → 2 acciones).
-- [ ] Quitar el `xfail`; añadir 4 variantes multi-acción.
+- [ ] `dividir_acciones("abre youtube y pon lofi")` **ya** parte bien
+  (`['abre youtube', 'pon lofi']`); confirmarlo con test.
+- [ ] Lo que falta: que `Jarvis.chat()` **ejecute** ambas cláusulas por la ruta
+  encadenada (parser → parser), no que caiga al chat. Depende de A2 (que
+  `"pon lofi"` sea reconocible). Verificar el flujo completo.
+- [ ] Añadir 4 variantes multi-acción a `test_parser_coverage.py` (bloque MULTI)
+  y un test e2e en `test/test_jarvis*` o nuevo.
 
-**Pruebas:** #1–#5 (`Jarvis.chat("abre youtube y pon lofi")` resuelve ambas
-por parser/encadenado, no cae al chat), #3.
+**Pruebas:** #1–#5 (`Jarvis.chat("abre youtube y pon lofi")` resuelve ambas sin
+LLM), #3, #6.
+
+## A6 — `"lanza / inicia / ejecuta <app>"` no debe irse a `run_command`
+**Rama:** `fix/parser-lanza-app`
+**Archivo:** `jarvis_local/intent/parser.py` (`_parse_fase4`, orden de `run_command` vs `open_app`)
+
+- [ ] Descubierto en A1: `parse_intent("lanza android studio")` → `run_command`.
+  `"lanza/inicia/arranca/ejecuta <X>"` donde `<X>` **no** es un binario/comando
+  conocido debe ir a `open_app`, no a la terminal.
+- [ ] Heurística: si el resto no contiene `/`, `-`, `.exe`, ni es un comando de
+  la whitelist, tratarlo como nombre de app.
+- [ ] Quitar el `xfail` de `"lanza android studio"` en `test_parser_coverage.py`.
+
+**Pruebas:** #1, #2, #3, #5 (`Jarvis.chat("lanza android studio")` intenta abrir
+la app, no ejecuta shell), #7 (`"ejecuta rm -rf /"` sigue yendo a `run_command`
+y BLOQUEADO).
+
+## A7 — Estado del sistema en lenguaje coloquial
+**Rama:** `fix/parser-sistema-coloquial`
+**Archivo:** `jarvis_local/intent/parser.py`
+
+- [ ] Descubierto en A1: `"como anda la maquina"`, `"que tal el equipo"`,
+  `"como van los recursos"` → `chat` (caen al agente). Añadir patrones para que
+  vayan a `system_status`.
+- [ ] Quitar el `xfail` correspondiente en `test_parser_coverage.py`.
+
+**Pruebas:** #1, #2, #3, #5, #6 (frase coloquial de sistema < 3 s vs. los ~25 s
+del agente).
 
 ---
 
@@ -430,11 +461,11 @@ conversacionales que NO captura), #3, #5, #6.
 | Fase | Tareas | Estado |
 |------|--------|--------|
 | 0 | 0.1–0.5 | ✅ completada |
-| A | A1–A5 | ⬜ pendiente |
+| A | A1–A7 | ⬜ pendiente |
 | B | B1–B7 | ⬜ pendiente |
 | C | C1–C7 | ⬜ pendiente |
 | D | D1–D4 | ⬜ pendiente |
 
-**Total: 24 tareas.** Se ejecutan en orden. Cada una: rama → implementar →
+**Total: 26 tareas.** Se ejecutan en orden. Cada una: rama → implementar →
 protocolo de pruebas completo hasta verde → `push` → CI verde → merge a `main`
 → marcar `[x]`.
