@@ -27,7 +27,6 @@ from jarvis_local.intent.parser import (
     parse_intent,
 )
 
-_A4 = pytest.mark.xfail(strict=True, reason="TAREA A4 — 'crea/nueva nota' → take_note")
 _A6 = pytest.mark.xfail(strict=True, reason="TAREA A6 — 'lanza <app>' se va a run_command")
 _A7 = pytest.mark.xfail(strict=True, reason="TAREA A7 — estado del sistema coloquial")
 _B2 = pytest.mark.xfail(strict=True, reason="TAREA B2 — calculadora lenguaje natural")
@@ -121,9 +120,13 @@ CASES = [
     # ---- notas ----
     ("toma nota comprar pan", "take_note"),
     ("apunta que debo renovar el pasaporte", "take_note"),
-    pytest.param("crea una nota comprar pan", "take_note", marks=_A4),
-    pytest.param("nueva nota llamar al banco", "take_note", marks=_A4),
-    pytest.param("guardame una nota con la clave del wifi", "take_note", marks=_A4),
+    ("crea una nota comprar pan", "take_note"),                    # A4
+    ("nueva nota llamar al banco", "take_note"),                   # A4
+    ("guardame una nota con la clave del wifi", "take_note"),      # A4
+    ("apuntame que debo pagar la luz", "take_note"),               # A4
+    ("hazme una nota sobre el proyecto", "take_note"),             # A4
+    ("crea un recordatorio para manana a las 3", "set_reminder"),  # A4: no colisiona
+    ("crea un archivo notas.txt en Documentos", "create_file"),    # A4: no colisiona
 
     # ---- archivos ----
     ("lista los archivos de Descargas", "list_files"),
