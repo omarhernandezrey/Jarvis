@@ -91,6 +91,28 @@ fallan o van lentas. Este documento las recoge.
 
 ---
 
-## 5. Latencia — medición DESPUÉS
+## 5. Latencia del agente — instrumentación (TAREA C1)
+
+`decisions.jsonl` ahora registra `llm_calls` y `llm_secs` por turno.
+`scripts/bench_agente.py` corre un set fijo.
+
+Medición 2026-09 (bench --quick, máquina cargada, modelo qwen2.5:3b):
+
+| Frase (directo a run_agent) | tools | llm_calls | llm_secs | turno total |
+|---|---|---|---|---|
+| "va a llover en Cartagena" | clima | **1** | 73,6 s | 107 s |
+| "qué tal anda mi máquina de recursos" | estado_del_sistema | **1** | 23,3 s | 25 s |
+
+**Hallazgo clave:** NO es un bucle de reintentos — es **una sola llamada de
+tool-calling** que tarda 23–74 s en esta CPU. La variabilidad depende del
+tamaño del catálogo que el retriever le pasa al modelo. Implicaciones:
+- C3 (parser-first reforzado) es el mayor ahorro: mantener frases fuera del
+  agente (como hicieron A2–A7).
+- C5 (modelo de routing más pequeño) es el lever real para la latencia de esa
+  única llamada.
+- C2 (podar el bucle) sigue siendo un tope de seguridad, pero 1 acción ya = 1
+  llamada.
+
+## 6. Latencia — medición DESPUÉS
 
 _(se rellena al cerrar la Fase C)_

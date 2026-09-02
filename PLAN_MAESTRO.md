@@ -334,7 +334,7 @@ respuesta útil), #8.
 > El README promete "agente: 19 s"; medido: 25–112 s. Objetivo: agente de 1
 > acción < 20 s, y que las frases resolubles por parser nunca lleguen al agente.
 
-## C1 — Instrumentar `run_agent`
+## C1 — Instrumentar `run_agent`  ✅ COMPLETADA
 **Rama:** `feat/agente-instrumentacion`
 **Archivo:** `jarvis_local/agent/loop.py`, `jarvis_local/agent/decision_log.py`
 
