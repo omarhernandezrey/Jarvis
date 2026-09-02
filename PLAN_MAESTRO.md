@@ -291,7 +291,7 @@ y similares sigan lanzando `ValueError`).
 Maps), #3, #5 (`Jarvis.chat("dónde queda la Torre Eiffel")` con red real →
 respuesta útil), #8.
 
-## B5 — Google Calendar: refresh de token + re-autorización accionable
+## B5 — Google Calendar: refresh de token + re-autorización accionable  ✅ COMPLETADA
 **Rama:** `fix/gcalendar-reauth`
 **Archivo:** `jarvis_local/tools/gcalendar.py:23` (`_get_service`)
 

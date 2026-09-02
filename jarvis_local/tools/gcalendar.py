@@ -17,13 +17,25 @@ SETUP_MSG = ("Google Calendar no esta configurado, senor. Pasos:\n"
              "  1. pip install google-api-python-client google-auth-oauthlib\n"
              "  2. Cree credenciales OAuth en console.cloud.google.com/apis/credentials\n"
              "  3. Guarde el JSON descargado como jarvis_local/credentials.json\n"
-             "  4. Vuelva a pedirme sus eventos (se abrira el navegador para autorizar)")
+             "  4. Autorice con: python -m jarvis_local.cli --reauth-calendar")
+
+REAUTH_MSG = ("El acceso a su Google Calendar caduco o fue revocado, senor. "
+              "Vuelva a autorizar con:\n"
+              "  python -m jarvis_local.cli --reauth-calendar")
+
+
+class ReauthRequired(RuntimeError):
+    """El token OAuth esta muerto y no se puede refrescar sin intervencion del
+    usuario (abrir el navegador). No debe ocurrir en una llamada normal a
+    upcoming_events(); se resuelve con `reauthorize()`."""
 
 
 def _get_service():
+    """Servicio de Calendar SIN interaccion. Si el token no se puede refrescar,
+    lanza ReauthRequired (nunca abre el navegador por su cuenta)."""
+    from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
 
     creds = None
@@ -31,13 +43,30 @@ def _get_service():
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError as e:
+                # token revocado / invalid_grant: el .json muerto no sirve de nada
+                TOKEN_FILE.unlink(missing_ok=True)
+                raise ReauthRequired(str(e)) from e
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(CREDENTIALS_FILE), SCOPES)
-            creds = flow.run_local_server(port=0)
+            raise ReauthRequired("sin token valido")
         TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
     return build("calendar", "v3", credentials=creds)
+
+
+def reauthorize() -> str:
+    """Borra el token y corre el flujo OAuth (abre el navegador). Para el
+    comando `--reauth-calendar`, NO para una peticion normal."""
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    if not CREDENTIALS_FILE.exists():
+        return SETUP_MSG
+    TOKEN_FILE.unlink(missing_ok=True)
+    flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
+    creds = flow.run_local_server(port=0)
+    TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+    return "Google Calendar autorizado, senor. Ya puedo consultar sus eventos."
 
 
 def upcoming_events(limit: int = 5) -> ActionPlan:
@@ -54,7 +83,12 @@ def upcoming_events(limit: int = 5) -> ActionPlan:
         plan.result = SETUP_MSG
         return plan
     try:
-        service = _get_service()
+        try:
+            service = _get_service()
+        except ReauthRequired:
+            plan.status = ActionStatus.ERROR
+            plan.result = REAUTH_MSG
+            return plan
         now = datetime.now(UTC).isoformat()
         events = service.events().list(
             calendarId="primary", timeMin=now, maxResults=limit,
