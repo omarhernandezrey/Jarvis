@@ -583,10 +583,23 @@ def _parse_fase4(m: str) -> IntentResult | None:
             reason="Faltan datos del correo")
 
     # --- CALCULAR (solo si hay numeros o constantes; si no, va al LLM) ---
-    m_calc = re.search(r'\b(?:calcula(?:r)?|cuanto\s+es)\s+(.+)', low)
+    m_calc = re.search(r'\b(?:calcula(?:r)?|cuanto\s+(?:es|son|da|vale))\s+(.+)', low)
     if m_calc and re.search(r'\d|\bpi\b|\braiz\b', m_calc.group(1)):
         return IntentResult(kind="tool_read", tool="calculate",
                             arguments={"expression": m_calc.group(1).strip()},
+                            reason="Calculo matematico local")
+    # Lenguaje natural sin el verbo "calcula": "raiz cuadrada de 144",
+    # "factorial de 5", "el 20 por ciento de 350", "20% de 350", "5 al cubo",
+    # "2 elevado a 10". Se captura desde la expresion matematica.
+    m_nat = re.search(
+        r'((?:-?\d[\d.]*\s*(?:%|por\s+ciento)\s+de\s+-?\d[\d.]*'
+        r'|raiz\s+(?:cuadrada\s+)?(?:de\s+)?-?\d[\d.]*'
+        r'|factorial\s+(?:de\s+)?-?\d[\d.]*'
+        r'|-?\d[\d.]*\s+al\s+(?:cubo|cuadrado)'
+        r'|-?\d[\d.]*\s+elevad[oa]\s+a\s+(?:la\s+)?-?\d[\d.]*))', low)
+    if m_nat:
+        return IntentResult(kind="tool_read", tool="calculate",
+                            arguments={"expression": m_nat.group(1).strip()},
                             reason="Calculo matematico local")
 
     # --- WOLFRAMALPHA ---

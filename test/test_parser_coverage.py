@@ -27,7 +27,6 @@ from jarvis_local.intent.parser import (
     parse_intent,
 )
 
-_B2 = pytest.mark.xfail(strict=True, reason="TAREA B2 — calculadora lenguaje natural")
 _B3 = pytest.mark.xfail(strict=True, reason="TAREA B3 — ecuaciones lineales")
 
 
@@ -118,8 +117,10 @@ CASES = [
     ("calcula 15 * 3 + 2", "calculate"),
     ("cuanto es 300 dividido 7", "calculate"),
     ("cuanto es 20% de 350", "calculate"),
-    pytest.param("raiz cuadrada de 144", "calculate", marks=_B2),
-    pytest.param("el factorial de 5", "calculate", marks=_B2),
+    ("raiz cuadrada de 144", "calculate"),        # B2
+    ("el factorial de 5", "calculate"),            # B2
+    ("20% de 350", "calculate"),                   # B2
+    ("5 al cubo", "calculate"),                    # B2
     pytest.param("resuelve x + 135 - 234 = 345", "calculate", marks=_B3),
     pytest.param("despeja x en 2x + 4 = 10", "calculate", marks=_B3),
 

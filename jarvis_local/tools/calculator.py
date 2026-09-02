@@ -6,6 +6,7 @@ Soporta lenguaje natural: "cuanto es 5 mas 3 por 2".
 import ast
 import math
 import operator
+import re
 
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 
@@ -55,16 +56,21 @@ _CONSTS = {"pi": math.pi, "e": math.e}
 # por longitud evita que un futuro agregado reintroduzca el mismo bug.
 _WORDS = sorted([
     ("elevado a la", "**"), ("elevado a", "**"), ("a la potencia", "**"),
+    ("al cubo", "** 3"), ("al cuadrado", "** 2"),
     ("mas", "+"), ("menos", "-"), ("por", "*"), ("multiplicado por", "*"),
     ("dividido entre", "/"), ("dividido por", "/"), ("entre", "/"),
     ("sobre", "/"), ("modulo", "%"), ("x", "*"),
-    ("por ciento de", "/100*"), ("raiz cuadrada de", "raiz"),
+    ("por ciento de", "/100*"), ("por ciento", "/100"),
+    ("raiz cuadrada de", "raiz"),
 ], key=lambda par: -len(par[0].split()))
 
 
-# Articulos que la gente intercala al dictar ("el 15 por ciento de 2000").
-# Se descartan solo si ninguna frase de _WORDS los consumio antes.
-_FILLERS = {"el", "la", "los", "las", "un", "una"}
+# Palabras que la gente intercala al dictar ("el 15 por ciento de 2000",
+# "cuanto es la raiz de 144", "factorial de 5"). Se descartan solo si ninguna
+# frase de _WORDS las consumio antes.
+_FILLERS = {"el", "la", "los", "las", "un", "una",
+            "de", "cuanto", "cuantos", "cuanta", "cuantas", "es", "son", "da",
+            "cual", "vale", "oye", "resultado", "dame"}
 
 
 def normalize_expression(text: str) -> str:
@@ -73,6 +79,10 @@ def normalize_expression(text: str) -> str:
     for k, v in {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u",
                  "¿": "", "?": "", "¡": "", "!": "", ",": ".", "=": ""}.items():
         t = t.replace(k, v)
+    # porcentajes con el simbolo %: "20% de 350" -> "(20/100)* 350",
+    # "20%" a secas -> "(20/100)". (Antes: SyntaxError; % es modulo en Python.)
+    t = re.sub(r'(\d+(?:\.\d+)?)\s*%\s*de\b', r'(\1/100)* ', t)
+    t = re.sub(r'(\d+(?:\.\d+)?)\s*%', r'(\1/100)', t)
     # solo reemplazar palabras completas
     tokens = t.split()
     out = []
@@ -91,9 +101,12 @@ def normalize_expression(text: str) -> str:
                 out.append(tokens[i])
             i += 1
     expr = " ".join(out)
-    # "raiz 25" -> "raiz(25)" para funciones dichas en lenguaje natural
-    import re as _re
-    expr = _re.sub(r'\b(raiz|sqrt|factorial|abs)\s+([\d.]+)', r'\1(\2)', expr)
+    # "raiz 25" -> "raiz(25)" para funciones dichas en lenguaje natural.
+    # "de"/"cuadrada" ya se descartaron como fillers, asi que aqui "raiz de
+    # 144" y "factorial de 5" ya llegan como "raiz 144" / "factorial 5".
+    expr = re.sub(r'\b(raiz|sqrt|factorial|abs|log|log10|ln)\s+\(?([\d.]+)\)?',
+                   r'\1(\2)', expr)
+    expr = expr.replace("ln(", "log(")
     return expr
 
 
