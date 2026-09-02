@@ -88,7 +88,8 @@ Item {
         radius: 1.5
         opacity: cell.absent ? 0.30 : 0.95
         gradient: Gradient {
-            GradientStop { position: 0.0; color: cell._accent }
+            GradientStop { position: 0.0
+                color: cell.absent ? cell._accent : Design.stateWash(cell._accent, 0.35) }
             GradientStop { position: 1.0
                 color: Qt.rgba(cell._accent.r, cell._accent.g, cell._accent.b, 0.25) }
         }

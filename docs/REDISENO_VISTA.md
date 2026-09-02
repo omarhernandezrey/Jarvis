@@ -1817,3 +1817,69 @@ entidad.
   pálidos ahí; sobre el escritorio real con OpenGL y alfa componen como vidrio
   oscuro). El ajuste fino de opacidades/gradientes sobre wallpaper real y el
   latido de `hudLift` con el orbe encendido necesitan mirarse en la máquina.
+
+## Fase 11 — El HUD como organismo: carácter de estado, latido y frente de reacción
+
+Tras la Fase 10 el HUD ya respiraba con el **volumen** del orbe (`hudLift` ←
+RMS de voz / tok·s). Le faltaban tres cosas para sentirse igual de vivo, y son
+las tres de esta fase. Todo QML + ~12 líneas en `Core.qml`; sin tocar el shader
+del orbe ni el pipeline de datos.
+
+### 1. El HUD adopta el CARÁCTER del estado
+
+- `Design.coreStateName` (lo publica `Core.qml`) + `Design.stateWash(c, amt)`:
+  mezcla cualquier color de firma del HUD hacia `coreTint` (el color del
+  estado) según una constante por estado — `listening/speaking` 0,50,
+  `thinking` 0,42, `executing` 0,58, `alert` 0,85, **`idle` 0,0** (en reposo el
+  HUD conserva su color propio).
+- `HoloFrame` aplica ese lavado a bordes y corchetes; `HudCell` a la cabeza de
+  su barra de acento. Resultado: al pensar, todo el HUD tira a azul frío; al
+  ejecutar, a naranja; en alerta, a rojo. Ya no es neutro: acompaña al orbe.
+- `Design.stateCadence()` — multiplicador de velocidad del micro-shimmer por
+  estado (`listening` 1,9 · `thinking` 0,55 · `executing` 2,4 · `alert` 3,2 ·
+  `offline` 0). El shimmer de `HoloFrame` sólo se ve cuando hay actividad real
+  (amplitud × `coreEnergy`), a la cadencia del estado.
+
+### 2. Latido compartido en reposo
+
+- `Core.qml` calcula `_pulse` 0..1 en cada avance del reloj: respiración lenta
+  con **amplitud modulada** (`sin(t·0.42) · (0.72 + 0.28·sin(t·0.17))`, no se
+  repite de forma obvia) + un golpe cardiaco exponencial cada ~5,2 s. Siempre
+  activo, no depende del estado.
+- Se publica como `Design.pulse`. `HoloFrame` lo funde en su realce
+  (`lift · (0.86 + 0.14·pulse)`): en reposo, corchetes y brillo de vidrio de
+  TODO el HUD inhalan y exhalan a la vez que el orbe. Bajo *reduced motion* el
+  reloj no avanza → el latido se congela, como el resto.
+
+### 3. Frente de reacción en el cambio de estado
+
+- `Design.waveFront` (0→1 en `stateXfade·2.4`, lo dispara `Core.qml` junto a la
+  onda de choque del shader) + `Design.waveAt(sx, sy)`: devuelve el realce 0..1
+  para un punto según **la distancia al núcleo** — un anillo que se expande.
+- `HoloFrame` lo suma a su realce y `Main.qml` engrosa el conector HUD↔orbe a
+  su paso. Un cambio de estado ya no sólo cambia colores: una onda de luz
+  recorre la interfaz encendiendo las celdas por distancia, igual que el orbe.
+
+### Infra nueva
+
+- `Design.tick` ← `rootItem.tick` (Main): reloj global de fotogramas expuesto
+  al sistema de diseño para micro-movimiento **sin timers propios**. Sigue
+  habiendo UN solo `FrameAnimation` (test lo verifica).
+
+### Validación
+
+- `ruff` limpio; `pytest test/test_ui_hud.py` 25 verde — incluye
+  `test_qml_engine_loads_without_warnings` (cero warnings con las props/función
+  nuevas de `Design`, los `Binding` nuevos en `Core`/`Main` y `HoloFrame`),
+  `test_single_frame_animation_driver` (sigue habiendo 1 `FrameAnimation`) y
+  `test_responsive_layout_no_overlap_no_overflow` (sólo cambian color/opacidad;
+  el conector engrosa ≤3 px y no entra en los rects comprobados).
+- `pytest test` (suite completa) → sin fallos ni errores.
+- `systemctl restart` → `active`, `NRestarts=0`, RHI OpenGL, `journalctl` sin
+  warnings/errores QML (sólo el aviso de semáforo del proceso anterior al
+  cerrarse, ya conocido y ajeno a esta fase).
+- **No verificado visualmente:** el lavado de color, el latido y el frente son
+  temporales — un render estático no los muestra; el backend de software
+  compone sobre fondo claro. La intensidad del lavado por estado, la amplitud
+  del latido y el radio/banda del frente necesitan mirarse en la máquina con el
+  orbe encendido.

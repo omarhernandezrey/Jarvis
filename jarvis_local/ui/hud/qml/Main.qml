@@ -97,6 +97,14 @@ Window {
             target: Design; property: "lightRadius"
             value: Math.hypot(win.width, win.height) * 0.62
         }
+        // reloj global de fotogramas → Design: micro-movimiento del HUD sin
+        // timers propios (sigue habiendo UN solo FrameAnimation).
+        Binding { target: Design; property: "tick"; value: rootItem.tick }
+        // alcance del frente de reacción (Fase 11): toda la diagonal.
+        Binding {
+            target: Design; property: "waveReach"
+            value: Math.hypot(win.width, win.height)
+        }
 
         // ── ARRANQUE (addendum §5): oscuridad → el núcleo se enciende desde un
         //    punto → su luz revela la interfaz por distancia. ≤900 ms, una vez,
@@ -179,12 +187,15 @@ Window {
         // conector: una línea de 1px que "amarra" la identidad al núcleo — el
         // HUD sale del Core. Iluminada por la luz del propio núcleo.
         Rectangle {
-            width: 1
+            id: hudConnector
+            readonly property real _cy: y + height / 2
+            readonly property real _wave: Design.waveAt(x, _cy)
             x: Math.round(rootItem.orbCX)
             y: hud.y + hud.height
+            width: 1 + 2 * _wave                         // se engrosa al pasar el frente
             height: Math.max(0, (rootItem.orbCY - rootItem.orbSize / 2) - y - Design.sp(2))
-            color: Design.litHairline(x, y + height / 2)
-            opacity: 0.6 * Design.reveal(x, y + height / 2)
+            color: Design.litHairline(x, _cy)
+            opacity: (0.6 + 0.4 * _wave) * Design.reveal(x, _cy)
         }
 
         // ── MÉTRICAS EN VIVO (flotan abajo-izquierda, junto al comando) ──

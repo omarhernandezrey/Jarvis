@@ -50,19 +50,29 @@ Item {
     onWidthChanged: _publishPos()
     onHeightChanged: _publishPos()
     Component.onCompleted: _publishPos()
-    Binding { target: Design; property: "coreEnergy"; value: root._energy }
-    Binding { target: Design; property: "coreTint";   value: root.pTint }
+    Binding { target: Design; property: "coreEnergy";    value: root._energy }
+    Binding { target: Design; property: "coreTint";      value: root.pTint }
+    Binding { target: Design; property: "pulse";         value: root._pulse }
+    Binding { target: Design; property: "coreStateName"; value: root.coreState }
 
     // ── onda de choque en el cambio de estado (Fase 7) ────────────────────
     // Un frente sale del centro y se disipa en ~650 ms. Es una REACCIÓN, no
     // un bucle: se dispara una vez por transición.
     property real _transPhase: 0
-    onCoreStateChanged: transAnim.restart()
+    onCoreStateChanged: { transAnim.restart(); hudWave.restart() }
     SequentialAnimation {
         id: transAnim
         PropertyAction { target: root; property: "_transPhase"; value: 1.0 }
         NumberAnimation { target: root; property: "_transPhase"
             to: 0.0; duration: 650; easing.type: Easing.OutCubic }
+    }
+    // frente de reacción que recorre el HUD (Fase 11): mismo disparo que la
+    // onda de choque del shader, pero para la interfaz.
+    SequentialAnimation {
+        id: hudWave
+        PropertyAction { target: Design; property: "waveFront"; value: 0.0 }
+        NumberAnimation { target: Design; property: "waveFront"
+            to: 1.0; duration: Design.stateXfade * 2.4; easing.type: Easing.OutCubic }
     }
 
     // ── parámetros por estado (interpolados) ──────────────────────────────
@@ -150,6 +160,7 @@ Item {
     property real _bLow: 0
     property real _bMid: 0
     property real _bHigh: 0
+    property real _pulse: 0.5      // latido compartido del HUD (respiración + corazón)
 
     function _targetEnergy() {
         if (coreState === "listening" || coreState === "speaking")
@@ -198,6 +209,17 @@ Item {
         _prevT = time
         if (dt <= 0) return
         root._t += (root.reducedMotion ? 0 : dt)
+
+        // latido compartido del HUD: respiración lenta con amplitud modulada
+        // (no se repite de forma obvia) + un golpe cardiaco cada ~5,2 s.
+        // Siempre activo, no depende del estado: la interfaz nunca se "muere".
+        var _br = 0.5 + 0.5 * Math.sin(root._t * 0.42)
+                        * (0.72 + 0.28 * Math.sin(root._t * 0.17 + 0.6))
+        var _hb = root._t / 5.2 - Math.floor(root._t / 5.2)
+        var _beat = Math.exp(-_hb * 20.0) * 0.7
+                  + Math.exp(-Math.pow(_hb - 0.15, 2.0) * 130.0) * 0.5
+        root._pulse = Math.max(0.0, Math.min(1.0, 0.30 + 0.55 * _br + 0.14 * _beat))
+
         var e = root._targetEnergy()
         var k = Math.min(1, dt * 9)
         var prev = root._energy

@@ -84,6 +84,57 @@ QtObject {
         return Math.min(1.0, 0.15 + 0.50 * l + 0.50 * coreEnergy + 0.30 * attention)
     }
 
+    // ── VIDA DEL HUD (Fase 11) ────────────────────────────────────────────
+    // El HUD no sólo reacciona al volumen (coreEnergy): adopta el CARÁCTER del
+    // estado, respira en reposo con el mismo latido que el orbe, y un frente
+    // de reacción lo recorre en cada cambio de estado. Lo publican Core.qml
+    // (pulse, coreStateName) y Main.qml (tick, waveReach).
+    property real   pulse: 0.5           // 0..1 respiración + latido de reposo
+    property real   tick: 0.0            // reloj global de fotogramas — micro-
+                                        //   movimiento SIN timers propios
+    property string coreStateName: "idle"
+
+    // mezcla un color de firma del HUD hacia el color del estado actual.
+    // `amt` es cuánto tira el llamador; `_stateWashK` cuánto tira el estado.
+    function stateWash(c, amt) { return mix(c, coreTint, amt * _stateWashK()) }
+    function _stateWashK() {
+        switch (coreStateName) {
+        case "listening": return 0.50
+        case "thinking":  return 0.42
+        case "speaking":  return 0.50
+        case "executing": return 0.58
+        case "alert":     return 0.85
+        case "offline":   return 0.35
+        }
+        return 0.0                        // idle: el HUD conserva su color de firma
+    }
+    // cadencia del micro-movimiento del HUD por estado (× velocidad de shimmer).
+    function stateCadence() {
+        switch (coreStateName) {
+        case "listening": return 1.9
+        case "thinking":  return 0.55
+        case "executing": return 2.4
+        case "alert":     return 3.2
+        case "offline":   return 0.0
+        }
+        return 1.0
+    }
+
+    // ── FRENTE DE REACCIÓN ────────────────────────────────────────────────
+    // Sale del núcleo en cada cambio de estado y recorre el HUD encendiendo
+    // los elementos por DISTANCIA (como la onda de choque del shader, pero en
+    // la interfaz). Lo anima Core.qml (0→1); en reposo vale 1 (nada).
+    property real waveFront: 1.0
+    property real waveReach: 1400
+    function waveAt(sx, sy) {
+        if (waveFront >= 1.0) return 0.0
+        var dx = sx - corePos.x, dy = sy - corePos.y
+        var d = Math.sqrt(dx * dx + dy * dy)
+        var front = waveFront * waveReach
+        var band = 170.0
+        return Math.max(0.0, 1.0 - Math.abs(front - d) / band) * (1.0 - waveFront)
+    }
+
     // ── CONVERSACIÓN estilo TERMINAL ──────────────────────────────────────
     // Monoespaciada y con colores ANSI vivos: la entrada del usuario en verde
     // brillante (como el eco de un shell), la respuesta de JARVIS en verde
