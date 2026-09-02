@@ -424,7 +424,7 @@ conversacionales que NO captura), #3, #5, #6.
 
 # FASE D — Robustez y verificación continua
 
-## D1 — Comando `jarvis doctor`
+## D1 — Comando `jarvis doctor`  ✅ COMPLETADA
 **Rama:** `feat/jarvis-doctor`
 **Archivo:** `jarvis_local/cli.py` (+ `jarvis_local/doctor.py`)
 
