@@ -503,8 +503,8 @@ subprocess + psutil), #3, #5, #8. Encaja como micro-tarea antes de la Fase C.
 | Fase | Tareas | Estado |
 |------|--------|--------|
 | 0 | 0.1–0.5 | ✅ completada |
-| A | A1–A7 | ⬜ pendiente |
-| B | B1–B7 | ⬜ pendiente |
+| A | A1–A7 | ✅ completada |
+| B | B1–B7 | 🔄 B1–B3 hechas · B4–B7 pendientes |
 | C | C1–C7 | ⬜ pendiente |
 | D | D1–D4 | ⬜ pendiente |
 
