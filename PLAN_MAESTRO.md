@@ -406,7 +406,7 @@ conversacionales que NO captura), #3, #5, #6.
 
 **Pruebas:** #1, #2 (2ª llamada idéntica no invoca `chat_with_tools`), #3, #6.
 
-## C7 — Suite de latencia con presupuestos
+## C7 — Suite de latencia con presupuestos  ✅ COMPLETADA
 **Rama:** `test/latencia-presupuestos`
 **Archivo:** `test/test_latency.py`
 
@@ -505,7 +505,7 @@ subprocess + psutil), #3, #5, #8. Encaja como micro-tarea antes de la Fase C.
 | 0 | 0.1–0.5 | ✅ completada |
 | A | A1–A7 | ✅ completada |
 | B | B1–B7 | ✅ completada |
-| C | C1–C7 | ⬜ pendiente |
+| C | C1–C7 | ✅ completada |
 | D | D1–D4 | ⬜ pendiente |
 
 **Total: 26 tareas.** Se ejecutan en orden. Cada una: rama → implementar →
