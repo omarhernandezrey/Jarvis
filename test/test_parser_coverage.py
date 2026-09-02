@@ -43,12 +43,18 @@ CASES = [
     ("bloquea el equipo", "lock_pc"),
     ("toma una captura de pantalla", "screenshot"),
     ("hazme un screenshot", "screenshot"),
+    ("me abres whatsapp", "open_app"),                # C3
+    ("necesito que abras la calculadora", "open_app"),  # C3
+    ("tomame una captura", "screenshot"),               # C3
+    ("sacame un pantallazo", "screenshot"),             # C3
 
     # ---- volumen y multimedia ----
     ("sube el volumen", "volume_up"),
     ("baja el volumen", "volume_down"),
     ("sube el volumen al 30", "volume_set"),
     ("silencia", "volume_mute"),
+    ("quitale el sonido", "volume_mute"),              # C3
+    ("ponle mute", "volume_mute"),                     # C3
     ("pausa la musica", "media_play_pause"),
     ("siguiente cancion", "media_next"),
     ("cancion anterior", "media_previous"),
