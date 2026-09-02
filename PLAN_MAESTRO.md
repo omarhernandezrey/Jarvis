@@ -316,7 +316,7 @@ respuesta útil), #8.
 
 **Pruebas:** #1, #2 (mock del cliente spotipy con token inválido), #3, #5.
 
-## B7 — `find_app`: umbral difuso y sinónimos
+## B7 — `find_app`: umbral difuso y sinónimos  ✅ COMPLETADA
 **Rama:** `fix/find-app-fuzzy`
 **Archivo:** `jarvis_local/tools/app_index.py:175`
 
@@ -504,7 +504,7 @@ subprocess + psutil), #3, #5, #8. Encaja como micro-tarea antes de la Fase C.
 |------|--------|--------|
 | 0 | 0.1–0.5 | ✅ completada |
 | A | A1–A7 | ✅ completada |
-| B | B1–B7 | 🔄 B1–B3 hechas · B4–B7 pendientes |
+| B | B1–B7 | ✅ completada |
 | C | C1–C7 | ⬜ pendiente |
 | D | D1–D4 | ⬜ pendiente |
 

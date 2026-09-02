@@ -62,6 +62,31 @@ _SYNONYMS: dict[str, list[str]] = {
     "hoja de calculo": ["libreoffice calc"],
     "presentaciones": ["libreoffice impress"],
     "presentacion": ["libreoffice impress"],
+    # editores / IDEs: el nombre corto o coloquial -> lo instalado
+    "vscode": ["visual studio code", "code"],
+    "vs code": ["visual studio code", "code"],
+    "vs-code": ["visual studio code", "code"],
+    "visual studio": ["visual studio code", "code"],
+    "editor de codigo": ["visual studio code", "code"],
+    # gestor de archivos (nombre real, ingles y espanol)
+    "archivos": ["files", "nautilus"],
+    "explorador": ["files", "nautilus"],
+    "explorador de archivos": ["files", "nautilus"],
+    "gestor de archivos": ["files", "nautilus"],
+    "administrador de archivos": ["files", "nautilus"],
+    "nautilus": ["files"],
+    "finder": ["files"],
+    # navegador generico -> el que haya
+    "navegador": ["google chrome", "chrome", "firefox", "brave", "edge"],
+    "navegador web": ["google chrome", "chrome", "firefox", "brave", "edge"],
+    "browser": ["google chrome", "chrome", "firefox"],
+    # otros coloquiales
+    "bloc de notas": ["text editor", "notepad", "gedit"],
+    "editor de texto": ["text editor", "gedit", "notepad"],
+    "calculadora": ["calculator", "gnome calculator"],
+    "ajustes": ["settings", "configuracion"],
+    "configuracion": ["settings"],
+    "musica": ["spotify"],
 }
 
 
