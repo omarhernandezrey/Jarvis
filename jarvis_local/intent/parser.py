@@ -601,6 +601,16 @@ def _parse_fase4(m: str) -> IntentResult | None:
         return IntentResult(kind="tool_read", tool="calculate",
                             arguments={"expression": m_nat.group(1).strip()},
                             reason="Calculo matematico local")
+    # Ecuaciones lineales de una incognita: "resuelve x + 135 - 234 = 345",
+    # "despeja x en 2x + 4 = 10", o una ecuacion suelta "x + 10 = 25".
+    if low.count("=") == 1 and re.search(r'\d', low) and re.search(r'[a-z]', low):
+        _verbo_eq = re.search(
+            r'\b(?:resuelve|resolver|despeja(?:me)?|despejar|halla|hallar)\b', low)
+        _pura = re.fullmatch(r'[\sa-z0-9+\-*/^().,=]+', low) and re.search(r'\b[a-z]\b', low)
+        if _verbo_eq or _pura:
+            return IntentResult(kind="tool_read", tool="calculate",
+                                arguments={"expression": m.strip()},
+                                reason="Resolver ecuacion")
 
     # --- WOLFRAMALPHA ---
     m_wa = re.search(r'(?:pregunta(?:le)?\s+a\s+wolfram(?:alpha)?|wolfram)\s*[:]?\s*(.+)', low)

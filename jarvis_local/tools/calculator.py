@@ -139,9 +139,76 @@ def evaluate(expression: str) -> float:
     return _safe_eval(tree)
 
 
+_RE_INCOGNITA = re.compile(r'(?<![a-z])([a-z])(?![a-z(])')
+
+
+def _es_ecuacion(expression: str) -> bool:
+    """Hay un '=' real (no '<='/'>=') y una incognita de una letra."""
+    t = expression.lower().replace("<=", "").replace(">=", "").replace("!=", "")
+    if "=" not in t:
+        return False
+    candidatos = set(_RE_INCOGNITA.findall(t)) - set(_FUNCS) - set(_CONSTS) - {"x"}
+    return "x" in _RE_INCOGNITA.findall(t) or bool(candidatos)
+
+
+def _solve_lineal(expression: str) -> tuple[str, float] | None:
+    """Resuelve una ecuacion LINEAL de una incognita evaluando f(x)=LHS-RHS en
+    tres puntos. Devuelve (incognita, valor) o None si no es lineal / no aplica.
+    """
+    raw = expression.lower().strip()
+    raw = re.sub(r'^\s*(?:resuelve|resolver|despeja(?:me)?|despejar|halla|calcula)\s+', '', raw)
+    raw = re.sub(r'^\s*([a-z])\s+(?:en|de|para|:)\s+', r'', raw)   # "x en 2x+4=10"
+    for bad in ("<=", ">=", "!="):
+        raw = raw.replace(bad, "")
+    if raw.count("=") != 1:
+        return None
+    lhs, rhs = raw.split("=")
+    letras = (set(_RE_INCOGNITA.findall(lhs)) | set(_RE_INCOGNITA.findall(rhs)))
+    letras -= set(_FUNCS) | set(_CONSTS)
+    if len(letras) != 1:
+        return None
+    var = letras.pop()
+
+    def _lado(txt: str, val: float) -> float:
+        # "2x" -> "2*x", "x2" -> "x*2", luego sustituir la incognita por el valor
+        s = re.sub(r'(\d)\s*' + var + r'\b', r'\1*' + var, txt)
+        s = re.sub(r'\b' + var + r'\s*(\d)', var + r'*\1', s)
+        s = re.sub(r'\b' + var + r'\b', f'({val})', s)
+        return evaluate(s)
+
+    try:
+        f0 = _lado(lhs, 0.0) - _lado(rhs, 0.0)
+        f1 = _lado(lhs, 1.0) - _lado(rhs, 1.0)
+        f2 = _lado(lhs, 2.0) - _lado(rhs, 2.0)
+    except Exception:
+        return None
+    m = f1 - f0
+    if abs((f2 - f0) - 2 * m) > 1e-9:          # no es lineal
+        return None
+    if abs(m) < 1e-12:                          # sin solucion unica
+        return None
+    return var, -f0 / m
+
+
 def calculate(expression: str) -> ActionPlan:
     plan = ActionPlan(action="calcular", params={"expresion": expression},
                       risk=RiskLevel.READ, reason="Calculo matematico local")
+
+    # --- ECUACION LINEAL DE UNA INCOGNITA ---
+    if _es_ecuacion(expression):
+        sol = _solve_lineal(expression)
+        if sol is not None:
+            var, val = sol
+            val = int(val) if abs(val - round(val)) < 1e-9 else round(val, 6)
+            plan.result = f"{var} = {val}, senor."
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = ("Esa ecuacion no la puedo resolver localmente, senor "
+                           "(solo lineales de una incognita). Pruebe con "
+                           "'pregunta a wolfram ...'.")
+        return plan
+
     try:
         result = evaluate(expression)
         if isinstance(result, float) and result.is_integer():
