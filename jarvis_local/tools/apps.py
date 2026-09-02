@@ -69,6 +69,59 @@ _FILLER_WORDS = {"microsoft", "google", "mozilla", "apple", "windows", "app",
                  "de", "la", "el", "corporation", "inc"}
 
 
+def _running_procnames() -> set[str]:
+    """Nombres (en minuscula, sin extension) de los procesos vivos ahora."""
+    try:
+        import psutil
+    except ImportError:
+        return set()
+    out: set[str] = set()
+    for p in psutil.process_iter(["name"]):
+        n = (p.info.get("name") or "").lower()
+        if n:
+            out.add(n)
+            if n.endswith(".exe"):
+                out.add(n[:-4])
+    return out
+
+
+def _ya_esta_abierta(candidatos: list[str]) -> bool:
+    """True si algun proceso vivo coincide con un candidato (nombre de exe,
+    stem del .desktop, primera palabra del nombre...)."""
+    vivos = _running_procnames()
+    if not vivos:
+        return False
+    for c in candidatos:
+        c = (c or "").lower().removesuffix(".exe").removesuffix(".desktop")
+        if not c:
+            continue
+        # "google-chrome" cubre "chrome"; "code" cubre "code"
+        if any(c == v or c in v.split("-") or c in v.split("_") for v in vivos):
+            return True
+    return False
+
+
+def _try_focus(nombre: str) -> bool:
+    """Best-effort: traer la ventana al frente en Linux con wmctrl si esta.
+    En Wayland puro no funciona (limitacion conocida); devuelve False y JARVIS
+    lo dice con honestidad en vez de fingir."""
+    if IS_WINDOWS:
+        return False
+    wmctrl = _shutil_which("wmctrl")
+    if not wmctrl:
+        return False
+    try:
+        r = subprocess.run([wmctrl, "-a", nombre], capture_output=True, timeout=3)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _shutil_which(cmd: str) -> str | None:
+    import shutil
+    return shutil.which(cmd)
+
+
 def _register_opened(name: str, display: str, pid: int | None = None,
                      procnames: list[str] | None = None) -> None:
     """Anota un programa abierto por JARVIS para poder cerrarlo despues."""
@@ -117,6 +170,19 @@ def open_app(name: str) -> ActionPlan:
         risk=RiskLevel.EXECUTE,
         reason=f"Abrir {name}",
     )
+
+    # Ya abierta: NO lanzar un duplicado (era el bug: "abre VS Code" dos veces
+    # abria dos ventanas). Se intenta enfocar la existente; si no se puede
+    # (Wayland), se dice con claridad.
+    _cands = [Path(path).name, name_lower, *_CLOSE_PROC_MAP.get(name_lower, [])]
+    if _ya_esta_abierta(_cands):
+        _register_opened(name_lower, name, procnames=[Path(path).name])
+        enfocada = _try_focus(name)
+        plan.result = (f"{name} ya estaba abierta, la traje al frente."
+                       if enfocada else f"{name} ya esta abierta, senor.")
+        plan.status = ActionStatus.EXECUTED
+        return plan
+
     try:
         if IS_WINDOWS and name_lower == "configuracion":
             subprocess.Popen(["start", "ms-settings:"], shell=True)
@@ -159,6 +225,19 @@ def _open_installed_app(name: str) -> ActionPlan:
         risk=RiskLevel.EXECUTE,
         reason=f"Abrir {best['name']} (app instalada)",
     )
+
+    # Ya abierta -> no duplicar
+    _stem = str(best["appid"]).split("/")[-1]
+    _cands = [_stem, best["norm"], best["norm"].split()[0],
+              *_CLOSE_PROC_MAP.get(_norm(name), [])]
+    if _ya_esta_abierta(_cands):
+        _register_opened(best["norm"], best["name"])
+        enfocada = _try_focus(best["name"])
+        plan.result = (f"{best['name']} ya estaba abierta, la traje al frente."
+                       if enfocada else f"{best['name']} ya esta abierta, senor.")
+        plan.status = ActionStatus.EXECUTED
+        return plan
+
     try:
         launch_app(best["appid"])
         _register_opened(best["norm"], best["name"])
@@ -203,6 +282,14 @@ def execute_open_app(name: str) -> ActionPlan:
         risk=RiskLevel.EXECUTE,
         status=ActionStatus.CONFIRMED,
     )
+    if _ya_esta_abierta([Path(path).name, name_lower,
+                         *_CLOSE_PROC_MAP.get(name_lower, [])]):
+        _register_opened(name_lower, name, procnames=[Path(path).name])
+        enfocada = _try_focus(name)
+        plan.result = (f"{name} ya estaba abierta, la traje al frente"
+                       if enfocada else f"{name} ya esta abierta, senor")
+        plan.status = ActionStatus.EXECUTED
+        return plan
     try:
         if IS_WINDOWS and name_lower == "wsl":
             proc = _launch_wsl(path)

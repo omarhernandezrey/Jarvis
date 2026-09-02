@@ -113,3 +113,52 @@ if __name__ == "__main__":
     test_close_all_apps_con_registro()
     test_registro_de_aperturas()
     print("OK: Todos los tests de apps pasaron.")
+
+
+# ── H2: no abrir un duplicado si la app ya está corriendo ─────────────────────
+def test_h2_no_duplica_app_de_whitelist_ya_abierta():
+    from unittest.mock import MagicMock, patch
+
+    from jarvis_local.tools import apps as A
+
+    with patch.object(A, "_running_procnames", return_value={"google-chrome", "chrome"}), \
+         patch.object(A, "get_app_path", return_value="/usr/bin/google-chrome"), \
+         patch.object(A, "_try_focus", return_value=False), \
+         patch("subprocess.Popen") as popen:
+        plan = A.open_app("chrome")
+
+    assert plan.status == ActionStatus.EXECUTED
+    assert "ya esta abierta" in plan.result.lower() or "al frente" in plan.result.lower()
+    popen.assert_not_called()
+
+
+def test_h2_no_duplica_app_instalada_ya_abierta():
+    from unittest.mock import patch
+
+    from jarvis_local.tools import apps as A
+
+    match = {"name": "Visual Studio Code", "appid": "code.desktop", "norm": "visual studio code"}
+    with patch.object(A, "_running_procnames", return_value={"code"}), \
+         patch.object(A, "_try_focus", return_value=False), \
+         patch("jarvis_local.tools.app_index.find_app", return_value=[match]), \
+         patch("jarvis_local.tools.app_index.launch_app") as launch:
+        plan = A.open_app("vscode")
+
+    assert plan.status == ActionStatus.EXECUTED
+    assert "ya esta abierta" in plan.result.lower() or "al frente" in plan.result.lower()
+    launch.assert_not_called()
+
+
+def test_h2_si_no_corre_nada_si_lanza():
+    from unittest.mock import MagicMock, patch
+
+    from jarvis_local.tools import apps as A
+
+    with patch.object(A, "_running_procnames", return_value=set()), \
+         patch.object(A, "get_app_path", return_value="/usr/bin/xterm"), \
+         patch("subprocess.Popen", return_value=MagicMock(pid=99)) as popen:
+        plan = A.open_app("terminal")
+
+    assert plan.status == ActionStatus.EXECUTED
+    assert "abierto correctamente" in plan.result.lower()
+    popen.assert_called_once()
