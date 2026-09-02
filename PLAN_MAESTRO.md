@@ -183,20 +183,22 @@ Suite completa: sin regresiones. `ruff` limpio.
 **0,03 s**, `take_note("comprar pan y leche")`.
 Batería: **90 passed, 6 xfailed**. `ruff` limpio · suite sin regresiones.
 
-## A5 — Multi-acción con verbos de reproducción, verificada e2e
+## A5 — Multi-acción con verbos de reproducción, verificada e2e  ✅ COMPLETADA
 **Rama:** `fix/parser-multiaccion-reproducir`
-**Archivo:** `jarvis_local/intent/parser.py:634`, `jarvis_local/jarvis.py` (`_chat_encadenado`)
+**Archivos:** `jarvis_local/intent/parser.py` (`_SITIO_CONOCIDO`, bloque ABRIR APP)
 
-- [ ] `dividir_acciones("abre youtube y pon lofi")` **ya** parte bien
-  (`['abre youtube', 'pon lofi']`); confirmarlo con test.
-- [ ] Lo que falta: que `Jarvis.chat()` **ejecute** ambas cláusulas por la ruta
-  encadenada (parser → parser), no que caiga al chat. Depende de A2 (que
-  `"pon lofi"` sea reconocible). Verificar el flujo completo.
-- [ ] Añadir 4 variantes multi-acción a `test_parser_coverage.py` (bloque MULTI)
-  y un test e2e en `test/test_jarvis*` o nuevo.
+- [x] `dividir_acciones` y `_chat_encadenado` (parser-first por cláusula) ya
+  estaban bien; confirmado con tests (bloque MULTI).
+- [x] El fallo real: la 1ª cláusula `"abre youtube"` → `ambiguous` (no es app ni
+  dominio). Nuevo mapa `_SITIO_CONOCIDO` (youtube, gmail, maps, facebook,
+  netflix, …) como *fallback* **tras** fallar `find_app` → `"abre youtube"` →
+  `open_website`. `"abre spotify"` / `"abre whatsapp"` siguen abriendo la app
+  instalada (el mapa solo actúa si `find_app` no encontró nada).
+- [x] Batería: 6 casos nuevos (incl. no-regresión de spotify/whatsapp).
 
-**Pruebas:** #1–#5 (`Jarvis.chat("abre youtube y pon lofi")` resuelve ambas sin
-LLM), #3, #6.
+**e2e:** `Jarvis.chat("abre youtube y pon lofi")` → ruta `tool`, **0,06 s**,
+ejecuta AMBAS: `open_website("youtube.com")` + `play_song("lofi")`.
+Batería: **95 passed, 6 xfailed**. `ruff` limpio · suite sin regresiones.
 
 ## A6 — `"lanza / inicia / ejecuta <app>"` no debe irse a `run_command`
 **Rama:** `fix/parser-lanza-app`
