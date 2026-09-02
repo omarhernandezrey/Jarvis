@@ -85,8 +85,8 @@ def _extract_app_candidate(text: str) -> str | None:
     """Extrae el posible nombre de app despues del verbo de apertura."""
     # "ejecuta" se excluye: ese verbo es para comandos (run_command)
     m = re.search(
-        r'(?:abre|abrir|lanza|lanzar|inicia|iniciar)\s+'
-        r'(?:la\s+|el\s+)?(?:aplicacion\s+|app\s+|programa\s+)?(.+)',
+        r'(?:abre|abreme|abres|abrir|abrirme|abrime|abras|abra|lanza|lanzar|inicia|iniciar)\s+'
+        r'(?:la\s+|el\s+|que\s+)?(?:aplicacion\s+|app\s+|programa\s+)?(.+)',
         text, re.IGNORECASE)
     if not m:
         return None
@@ -350,8 +350,9 @@ def _parse_media(low: str) -> IntentResult | None:
         return IntentResult(kind="tool_execute", tool="volume_mute",
                             arguments={"mute": False},
                             reason="Activar sonido")
-    if re.search(r'\bsilencia(?:r|te|me)?\b', low) or re.search(r'\bmutea\b', low) \
-            or re.search(r'\b(?:quita|apaga|corta)\b.*\bsonido\b', low) \
+    if re.search(r'\bsilencia(?:r|te|me|lo|la)?\b', low) \
+            or re.search(r'\bmute[ao]?\b', low) or re.search(r'\bponle?\s+(?:en\s+)?mute\b', low) \
+            or re.search(r'\b(?:quita|apaga|corta|baja)(?:le|me)?\b.*\bsonido\b', low) \
             or re.fullmatch(r'\s*silencio[.!]?\s*', low):
         return IntentResult(kind="tool_execute", tool="volume_mute",
                             arguments={"mute": True},
@@ -653,7 +654,8 @@ def _parse_fase4(m: str) -> IntentResult | None:
                             reason="Cambiar de ventana")
 
     # --- CAPTURA DE PANTALLA ---
-    if re.search(r'\b(captura de pantalla|toma una captura|haz una captura|'
+    if re.search(r'\b(?:captura de pantalla|(?:toma|tomame|hazme|haz|saca|sacame)'
+                 r'\s+(?:una?\s+)?(?:captura|pantallazo|screenshot|foto\s+de\s+la\s+pantalla)|'
                  r'screenshot|pantallazo)\b', low):
         m_name = re.search(r'(?:llamada|llamado|con\s+(?:el\s+)?nombre|como)\s+(.+)',
                            m, re.IGNORECASE)
@@ -934,8 +936,8 @@ def parse_intent(message: str) -> IntentResult:
                                 reason=f"Cerrar {cand}")
 
     # --- ABRIR APLICACION ---
-    if any(kw in m.lower() for kw in ["abre", "abrir", "lanza", "lanzar",
-                                         "inicia", "iniciar", "ejecuta"]):
+    if any(kw in m.lower() for kw in ["abre", "abrir", "abras", "abra", "lanza",
+                                      "lanzar", "inicia", "iniciar", "ejecuta"]):
         app = _match_app_name(m)
         if app:
             return IntentResult(

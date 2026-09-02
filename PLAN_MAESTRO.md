@@ -358,7 +358,7 @@ respuesta útil), #8.
 
 **Pruebas:** #1, #2, #3, #5, #6 (agente 1 acción, medir antes/después).
 
-## C3 — Parser-first reforzado
+## C3 — Parser-first reforzado  ✅ COMPLETADA
 **Rama:** `feat/parser-first-reforzado`
 **Archivo:** `jarvis_local/intent/parser.py` o `jarvis_local/jarvis.py`
 
