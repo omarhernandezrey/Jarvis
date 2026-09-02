@@ -382,7 +382,7 @@ conversacionales que NO captura), #3, #5, #6.
 
 **Pruebas:** #1, #2, #3, #6.
 
-## C5 — Evaluar modelo alternativo sólo para el *routing*
+## C5 — Evaluar modelo alternativo sólo para el *routing*  ✅ COMPLETADA
 **Rama:** `research/modelo-router`
 **Archivos:** `jarvis_local/eval/`, `config.yaml`
 

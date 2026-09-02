@@ -113,6 +113,27 @@ tamaño del catálogo que el retriever le pasa al modelo. Implicaciones:
 - C2 (podar el bucle) sigue siendo un tope de seguridad, pero 1 acción ya = 1
   llamada.
 
+## 5b. Modelo de routing — comparación (TAREA C5)
+
+`ollama pull llama3.2:3b`. 6 casos representativos del agente (subconjunto de
+`eval/cases`), directo a `run_agent`, esta máquina (2 núcleos, sin GPU):
+
+| Modelo | Acierto | Tiempo total (6) | Media |
+|---|---|---|---|
+| `qwen2.5:3b` | 6/6 | 272 s | 45 s |
+| `llama3.2:3b` | 6/6 | 223 s | 37 s |
+
+**Decisión:** `ollama.agent_model: llama3.2:3b` en `config.yaml`. ~18 % más
+rápido, mismo acierto en el subconjunto probado, y el hook `agent_model` deja
+revertirlo en una línea. El chat sigue con `qwen2.5:3b` y los embeddings con
+`bge-m3`.
+
+**Límite honesto:** no se corrió `eval/` completo (60 casos × 2 modelos ×
+20–120 s = horas, con riesgo de saturar la máquina). La comparación es sobre 6
+casos. El cuello de botella de fondo — un modelo 3B haciendo tool-calling en
+CPU de 2 núcleos — no lo resuelve un cambio de modelo; lo resuelve mantener
+frases fuera del agente (A2–A7, C3).
+
 ## 6. Latencia — medición DESPUÉS
 
 _(se rellena al cerrar la Fase C)_

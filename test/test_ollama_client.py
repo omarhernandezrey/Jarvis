@@ -79,3 +79,30 @@ def test_c4_payload_del_agente_tiene_keepalive_y_num_predict_bajo():
     assert pl.get("keep_alive")                       # el modelo se queda en RAM
     assert pl["options"]["num_predict"] <= 80         # el router elige, no redacta
 
+
+
+# ── TAREA C5: el paso de routing usa ollama.agent_model si esta configurado ───
+def test_c5_chat_with_tools_usa_agent_model(monkeypatch):
+    from unittest.mock import MagicMock, patch
+
+    import jarvis_local.ollama_client.client as C
+
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"message": {"role": "assistant", "content": "ok"}}
+
+    c = OllamaClient()   # antes de tocar get_config (el constructor lo usa)
+    monkeypatch.setattr(C, "get_config", lambda: {"ollama": {
+        "model": "qwen2.5:3b", "agent_model": "llama3.2:3b"}})
+    fake_http = MagicMock()
+    fake_http.post.side_effect = lambda url, json=None, timeout=None, **kw: (
+        captured.update(payload=json) or _Resp())
+    with patch.object(c, "_get_client", return_value=fake_http):
+        c.chat_with_tools([{"role": "user", "content": "x"}], tools=[])
+
+    assert captured["payload"]["model"] == "llama3.2:3b"
