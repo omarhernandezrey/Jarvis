@@ -614,6 +614,11 @@ def main():
         print(reauthorize())
         return
 
+    # Diagnóstico del entorno: `python -m jarvis_local.cli doctor`
+    if "doctor" in sys.argv[1:] or "--doctor" in sys.argv:
+        from jarvis_local.doctor import main as _doctor
+        raise SystemExit(_doctor())
+
     print(BANNER)
     jarvis = init_jarvis()
     cfg = get_config()
