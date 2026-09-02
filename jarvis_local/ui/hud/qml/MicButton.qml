@@ -30,6 +30,7 @@ Item {
         radius: Design.radiusHud
         fillSurface: false
         showBorder: false
+        scan: mic.micState === "listening"
         accent: mic.micState === "denied" ? Design.alert : Design.cyan
         opacity: (mic.micState === "listening"
                   || (hover.hovered && mic.micState !== "denied")) ? 1.0 : 0.0

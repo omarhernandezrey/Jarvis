@@ -51,15 +51,18 @@ Item {
                 color: Qt.rgba(turn._accent.r, turn._accent.g, turn._accent.b, 0.18) }
         }
     }
-    // nodo: pequeño rombo en la cabeza de la regla, en el color del canal
+    // nodo: pequeño rombo en la cabeza de la regla, en el color del canal.
+    // Late con la respiración del orbe (el turno sigue "conectado" a la entidad).
     Rectangle {
-        x: Design.sp(17) + 0.5 - 2.5
-        y: 2
-        width: 5; height: 5
+        x: Design.sp(17) + 0.5 - 3
+        y: 1.5
+        width: 6; height: 6
         radius: 1
         rotation: 45
         color: turn._accent
-        opacity: kind === "error" ? 1.0 : 0.85
+        opacity: Math.min(1.0, (kind === "error" ? 0.9 : 0.62)
+                          + 0.30 * Design.breath())
+        scale: 0.9 + 0.15 * Design.breath()
     }
 
     Column {

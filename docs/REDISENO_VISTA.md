@@ -1883,3 +1883,68 @@ del orbe ni el pipeline de datos.
   compone sobre fondo claro. La intensidad del lavado por estado, la amplitud
   del latido y el radio/banda del frente necesitan mirarse en la máquina con el
   orbe encendido.
+
+## Fase 12 — Vida VISIBLE en toda la interfaz
+
+Feedback del usuario tras la F11: *"no veo mucha diferencia, hazlo para toda la
+interfaz."* La F11 era correcta pero tímida: el lavado de estado era 0 en
+reposo y la respiración modulaba un 14 %. Esta fase lo sube con fuerza y lo
+lleva a cada rincón.
+
+### Intensidades (Design.qml)
+
+- `_stateWashK`: de 0,42–0,85 → **0,55–1,10**, y **idle pasa de 0 a 0,42**: en
+  reposo el HUD ya se lava hacia el azul eléctrico del orbe. `stateWash` mezcla
+  hasta 0,92.
+- Nuevo `Design.breath()` = `0.55 + 0.45·pulse`: recorrido AMPLIO (no un
+  temblor). Lo usa todo el HUD para inhalar/exhalar de forma perceptible.
+- `Design.waveGlow` — pico del frente de reacción **sin depender de la
+  posición**: un DESTELLO global de toda la interfaz en el instante del cambio
+  de estado. Banda del frente 170 → 260 px; duración `stateXfade·3.6` (más
+  lento, se ve pasar).
+
+### Marco de ventana vivo — `HudFrame.qml` (nuevo)
+
+El borde de la ventana ES parte de la entidad: 4 corchetes de mira grandes en
+las esquinas + línea interior de 1px, teñidos por el color del estado,
+respirando con `breath()` y destellando con `waveGlow`/`waveAt`. Retícula
+emisiva sobre la ventana transparente — ni fondo ni panel. Los controles de
+ventana se anidan dentro de la retícula (`WindowChrome` + margen).
+
+### Chispa de perímetro (`HoloFrame.scan`)
+
+Un punto de luz (halo tenue + núcleo brillante) recorre el perímetro del marco,
+parametrizado por `Design.tick` (sin timer). Activo en la lectura de estado, el
+campo de comando y el micrófono mientras escucha: superficies "siempre vivas"
+aunque no haya actividad.
+
+### Todo lo demás
+
+- `HoloFrame`: el FONDO se tiñe hacia el estado (antes sólo el borde); realce
+  `lift·breath() + 0.85·wave + 0.30·waveGlow + shimmer`; borde y corchetes con
+  recorrido mucho mayor.
+- `HudCell`: barra de acento y emisor laten con `breath()` (opacidad + escala);
+  lavado de estado 0,35 → 0,7.
+- `CoreStatus`: `scan` activo; la base de energía, sin dato real, LATE con
+  `breath()` en vez de quedarse plana.
+- Conector HUD↔orbe (`Main`): color lavado por estado, opacidad con `breath()`,
+  se engrosa con el frente, y un **impulso de datos** (punto de luz) baja por
+  él de forma continua.
+- `Turn` / `Conversation`: el nodo del turno y el punto de la cabecera de
+  consola laten con `breath()` (opacidad + escala); su tamaño sube un poco.
+
+### Validación
+
+- `ruff` limpio; `pytest test/test_ui_hud.py` 25 verde — sin warnings QML con
+  `HudFrame` y las props nuevas; sigue 1 solo `FrameAnimation`; layout sin
+  solapes/desbordes en los 4 tamaños (el marco de ventana es decorativo, no
+  entra en los rects comprobados; los controles de ventana se movieron adentro).
+- `pytest test` (suite completa) → sin fallos ni errores.
+- `systemctl restart` → `active`, `NRestarts=0`, RHI OpenGL, `journalctl` sin
+  warnings/errores QML.
+- **No verificado visualmente en movimiento:** un render estático capta el
+  marco de ventana, las chispas y el conector reforzado, pero no la
+  respiración, el barrido de la chispa ni el destello del cambio de estado. El
+  backend de software compone sobre fondo claro (paneles pálidos). Intensidades
+  finas (amplitud de `breath`, velocidad de `scan`, brillo de `waveGlow`) a
+  calibrar en la máquina con el orbe encendido.

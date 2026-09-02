@@ -44,6 +44,7 @@ Item {
         accent: root._accent
         radius: Design.widgetRadius
         extraLift: root._kick + 0.08
+        scan: true                    // chispa recorriendo el marco: siempre vivo
     }
 
     Column {
@@ -98,7 +99,8 @@ Item {
         }
     }
 
-    // ── BASE DE ENERGÍA — la longitud sigue Design.coreEnergy (dato real) ──
+    // ── BASE DE ENERGÍA — la longitud sigue Design.coreEnergy (dato real);
+    //    en reposo (sin energía) LATE con la respiración del orbe ──
     Rectangle {
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom
                   leftMargin: Design.sp(2.5); rightMargin: Design.sp(2.5)
@@ -107,9 +109,10 @@ Item {
         color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.16)
         Rectangle {
             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-            width: parent.width * Math.min(1.0, Math.max(0.015, Design.coreEnergy))
+            width: parent.width * Math.max(0.06 + 0.10 * Design.pulse,
+                                           Math.min(1.0, Design.coreEnergy))
             color: root._accent
-            opacity: 0.85
+            opacity: 0.65 + 0.30 * Design.breath()
         }
     }
 }

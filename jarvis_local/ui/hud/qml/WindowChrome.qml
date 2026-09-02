@@ -32,8 +32,9 @@ Item {
         id: controls
         anchors {
             top: parent.top; right: parent.right
-            topMargin: chrome.gutter + Design.sp(1)
-            rightMargin: chrome.gutter + Design.sp(2)
+            // anidados DENTRO de la retícula de HudFrame (corchete de esquina)
+            topMargin: chrome.gutter + Design.sp(4)
+            rightMargin: chrome.gutter + Design.sp(5)
         }
         spacing: Design.sp(1)
         WinButton { kind: "min"; onActivated: chrome.win.showMinimized() }

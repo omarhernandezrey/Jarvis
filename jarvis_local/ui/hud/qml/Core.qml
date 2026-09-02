@@ -72,7 +72,7 @@ Item {
         id: hudWave
         PropertyAction { target: Design; property: "waveFront"; value: 0.0 }
         NumberAnimation { target: Design; property: "waveFront"
-            to: 1.0; duration: Design.stateXfade * 2.4; easing.type: Easing.OutCubic }
+            to: 1.0; duration: Design.stateXfade * 3.6; easing.type: Easing.OutCubic }
     }
 
     // ── parámetros por estado (interpolados) ──────────────────────────────

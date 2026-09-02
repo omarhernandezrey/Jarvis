@@ -172,6 +172,13 @@ Window {
             onExited: { win.pointerX = 0; win.pointerY = 0 }
         }
 
+        // el borde de la ventana ES parte de la entidad: retícula emisiva que
+        // respira con el orbe y adopta el color del estado (Fase 12).
+        HudFrame {
+            anchors.fill: parent
+            opacity: Design.reveal(rootItem.orbCX, rootItem.orbCY)
+        }
+
         // ── HUD DE IDENTIDAD (flota arriba, centrado) ────────────────────
         Hud {
             objectName: "hud"
@@ -192,10 +199,21 @@ Window {
             readonly property real _wave: Design.waveAt(x, _cy)
             x: Math.round(rootItem.orbCX)
             y: hud.y + hud.height
-            width: 1 + 2 * _wave                         // se engrosa al pasar el frente
+            width: 1 + 3 * _wave                         // se engrosa al pasar el frente
             height: Math.max(0, (rootItem.orbCY - rootItem.orbSize / 2) - y - Design.sp(2))
-            color: Design.litHairline(x, _cy)
-            opacity: (0.6 + 0.4 * _wave) * Design.reveal(x, _cy)
+            color: Design.stateWash(Design.hairline, 0.8)
+            opacity: (0.35 + 0.4 * Design.breath() + 0.5 * _wave) * Design.reveal(x, _cy)
+
+            // impulso de datos que baja por el conector hacia el orbe: un punto
+            // de luz recorre la línea de forma continua (reloj global, sin timer).
+            Rectangle {
+                width: 3; height: 14; radius: 1.5
+                x: (parent.width - width) / 2
+                y: (((Design.tick * 0.35) % 1.0) + 1.0) % 1.0 * parent.height
+                color: Design.stateWash(Design.cyan, 0.7)
+                opacity: 0.5 + 0.4 * Design.breath()
+                visible: parent.height > 20
+            }
         }
 
         // ── MÉTRICAS EN VIVO (flotan abajo-izquierda, junto al comando) ──

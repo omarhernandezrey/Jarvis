@@ -34,10 +34,12 @@ Item {
                       verticalCenter: parent.verticalCenter }
             spacing: Design.sp(1.5)
             Rectangle {
-                width: 6; height: 6; radius: 3
+                width: 7; height: 7; radius: 3.5
                 anchors.verticalCenter: parent.verticalCenter
                 color: Design.ok
-                opacity: 0.4 + 0.6 * Math.min(1.0, 0.3 + Design.coreEnergy * 1.6)
+                opacity: Math.min(1.0, 0.35 + 0.35 * Design.breath()
+                                  + 0.5 * Math.min(1.0, Design.coreEnergy * 1.6))
+                scale: 0.85 + 0.2 * Design.breath()
             }
             Text {
                 text: "jarvis · consola"

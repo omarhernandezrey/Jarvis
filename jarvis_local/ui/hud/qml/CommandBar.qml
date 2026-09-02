@@ -84,6 +84,7 @@ Item {
             fillSurface: false
             showBorder: false
             radius: field.radius
+            scan: !bar.vizOn          // chispa recorriendo el campo (salvo grabando)
             accent: bar.busy ? Design.azure
                   : editor.activeFocus ? Design.cyan : Design.textSecondary
             extraLift: editor.activeFocus ? 0.22 : 0.0

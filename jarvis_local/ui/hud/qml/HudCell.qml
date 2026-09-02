@@ -86,21 +86,23 @@ Item {
                   leftMargin: 1 }
         width: 2.5
         radius: 1.5
-        opacity: cell.absent ? 0.30 : 0.95
+        opacity: cell.absent ? 0.30 : (0.72 + 0.26 * Design.breath())
         gradient: Gradient {
             GradientStop { position: 0.0
-                color: cell.absent ? cell._accent : Design.stateWash(cell._accent, 0.35) }
+                color: cell.absent ? cell._accent : Design.stateWash(cell._accent, 0.7) }
             GradientStop { position: 1.0
-                color: Qt.rgba(cell._accent.r, cell._accent.g, cell._accent.b, 0.25) }
+                color: Qt.rgba(cell._accent.r, cell._accent.g, cell._accent.b, 0.22) }
         }
         Behavior on opacity { NumberAnimation { duration: Design.durBase } }
     }
-    Rectangle {   // emisor: chispa en la cabeza de la barra
+    Rectangle {   // emisor: chispa en la cabeza de la barra — late con el orbe
         visible: !cell.absent
-        x: 1 + 1.25; y: Design.sp(1) - 1
-        width: 4; height: 4; radius: 2
-        color: cell._accent
-        opacity: 0.5 + 0.5 * Math.min(1.0, 0.25 + Design.coreEnergy * 1.6 + cell.bump)
+        x: 1 + 1.25; y: Design.sp(1) - 1.5
+        width: 5; height: 5; radius: 2.5
+        color: Design.stateWash(cell._accent, 0.6)
+        opacity: Math.min(1.0, 0.35 + 0.35 * Design.breath()
+                          + 0.5 * Math.min(1.0, Design.coreEnergy * 1.6 + cell.bump))
+        scale: 0.85 + 0.25 * Design.breath()
     }
 
     Column {
