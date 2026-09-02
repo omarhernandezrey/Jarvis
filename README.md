@@ -13,9 +13,11 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 ## 📋 Plan de Mejoras en Curso
 
-> **Si eres un agente IA o desarrollador**, lee obligatoriamente [`IMPLEMENTACION_DE_MEJORAS.md`](IMPLEMENTACION_DE_MEJORAS.md) antes de hacer cualquier cambio. Contiene el plan maestro con tareas en orden específico.
+> **Si eres un agente IA o desarrollador**, lee obligatoriamente [`PLAN_MAESTRO.md`](PLAN_MAESTRO.md) antes de hacer cualquier cambio. Es el plan maestro activo (eficacia de cada funcionalidad), con tareas en orden estricto: una rama por tarea, batería de pruebas completa hasta verde, y merge a `main`.
+>
+> [`IMPLEMENTACION_DE_MEJORAS.md`](IMPLEMENTACION_DE_MEJORAS.md) está archivado (86/86 tareas completadas).
 
-Rama activa: `implementacion-de-mejoras` | Tareas: 38 | Fases: 8
+Plan activo: **PLAN_MAESTRO** | Tareas: 24 | Fases: 5 (0, A, B, C, D) | Base: [`docs/AUDITORIA_2026-09.md`](docs/AUDITORIA_2026-09.md)
 
 ---
 
