@@ -149,16 +149,23 @@ producción tocado.
 (auditoría: 92 s), `spotify.play_song("bohemian rhapsody")` llamada correcta.
 Suite completa: sin regresiones. `ruff` limpio.
 
-## A3 — `"qué tiempo hace en X"` / `"cómo está el clima en X"` → clima
+## A3 — `"qué tiempo hace en X"` / `"cómo está el clima en X"` → clima  ✅ COMPLETADA
 **Rama:** `fix/parser-clima-natural`
-**Archivo:** `jarvis_local/intent/parser.py` (`_parse_fase4`)
+**Archivo:** `jarvis_local/intent/parser.py` (`_parse_fase4`, bloque CLIMA)
 
-- [ ] Añadir patrones: `(qué|que) (tiempo|clima) (hace|habrá|va a hacer) en X`,
-  `cómo está el (clima|tiempo) en X`, `va a llover en X`, `temperatura en X`.
-- [ ] Extraer bien el nombre de ciudad (quitar "hoy", "mañana", "ahora").
-- [ ] Quitar los `xfail` correspondientes; añadir 6 variantes.
+- [x] Nuevo trigger: `clima|temperatura|pronostico`, `(que|como) tiempo
+  (hace|hara|va a hacer|habra)`, `(como|que) (esta|estara) el tiempo`,
+  `va a llover|llovera|lloveria|va a haber lluvia|hay lluvia`. "tiempo" solo
+  dispara con verbo meteorológico (no `"no tengo tiempo"` / `"hace tiempo"`).
+- [x] Extracción de ciudad limpia: prioriza `en <X>`, quita adverbios
+  temporales (hoy/mañana/sábado/…). Arregla de paso el bug latente de
+  `"el clima de hoy en Quito"` → city era `"hoy en quito"`, ahora `"quito"`.
+- [x] Quitados los 3 `xfail` `_A3` + 4 positivos + 2 negativos + test de
+  extracción de ciudad (`test_weather_city_limpia`).
 
-**Pruebas:** #1–#5 (`Jarvis.chat("qué tiempo hace en Medellín")` → tool `weather`), #6.
+**e2e:** `"qué tiempo hace en Medellín"` → ruta `tool`, **1,3 s** (auditoría:
+30–80 s). `"va a llover en Cartagena"` → **1,2 s** (auditoría: 82 s).
+`ruff` limpio · batería y suite sin regresiones.
 
 ## A4 — `"crea (una) nota …"` / `"nueva nota …"` → notas
 **Rama:** `fix/parser-crea-nota`

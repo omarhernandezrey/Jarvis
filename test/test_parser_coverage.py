@@ -27,7 +27,6 @@ from jarvis_local.intent.parser import (
     parse_intent,
 )
 
-_A3 = pytest.mark.xfail(strict=True, reason="TAREA A3 — clima en lenguaje natural")
 _A4 = pytest.mark.xfail(strict=True, reason="TAREA A4 — 'crea/nueva nota' → take_note")
 _A6 = pytest.mark.xfail(strict=True, reason="TAREA A6 — 'lanza <app>' se va a run_command")
 _A7 = pytest.mark.xfail(strict=True, reason="TAREA A7 — estado del sistema coloquial")
@@ -67,9 +66,13 @@ CASES = [
     ("como esta el clima en Cali", "weather"),
     ("temperatura en Lima", "weather"),
     ("el clima de hoy en Quito", "weather"),
-    pytest.param("que tiempo hace en Medellin", "weather", marks=_A3),
-    pytest.param("va a llover en Cartagena", "weather", marks=_A3),
-    pytest.param("como estara el tiempo manana en Pasto", "weather", marks=_A3),
+    ("que tiempo hace en Medellin", "weather"),              # A3
+    ("va a llover en Cartagena", "weather"),                 # A3
+    ("como estara el tiempo manana en Pasto", "weather"),    # A3
+    ("pronostico para Cucuta", "weather"),                   # A3
+    ("que tiempo hara el sabado en Cali", "weather"),        # A3
+    ("cuanto tiempo falta para navidad", "chat"),            # A3 negativo
+    ("hace tiempo que no te veo", "chat"),                   # A3 negativo
 
     # ---- Spotify / musica ----
     ("reproduce a Bad Bunny", "spotify_play"),
@@ -171,3 +174,18 @@ def test_multi_accion(frase, partes):
 def test_no_multi_accion_en_frase_simple():
     assert es_multi_accion("abre whatsapp") is False
     assert es_multi_accion("clima en Bogota y alrededores") is False
+
+
+# ── A3: la ciudad se extrae limpia (sin adverbios temporales) ────────────────
+@pytest.mark.parametrize("frase,ciudad", [
+    ("clima en Bogota", "bogota"),
+    ("que tiempo hace en Medellin", "medellin"),
+    ("el clima de hoy en Quito", "quito"),
+    ("como estara el tiempo manana en Pasto", "pasto"),
+    ("va a llover en Cartagena", "cartagena"),
+    ("que tiempo hara el sabado en Cali", "cali"),
+])
+def test_weather_city_limpia(frase, ciudad):
+    r = parse_intent(frase)
+    assert r.tool == "weather"
+    assert r.arguments.get("city") == ciudad
