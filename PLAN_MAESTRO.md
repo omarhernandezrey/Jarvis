@@ -275,7 +275,7 @@ y similares sigan lanzando `ValueError`).
 
 **Pruebas:** #1–#5, #7. Incluir los ejemplos exactos del README.
 
-## B4 — `locate()` no falla con lugares reales
+## B4 — `locate()` no falla con lugares reales  ✅ COMPLETADA
 **Rama:** `fix/locate-fallback`
 **Archivo:** `jarvis_local/tools/location.py`
 
