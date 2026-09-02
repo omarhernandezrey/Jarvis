@@ -1,5 +1,9 @@
 # PLAN MAESTRO DE MEJORAS — Jarvis Local
 
+> ⚠️ **ARCHIVADO — COMPLETADO AL 100 % (86/86 tareas).** Este documento es
+> histórico. El plan maestro **activo** es [`PLAN_MAESTRO.md`](PLAN_MAESTRO.md)
+> (eficacia de cada funcionalidad). No ejecutes tareas de este archivo.
+
 > **Propósito**: Documento de ejecución para que cualquier agente IA (o desarrollador) implemente las mejoras de forma secuencial, testeada y profesional.
 >
 > **Regla de oro**: Cada tarea se completa SOLO cuando:
