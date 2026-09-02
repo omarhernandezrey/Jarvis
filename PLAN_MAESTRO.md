@@ -246,7 +246,7 @@ del agente).
 **Pruebas:** #1, #2 (parametrizado con `freezegun` o `monkeypatch` sobre
 `datetime` para 08:00 / 15:00 / 23:00), #3, #5.
 
-## B2 — Calculadora: porcentajes, raíces y funciones en lenguaje natural
+## B2 — Calculadora: porcentajes, raíces y funciones en lenguaje natural  ✅ COMPLETADA
 **Rama:** `fix/calculadora-lenguaje-natural`
 **Archivo:** `jarvis_local/tools/calculator.py` (`normalize_expression`, `_WORDS`, `_FUNCS`)
 
