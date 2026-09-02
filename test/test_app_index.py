@@ -139,3 +139,35 @@ if __name__ == "__main__":
     test_find_nothing()
     test_real_index_builds()
     print("OK: Todos los tests del indice de apps pasaron.")
+
+
+# ── TAREA B7: sinónimos ES/EN y nombre corto de IDE / gestor de archivos ──────
+_FAKE_INDEX_B7 = [
+    {"name": "Visual Studio Code", "appid": "code.desktop", "norm": "visual studio code"},
+    {"name": "Files", "appid": "org.gnome.Nautilus.desktop", "norm": "files"},
+    {"name": "Google Chrome", "appid": "google-chrome.desktop", "norm": "google chrome"},
+    {"name": "Firefox", "appid": "firefox_firefox.desktop", "norm": "firefox"},
+    {"name": "Text Editor", "appid": "org.gnome.TextEditor.desktop", "norm": "text editor"},
+    {"name": "Calculator", "appid": "org.gnome.Calculator.desktop", "norm": "calculator"},
+]
+
+
+def test_b7_sinonimos_ide_y_archivos():
+    def check():
+        assert find_app("vscode")[0]["name"] == "Visual Studio Code"
+        assert find_app("vs code")[0]["name"] == "Visual Studio Code"
+        assert find_app("editor de codigo")[0]["name"] == "Visual Studio Code"
+        assert find_app("archivos")[0]["name"] == "Files"
+        assert find_app("nautilus")[0]["name"] == "Files"
+        assert find_app("explorador de archivos")[0]["name"] == "Files"
+        assert find_app("navegador")[0]["name"] in ("Google Chrome", "Firefox")
+        assert find_app("calculadora")[0]["name"] == "Calculator"
+    _with_index(_FAKE_INDEX_B7, check)
+
+
+def test_b7_app_no_instalada_devuelve_vacio():
+    """Lo que NO está instalado sigue dando [] (open_app avisa con claridad)."""
+    def check():
+        assert find_app("android studio") == []
+        assert find_app("photoshop") == []
+    _with_index(_FAKE_INDEX_B7, check)
