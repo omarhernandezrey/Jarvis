@@ -154,6 +154,9 @@ class OllamaClient:
             "model": model or cfg["model"],
             "messages": messages,
             "stream": stream,
+            # C4: mantener el modelo cargado en RAM entre turnos; la primera
+            # llamada tras inactividad pagaba ~10 s de recarga.
+            "keep_alive": cfg.get("keep_alive", "30m"),
             "options": {
                 "num_ctx": cfg.get("num_ctx", 2048),
                 "num_predict": cfg.get("num_predict", 120),
@@ -253,9 +256,12 @@ class OllamaClient:
             "messages": messages,
             "tools": tools,
             "stream": False,
+            "keep_alive": cfg.get("keep_alive", "30m"),   # C4
             "options": {
                 "num_ctx": cfg.get("agent_num_ctx", 2048),
-                "num_predict": cfg.get("agent_num_predict", 120),
+                # C4: el router ELIGE una herramienta, no redacta. 60 tokens
+                # sobran para un tool_call; menos generacion = menos segundos.
+                "num_predict": cfg.get("agent_num_predict", 60),
                 "temperature": 0.1,
                 "top_p": 0.9,
             },

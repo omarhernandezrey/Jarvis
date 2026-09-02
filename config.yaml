@@ -34,8 +34,10 @@ ollama:
   # Parametros del agente (tool calling). Mas ajustados que los del chat:
   # el modelo solo debe emitir una llamada a herramienta, no redactar.
   agent_num_ctx: 2048
-  agent_num_predict: 120
+  agent_num_predict: 60
   host: http://localhost:11434
+  # C4: mantener el modelo en RAM entre turnos (evita ~10 s de recarga)
+  keep_alive: 30m
   model: qwen2.5:3b
   num_ctx: 2048
   num_predict: 120
