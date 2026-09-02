@@ -3,6 +3,7 @@ JARVIS Local - Ubicaciones y distancias (Fase 4)
 Abre cualquier lugar en el mapa e indica la distancia desde tu ubicacion.
 """
 import math
+import urllib.parse
 import webbrowser
 
 import requests
@@ -11,6 +12,33 @@ from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 from jarvis_local.tools.weather import geocode_city
 
 MY_LOCATION_URL = "http://ip-api.com/json/?fields=status,city,country,lat,lon"
+_OSM_URL = "https://nominatim.openstreetmap.org/search"
+# Nominatim EXIGE un User-Agent que identifique la app; sin el, 403.
+_OSM_UA = "jarvis-local/6.0 (asistente personal offline)"
+
+
+def geocode_osm(place: str) -> dict | None:
+    """Geocodifica cualquier lugar (POI, monumento, direccion) con OpenStreetMap.
+    Devuelve {name, country, latitude, longitude} o None. Uso puntual: 1 peticion.
+    """
+    try:
+        r = requests.get(_OSM_URL, params={
+            "q": place, "format": "json", "limit": 1, "addressdetails": 1,
+        }, headers={"User-Agent": _OSM_UA}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if not data:
+            return None
+        hit = data[0]
+        addr = hit.get("address", {})
+        return {
+            "name": hit.get("display_name", place).split(",")[0].strip() or place,
+            "country": addr.get("country", ""),
+            "latitude": float(hit["lat"]),
+            "longitude": float(hit["lon"]),
+        }
+    except (requests.RequestException, ValueError, KeyError, IndexError):
+        return None
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -42,14 +70,23 @@ def locate(place: str) -> ActionPlan:
     plan = ActionPlan(action="ubicar_lugar", params={"lugar": place},
                       risk=RiskLevel.EXECUTE, reason=f"Ubicar {place} en el mapa")
     try:
-        dest = geocode_city(place)
+        # OpenStreetMap primero: resuelve tanto ciudades como POIs, monumentos y
+        # direcciones. El geocoder de Open-Meteo (solo ciudades) queda de
+        # respaldo si OSM no responde (rate-limit/red).
+        dest = geocode_osm(place) or geocode_city(place)
         if not dest:
-            plan.status = ActionStatus.ERROR
-            plan.result = f"No encontre el lugar '{place}', senor."
+            # 3) ultimo recurso: abrir Google Maps con el texto crudo (Maps
+            #    resuelve "Torre Eiffel" perfectamente); solo no hay distancia.
+            q = urllib.parse.quote_plus(place)
+            webbrowser.open(f"https://www.google.com/maps/search/?api=1&query={q}")
+            plan.result = (f"Abri el mapa buscando '{place}', senor. "
+                           "No pude calcular la distancia desde su ubicacion.")
+            plan.status = ActionStatus.EXECUTED
             return plan
         url = f"https://www.google.com/maps/search/?api=1&query={dest['latitude']},{dest['longitude']}"
         webbrowser.open(url)
-        texto = f"Abriendo {dest['name']}, {dest['country']} en el mapa."
+        nombre = dest["name"] + (f", {dest['country']}" if dest.get("country") else "")
+        texto = f"Abriendo {nombre} en el mapa."
         origin = my_location()
         if origin:
             km = haversine_km(origin["lat"], origin["lon"],

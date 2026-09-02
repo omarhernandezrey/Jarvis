@@ -480,6 +480,8 @@ def _parse_fase4(m: str) -> IntentResult | None:
         low)
     if m_loc:
         place = m_loc.group(1).strip().rstrip('.!?')
+        # el articulo inicial ("la torre eiffel") confunde a los geocoders
+        place = re.sub(r'^(?:el|la|los|las|un|una)\s+', '', place)
         if place and not any(w in place for w in _NOT_APP_WORDS):
             return IntentResult(kind="tool_execute", tool="locate",
                                 arguments={"place": place},
