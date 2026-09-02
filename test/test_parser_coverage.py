@@ -27,7 +27,6 @@ from jarvis_local.intent.parser import (
     parse_intent,
 )
 
-_A6 = pytest.mark.xfail(strict=True, reason="TAREA A6 — 'lanza <app>' se va a run_command")
 _A7 = pytest.mark.xfail(strict=True, reason="TAREA A7 — estado del sistema coloquial")
 _B2 = pytest.mark.xfail(strict=True, reason="TAREA B2 — calculadora lenguaje natural")
 _B3 = pytest.mark.xfail(strict=True, reason="TAREA B3 — ecuaciones lineales")
@@ -38,7 +37,11 @@ CASES = [
     # ---- apps y ventanas ----
     ("abre whatsapp", "open_app"),
     ("abre el chrome", "open_app"),
-    pytest.param("lanza android studio", "open_app", marks=_A6),
+    ("lanza android studio", "open_app"),          # A6
+    ("lanza notion", "open_app"),                  # A6
+    ("inicia docker", "open_app"),                 # A6
+    ("abre algo", "ambiguous"),                    # A6: objeto vago -> aclarar
+    ("lanza ls -la", "run_command"),               # A6: pinta de shell -> comando
     ("abre la calculadora", "open_app"),
     ("cierra spotify", "close_app"),
     ("cierra todo", "close_all_apps"),
