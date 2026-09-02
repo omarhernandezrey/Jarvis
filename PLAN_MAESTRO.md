@@ -134,19 +134,20 @@ producción tocado.
 **Resultado:** `pytest test/test_parser_coverage.py` → **64 passed, 16 xfailed,
 0 failed**. Suite completa: sin regresiones.
 
-## A2 — `"pon <canción>"` → Spotify
+## A2 — `"pon <canción>"` → Spotify  ✅ COMPLETADA (merge a `main`)
 **Rama:** `fix/parser-pon-cancion`
-**Archivo:** `jarvis_local/intent/parser.py:480` (`_parse_fase4`, regex de reproducción)
+**Archivo:** `jarvis_local/intent/parser.py` (`_parse_fase4`, nueva rama `m_pon` tras `m_play`)
 
-- [ ] Añadir `pon|ponme` a la alternancia de verbos de reproducción, sin romper
-  los usos previos de "pon" (volumen, recordatorios, ventana), que se resuelven
-  ANTES en la cascada del parser.
-- [ ] Quitar el `xfail` de `"pon bohemian rhapsody"` y añadir 4–5 variantes
-  (`"pon algo de Shakira"`, `"pon la de Queen"`, `"ponme reggaetón"`).
+- [x] Nueva rama: `"pon(me|le) <X>"` a secas → `spotify_play`, con *lookahead*
+  negativo para no tragarse `"pon una nota"` / `"pon un recordatorio"`. Volumen,
+  recordatorios, multimedia, ventanas y `"pon música [de X]"` / `"pon X en
+  youtube"` ya se resolvían antes en la cascada.
+- [x] Quitados los 4 `xfail` `_A2` + 2 variantes nuevas.
 
-**Pruebas:** #1, #2, #3, #4 (`--cov=jarvis_local.intent.parser`), #5
-(`Jarvis.chat("pon bohemian rhapsody")` → `last_route == "tool"` o `"fast"`, no
-`"llm"`), #6 (esa frase < 4 s vs. los 92 s de la auditoría).
+**Resultado:** batería `test_parser_coverage.py` → **70 passed, 12 xfailed**.
+**e2e:** `Jarvis.chat("pon bohemian rhapsody")` → ruta `tool`, **0,09 s**
+(auditoría: 92 s), `spotify.play_song("bohemian rhapsody")` llamada correcta.
+Suite completa: sin regresiones. `ruff` limpio.
 
 ## A3 — `"qué tiempo hace en X"` / `"cómo está el clima en X"` → clima
 **Rama:** `fix/parser-clima-natural`
