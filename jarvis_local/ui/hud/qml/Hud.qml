@@ -23,6 +23,13 @@ Item {
 
     function _has(v) { return v !== undefined && v !== null }
 
+    // código de índice técnico por clave (anotación tipo HUD de cabina)
+    function _tag(key) {
+        return ({ "sistema": "SYS", "modelo": "MDL", "voz": "VOX", "memoria": "MEM",
+                  "herramientas": "TLS", "cpu": "CPU", "ram": "RAM",
+                  "latencia": "LAT", "tokens/s": "T/S" })[key] || ""
+    }
+
     // Umbral → color vivo (verde bien · ámbar medio · rojo mal).
     function _grade(v, warnAt, badAt) {
         if (v === undefined || v === null) return Design.sky
@@ -94,6 +101,7 @@ Item {
                 required property int index
                 property var c: hud.cell(modelData)   // re-evalúa al cambiar hud.m
                 label: modelData
+                tag: hud._tag(modelData)
                 absent: c[0]
                 value: c[1]
                 accent: c[2]

@@ -1,18 +1,15 @@
 import QtQuick
 import "."
 
-// Lectura de estado del núcleo. Mismo lenguaje holográfico que HudCell
-// (HoloFrame: gradiente + corchetes de mira + borde que respira) pero el valor
-// es la palabra de estado: "STANDBY", "LISTENING", "PROCESSING", "EXECUTING",
-// "SPEAKING", "SYSTEM ALERT", "OFFLINE". Bajo la palabra, una BASE de energía
-// cuya longitud sigue `Design.coreEnergy` — el mismo dato real (RMS de voz /
-// tokens·s / pulso de ejecución) que mueve el orbe, aquí cuantificado.
+// Lectura de estado del núcleo como INSTRUMENTO PRINCIPAL (Fase 13). Sin fondo:
+// retícula (corchetes + chispa de perímetro), la palabra de estado, y bajo
+// ella una ESCALA GRADUADA (marcas tipo regla) por la que corre el relleno de
+// energía real. "STANDBY", "LISTENING", "PROCESSING", "EXECUTING", "SPEAKING",
+// "SYSTEM ALERT", "OFFLINE".
 Item {
     id: root
     property string coreState: "idle"
 
-    // La palabra de estado SÍ usa color vivo (no es el orbe): cian para los
-    // modos de IA, naranja para "operando el sistema", rojo para fallo.
     readonly property var _map: ({
         idle:      ["STANDBY",      Design.sky],
         listening: ["LISTENING",    Design.cyan],
@@ -26,11 +23,9 @@ Item {
     readonly property string _label: _entry[0]
     readonly property color  _accent: _entry[1]
 
-    implicitWidth: col.implicitWidth + Design.sp(6)
-    implicitHeight: col.implicitHeight + Design.sp(4)
+    implicitWidth: col.implicitWidth + Design.sp(8)
+    implicitHeight: col.implicitHeight + Design.sp(6)
 
-    // El cambio de estado es UNA reacción del sistema: núcleo y lectura
-    // transicionan juntos (Design.stateXfade), nunca en desfase.
     onCoreStateChanged: { ackFlash.restart(); liftKick.restart() }
     property real _kick: 0
     NumberAnimation {
@@ -42,29 +37,37 @@ Item {
     HoloFrame {
         anchors.fill: parent
         accent: root._accent
-        radius: Design.widgetRadius
         extraLift: root._kick + 0.08
-        scan: true                    // chispa recorriendo el marco: siempre vivo
+        scan: true
+        bracketLen: 10
     }
 
     Column {
         id: col
         anchors.centerIn: parent
         spacing: 2
-        Text {
-            text: "ESTADO"
-            color: Design.textMeta
-            font.family: Design.fontMono
-            font.pixelSize: Design.fsMeta
-            font.weight: Design.wLabel
-            font.letterSpacing: Design.trkLabel
-            style: Text.Outline; styleColor: Design.textEdge
+        Row {
+            spacing: Design.sp(1.5)
+            Text {
+                text: "MODO"
+                color: Design.textMeta
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMeta
+                font.weight: Design.wLabel
+                font.letterSpacing: Design.trkLabel
+                style: Text.Outline; styleColor: Design.textEdge
+            }
+            Text {
+                text: "//"
+                color: Design.stateWash(Design.textDisabled, 0.6)
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMeta
+                opacity: 0.5 + 0.3 * Design.breath()
+            }
         }
         Row {
             id: valueRow
             spacing: Design.sp(2)
-            // acuse breve del cambio de estado: una caída de opacidad y vuelta
-            // (un solo pulso, no un parpadeo).
             SequentialAnimation {
                 id: ackFlash
                 NumberAnimation { target: valueRow; property: "opacity"
@@ -76,7 +79,7 @@ Item {
             }
             Rectangle {
                 id: dot
-                width: 5; height: 5; radius: 2.5
+                width: 5; height: 5
                 anchors.verticalCenter: parent.verticalCenter
                 color: root._accent
                 opacity: 0.45 + 0.55 * Math.min(1.0, Design.coreEnergy * 1.4)
@@ -88,7 +91,7 @@ Item {
                 text: root._label
                 color: root._accent
                 font.family: Design.fontMono
-                font.pixelSize: Design.fsStatus    // lectura primaria: 26
+                font.pixelSize: Design.fsStatus
                 font.weight: Design.wStatus
                 font.letterSpacing: Design.trkStatus
                 style: Text.Outline; styleColor: Design.textEdge
@@ -99,20 +102,41 @@ Item {
         }
     }
 
-    // ── BASE DE ENERGÍA — la longitud sigue Design.coreEnergy (dato real);
-    //    en reposo (sin energía) LATE con la respiración del orbe ──
-    Rectangle {
+    // ── ESCALA GRADUADA + relleno de energía real ──
+    Item {
+        id: scale
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom
                   leftMargin: Design.sp(2.5); rightMargin: Design.sp(2.5)
-                  bottomMargin: Design.sp(1.5) }
-        height: 1.5
-        color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.16)
+                  bottomMargin: Design.sp(1.75) }
+        height: 5
+
+        // marcas de la regla
+        Row {
+            anchors.fill: parent
+            Repeater {
+                model: 21
+                delegate: Item {
+                    required property int index
+                    width: scale.width / 21
+                    height: scale.height
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: 1
+                        height: (index % 5 === 0) ? scale.height : scale.height * 0.5
+                        color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.22)
+                    }
+                }
+            }
+        }
+        // aguja / relleno: sigue Design.coreEnergy; en reposo LATE con breath()
         Rectangle {
-            anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-            width: parent.width * Math.max(0.06 + 0.10 * Design.pulse,
-                                           Math.min(1.0, Design.coreEnergy))
+            anchors.bottom: parent.bottom
+            width: 2
+            height: scale.height
             color: root._accent
-            opacity: 0.65 + 0.30 * Design.breath()
+            opacity: 0.55 + 0.35 * Design.breath()
+            x: (parent.width - width) * Math.max(0.03 + 0.06 * Design.pulse,
+                                                 Math.min(1.0, Design.coreEnergy))
         }
     }
 }

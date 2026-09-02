@@ -235,9 +235,11 @@ Item {
 
     CoreBloom {
         id: shader
-        // margen para que el bloom pueda extenderse más allá del orbe
+        // margen amplio: el shader dibuja campo/corona hasta rad ~1.05, así que
+        // el lienzo debe rebasar el contenedor por los 4 lados o se recorta el
+        // halo en N/S/E/O (se veía "tapado por los lados").
         anchors.fill: parent
-        anchors.margins: -Math.round(Math.min(parent.width, parent.height) * 0.13)
+        anchors.margins: -Math.round(Math.min(parent.width, parent.height) * 0.19)
         // durante el encendido, un destello que sube y baja
         readonly property real _ignitePulse: root.bootIgnite < 1.0
             ? Math.sin(root.bootIgnite * Math.PI) : 0.0

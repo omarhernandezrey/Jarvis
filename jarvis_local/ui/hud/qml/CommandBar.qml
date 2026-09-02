@@ -57,46 +57,46 @@ Item {
             right: micBtn.left; rightMargin: Design.sp(3)
             top: parent.top; bottom: parent.bottom
         }
-        radius: Design.radiusSurface
-        // superficie SIEMPRE presente (la ventana es transparente): el foco
-        // sólo la ilumina un punto, nunca la vuelve invisible.
-        color: Design.mix(Design.surfaceColor,
-                   Qt.rgba(Design.coreTint.r, Design.coreTint.g, Design.coreTint.b, 0.82),
-                   Math.min(0.20,
-                       Design.lightLevel(bar._c.x, bar._c.y) * 0.14
-                       + (editor.activeFocus ? 0.10 : 0.0)))
-        border.width: editor.activeFocus ? 2 : 1.5
-        border.color: bar.vizOn ? "transparent"
-             : bar.busy ? Design.glow(Design.azure, 0.8)
-             : editor.activeFocus ? Design.glow(Design.cyan, 0.85)
-             : fieldHover.hovered ? Design.glow(Design.textSecondary, 0.6)
-             : Design.mix(Design.litHairline(bar._c.x, bar._c.y),
-                          Design.glow(Design.cyan, 0.35), 0.4)
+        radius: 0
+        color: "transparent"
+        border.width: 0
 
-        Behavior on border.color { ColorAnimation { duration: Design.durFast } }
-        Behavior on border.width { NumberAnimation { duration: Design.durFast } }
+        // NO es un panel: un velo que sólo baja hacia la BASE del campo (donde
+        // se apoya el texto), para que el editor sea legible sobre cualquier
+        // wallpaper (TextEdit no admite contorno de glifo). Arriba, nada.
+        Rectangle {
+            anchors.fill: parent
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "transparent" }
+                GradientStop { position: 0.55; color: "transparent" }
+                GradientStop { position: 1.0
+                    color: Qt.rgba(0x03 / 255, 0x06 / 255, 0x0C / 255,
+                                   editor.activeFocus ? 0.34 : 0.20) }
+            }
+        }
 
-        // corchetes de mira: mismo lenguaje que el resto del HUD. Sin fondo ni
-        // borde propios (el campo ya los pinta); sólo las esquinas, que se
-        // encienden con el foco y con la energía del núcleo.
+        // retícula técnica: corchetes + una línea inferior que es la "base" del
+        // campo; se encienden con el foco y con la energía del núcleo.
         HoloFrame {
             anchors.fill: parent
-            fillSurface: false
             showBorder: false
-            radius: field.radius
-            scan: !bar.vizOn          // chispa recorriendo el campo (salvo grabando)
+            radius: 0
+            bracketLen: 9
+            scan: !bar.vizOn
             accent: bar.busy ? Design.azure
                   : editor.activeFocus ? Design.cyan : Design.textSecondary
             extraLift: editor.activeFocus ? 0.22 : 0.0
         }
-
-        // brillo de vidrio en el borde superior (look "widget moderno")
-        Rectangle {
-            anchors { top: parent.top; left: parent.left; right: parent.right
-                      leftMargin: parent.radius; rightMargin: parent.radius; topMargin: 1 }
-            height: 1
-            color: Qt.rgba(1, 1, 1, editor.activeFocus ? 0.16 : 0.09)
+        Rectangle {   // base del campo (subrayado técnico)
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+            height: editor.activeFocus ? 2 : 1
+            color: bar.vizOn ? "transparent"
+                 : bar.busy ? Design.glow(Design.azure, 0.85)
+                 : editor.activeFocus ? Design.glow(Design.cyan, 0.9)
+                 : fieldHover.hovered ? Design.glow(Design.textSecondary, 0.65)
+                 : Design.stateWash(Design.litHairline(bar._c.x, bar._c.y), 0.6)
             Behavior on color { ColorAnimation { duration: Design.durFast } }
+            Behavior on height { NumberAnimation { duration: Design.durFast } }
         }
 
         HoverHandler { id: fieldHover }

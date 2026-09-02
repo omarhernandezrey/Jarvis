@@ -1948,3 +1948,70 @@ aunque no haya actividad.
   backend de software compone sobre fondo claro (paneles pálidos). Intensidades
   finas (amplitud de `breath`, velocidad de `scan`, brillo de `waveGlow`) a
   calibrar en la máquina con el orbe encendido.
+
+## Fase 13 — Fondo 100 % transparente + widgets → instrumentos
+
+Feedback del usuario: *"quita esas sombras, debe ser totalmente transparente
+todo el fondo; el orbe se tapa por algunos lados su contenedor; el resto de
+componentes deben sentirse vivos y ser más tecnológicos, son simples widgets y
+ya."* Tres frentes.
+
+### 1. Fuera TODO fondo/sombra
+
+- `HoloFrame`: eliminado el relleno con gradiente (`holoTop/holoBot`) y el
+  brillo de vidrio. Ahora es SÓLO líneas: corchetes de mira (1px, con codo),
+  un hairline opcional muy tenue (alpha 0,06–0,26) y la chispa de perímetro.
+  Esquinas vivas (`radius: 0`).
+- `Main`: eliminado el scrim oscuro detrás de la conversación. La legibilidad
+  la da el contorno de 1px de cada glifo (`Text.Outline` + `Design.textEdge`),
+  que ya llevaba todo el texto.
+- `CommandBar`: el campo pasa de superficie translúcida a `transparent`; sólo
+  un velo en degradado que baja hacia la BASE (donde se apoya el texto del
+  `TextEdit`, que no admite contorno) — no es un panel.
+- `Conversation`: la píldora "volver al final" pierde el fondo; queda
+  retícula + texto.
+- `MicButton` / `HudFrame`: sin recuadros ni perímetro cerrado.
+
+### 2. El orbe ya no se recorta por los lados
+
+El shader dibuja campo/corona hasta `rad ≈ 1.05`; el lienzo (`CoreBloom`)
+rebasaba el contenedor sólo un 13 %, así que en N/S/E/O el halo se cortaba.
+Subido a **19 %**. Además `_orbFactor` 0,72 → **0,66**: el orbe visible queda
+casi igual de grande (el lienzo mayor lo compensa) pero su halo respira y nunca
+cae bajo un elemento del HUD.
+
+### 3. Instrumentos, no widgets
+
+- `HudCell`: columna de **barras de señal** a la izquierda (indicador de
+  instrumento) + **código de índice** técnico arriba a la derecha (`SYS`,
+  `MDL`, `VOX`, `MEM`, `TLS`, `CPU`, `RAM`, `LAT`, `T/S`) + **línea de
+  barrido** que lo recorre. Se mantiene la telemetría que rueda y la entrada
+  escalonada.
+- `CoreStatus`: rótulo `MODO //`, la palabra de estado, y bajo ella una
+  **escala graduada** (21 marcas tipo regla) por la que corre una aguja que
+  sigue `Design.coreEnergy` y en reposo LATE con `breath()`.
+- `Conversation`: cabecera técnica `JARVIS // CONSOLA · <n> LÍN` … `T hh:mm:ss`
+  con **regla punteada** debajo; sin fondo.
+- `HudFrame`: sin perímetro; 4 corchetes de esquina + **4 ticks** en el punto
+  medio de cada borde (señales de cabina).
+- Nuevo `Design.fsMicro` (10) para la anotación técnica.
+
+Se conserva toda la vida de F11/F12: lavado de color por estado, `breath()`,
+frente de reacción + `waveGlow`, chispa de perímetro.
+
+### Validación
+
+- `ruff` limpio; `pytest test/test_ui_hud.py` 25 verde — sin warnings QML;
+  sigue 1 `FrameAnimation`; `test_responsive_layout_no_overlap_no_overflow`
+  pasa (el orbe más pequeño reduce el riesgo de solape; el marco de ventana no
+  entra en los rects comprobados).
+- `pytest test` (suite completa) → sin fallos ni errores.
+- `systemctl restart` → `active`, `NRestarts=0`, RHI OpenGL, `journalctl` sin
+  warnings/errores QML.
+- **Verificado en render offscreen (software, con 6 turnos reales):** cero
+  rellenos/sombras — sólo líneas, brackets, barras de señal, códigos de índice,
+  cabecera técnica y ticks del marco. **No verificado:** el orbe (el software
+  no dibuja su shader — el recorte lateral se corrige por matemática de
+  márgenes, a confirmar en la máquina), ni la respiración/barrido/destello en
+  movimiento. Sobre wallpaper real, la legibilidad depende del contorno de
+  glifo; calibrar `textEdge`/velo del campo si hiciera falta.

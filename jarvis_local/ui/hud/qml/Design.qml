@@ -235,7 +235,8 @@ QtObject {
     readonly property string fontSans: "Ubuntu"
 
     // Escala tipográfica: jerarquía real, nunca todo igual.
-    //   meta 12 · small 13 · body 15 · title 18 · large 24 · status 26 · display 40
+    //   micro 10 · meta 12 · small 13 · body 15 · title 18 · large 24 · status 26 · display 40
+    readonly property int fsMicro:   10     // códigos de índice / anotación técnica
     readonly property int fsMeta:    12
     readonly property int fsSmall:   13
     readonly property int fsBody:    15

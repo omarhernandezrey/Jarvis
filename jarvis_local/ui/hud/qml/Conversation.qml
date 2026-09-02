@@ -12,8 +12,8 @@ Item {
     readonly property bool hasContent: list.count > 0
 
     // ── CABECERA DE CONSOLA ───────────────────────────────────────────────
-    // Le da marco de "terminal real" sin ser un panel: rótulo + reloj de
-    // sesión, corchetes de mira a los lados, punto que late con el núcleo.
+    // Barra técnica, sin fondo: rótulo en mayúsculas + contador de líneas +
+    // reloj de sesión, una regla punteada debajo, punto que late con el núcleo.
     Item {
         id: header
         anchors { left: parent.left; right: parent.right; top: parent.top }
@@ -22,19 +22,12 @@ Item {
         opacity: visible ? 1.0 : 0.0
         Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
 
-        HoloFrame {
-            anchors.fill: parent
-            accent: Design.consoleHeader
-            radius: Design.radiusHud
-            fillSurface: false
-            showBorder: false
-        }
         Row {
-            anchors { left: parent.left; leftMargin: Design.sp(2)
+            anchors { left: parent.left; leftMargin: Design.sp(0.5)
                       verticalCenter: parent.verticalCenter }
             spacing: Design.sp(1.5)
-            Rectangle {
-                width: 7; height: 7; radius: 3.5
+            Rectangle {   // testigo de canal
+                width: 6; height: 6
                 anchors.verticalCenter: parent.verticalCenter
                 color: Design.ok
                 opacity: Math.min(1.0, 0.35 + 0.35 * Design.breath()
@@ -42,29 +35,50 @@ Item {
                 scale: 0.85 + 0.2 * Design.breath()
             }
             Text {
-                text: "jarvis · consola"
+                text: "JARVIS // CONSOLA"
                 color: Design.consoleHeader
                 font.family: Design.fontMono
                 font.pixelSize: Design.fsMeta
                 font.letterSpacing: Design.trkLabel
                 style: Text.Outline; styleColor: Design.textEdge
             }
+            Text {
+                text: "· " + list.count + " LÍN"
+                color: Design.stateWash(Design.chatMeta, 0.4)
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMicro
+                font.letterSpacing: 0.8
+                opacity: 0.7
+                style: Text.Outline; styleColor: Design.textEdge
+            }
         }
         Text {
             id: clock
-            anchors { right: parent.right; rightMargin: Design.sp(2)
+            anchors { right: parent.right; rightMargin: Design.sp(0.5)
                       verticalCenter: parent.verticalCenter }
             color: Design.chatMeta
             font.family: Design.fontMono
-            font.pixelSize: Design.fsMeta
+            font.pixelSize: Design.fsMicro
+            font.letterSpacing: 0.8
             style: Text.Outline; styleColor: Design.textEdge
-            text: Qt.formatDateTime(new Date(), "hh:mm:ss")
-            // reloj de sesión: sólo corre con la consola visible (1 Hz, coste
-            // nulo). No es el bucle de animación del sistema — ese sigue único.
+            text: "T " + Qt.formatDateTime(new Date(), "hh:mm:ss")
             Timer {
                 interval: 1000; repeat: true
                 running: header.visible
-                onTriggered: clock.text = Qt.formatDateTime(new Date(), "hh:mm:ss")
+                onTriggered: clock.text = "T " + Qt.formatDateTime(new Date(), "hh:mm:ss")
+            }
+        }
+        // regla punteada bajo la cabecera
+        Row {
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+            spacing: 4
+            Repeater {
+                model: Math.max(1, Math.floor(header.width / 7))
+                delegate: Rectangle {
+                    width: 3; height: 1
+                    color: Design.stateWash(Design.consoleHeader, 0.5)
+                    opacity: 0.18 + 0.14 * Design.breath()
+                }
             }
         }
     }
@@ -156,24 +170,23 @@ Item {
         }
     }
 
-    // píldora "volver al final"
-    Rectangle {
+    // "volver al final" — sin fondo: sólo el texto con contorno y un marco fino
+    Item {
         visible: !list.stick && list.contentHeight > list.height
         anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter
                   bottomMargin: Design.sp(3) }
-        width: backText.implicitWidth + Design.sp(6)
-        height: backText.implicitHeight + Design.sp(3)
-        radius: height / 2
-        color: Design.surfaceColor
-        border.width: 1
-        border.color: Design.hairline
+        width: backText.implicitWidth + Design.sp(5)
+        height: backText.implicitHeight + Design.sp(2.5)
+        HoloFrame { anchors.fill: parent; accent: Design.chatPrompt; bracketLen: 5 }
         Text {
             id: backText
             anchors.centerIn: parent
-            text: "volver al final ↓"
-            color: Design.textSecondary
+            text: "▼ VOLVER AL FINAL"
+            color: Design.chatPrompt
             font.family: Design.fontMono
-            font.pixelSize: Design.fsMeta
+            font.pixelSize: Design.fsMicro
+            font.letterSpacing: 1.0
+            style: Text.Outline; styleColor: Design.textEdge
         }
         TapHandler {
             onTapped: { list.stick = true; list.positionViewAtEnd() }

@@ -142,9 +142,10 @@ Window {
         // conversación: columna lateral si CABE a la derecha del orbe sin
         // solaparlo; si no, apilada bajo el orbe.
         readonly property int convW: Math.round(Math.min(Design.sp(94), width * 0.28))
-        // tamaño del orbe = protagonista: 72% del lado más corto disponible,
-        // con mínimo (240) y máximo (960). El orbe SIEMPRE domina la composición.
-        readonly property real _orbFactor: 0.72
+        // tamaño del orbe = protagonista: 66% del lado más corto disponible,
+        // con mínimo (240) y máximo (960). Un poco menos que antes para que su
+        // halo/corona respiren y NUNCA queden bajo un elemento del HUD.
+        readonly property real _orbFactor: 0.66
         readonly property real _orbIfSide:
             Math.min(Math.max(240, Math.min(stageW, stageH) * _orbFactor),
                      stageH * 0.98, stageW * 0.96, 960)
@@ -285,23 +286,8 @@ Window {
             height: Math.max(0, rootItem.stageBottom - y
                     - (rootItem.stackedChat ? hudMetrics.height + Design.sp(2) : 0))
 
-            // scrim localizado SÓLO detrás del texto: sin él, texto claro sobre
-            // un wallpaper claro es ilegible. Muy suave, con bordes difuminados,
-            // NO un panel. (El brief lo permite explícitamente.)
-            Rectangle {
-                anchors.fill: parent
-                anchors.margins: -Design.sp(2)
-                radius: Design.radiusSurface
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "transparent" }
-                    GradientStop { position: 0.12; color: Qt.rgba(0, 0, 0, 0.30) }
-                    GradientStop { position: 0.88; color: Qt.rgba(0, 0, 0, 0.30) }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
-                opacity: convo.hasContent ? 0.9 : 0.0
-                Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
-            }
+            // Sin scrim: fondo 100 % transparente. La legibilidad la da el
+            // contorno de 1px de cada glifo (Text.Outline + Design.textEdge).
 
             Conversation {
                 id: convo

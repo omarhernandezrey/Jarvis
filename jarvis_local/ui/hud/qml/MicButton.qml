@@ -15,21 +15,13 @@ Item {
         : micState === "listening" ? Design.cyan
         : hover.hovered ? Design.emitCore : Design.textPrimary
 
-    // En reposo NO hay recuadro: sólo el icono. Al pasar el ratón o al
-    // escuchar aparecen los corchetes de mira (mismo lenguaje que el HUD).
-    Rectangle {
-        anchors.fill: parent
-        radius: Design.radiusHud
-        color: micState === "listening" ? Design.glow(Design.cyan, 0.12)
-             : hover.hovered && micState !== "denied" ? Qt.rgba(1, 1, 1, 0.05)
-             : "transparent"
-        Behavior on color { ColorAnimation { duration: Design.durFast } }
-    }
+    // Sin recuadro ni fondo: sólo el icono. Al pasar el ratón o al escuchar
+    // aparecen los corchetes de mira (mismo lenguaje que el HUD).
     HoloFrame {
         anchors.fill: parent
-        radius: Design.radiusHud
-        fillSurface: false
+        radius: 0
         showBorder: false
+        bracketLen: 8
         scan: mic.micState === "listening"
         accent: mic.micState === "denied" ? Design.alert : Design.cyan
         opacity: (mic.micState === "listening"
