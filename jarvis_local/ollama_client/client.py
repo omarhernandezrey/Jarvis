@@ -251,8 +251,10 @@ class OllamaClient:
             La clave "tool_calls" solo aparece si el modelo decide usar una herramienta.
         """
         cfg = get_config()["ollama"]
+        # C5: el paso de routing (elegir herramienta) puede usar un modelo
+        # distinto y mas rapido que el del chat -> config `ollama.agent_model`.
         payload = {
-            "model": model or cfg["model"],
+            "model": model or cfg.get("agent_model") or cfg["model"],
             "messages": messages,
             "tools": tools,
             "stream": False,

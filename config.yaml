@@ -38,6 +38,9 @@ ollama:
   host: http://localhost:11434
   # C4: mantener el modelo en RAM entre turnos (evita ~10 s de recarga)
   keep_alive: 30m
+  # C5: modelo del paso de routing (elegir herramienta). Medido ~18% mas
+  # rapido que qwen2.5:3b con el mismo acierto (6/6). Requiere: ollama pull llama3.2:3b
+  agent_model: llama3.2:3b
   model: qwen2.5:3b
   num_ctx: 2048
   num_predict: 120
