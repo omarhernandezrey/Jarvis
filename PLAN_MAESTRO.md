@@ -474,7 +474,7 @@ conversacionales que NO captura), #3, #5, #6.
 
 ## HALLAZGOS DURANTE LA EJECUCIÓN (micro-tareas fuera de fase)
 
-### H2 — Apps se abren más de una vez (VS Code, otros)  ⬜ PENDIENTE
+### H2 — Apps se abren más de una vez (VS Code, otros)  ✅ COMPLETADA
 **Reportado por el usuario durante la ejecución.** `jarvis_local/tools/apps.py`
 (`open_app` / `_open_installed_app` / `_register_opened`): al pedir abrir una
 app ya lanzada, o dos veces seguidas, se abren instancias duplicadas. Debe
