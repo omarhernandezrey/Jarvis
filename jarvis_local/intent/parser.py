@@ -47,6 +47,23 @@ def _match_app_name(text: str) -> str | None:
     return None
 
 
+# Servicios que casi nadie instala como app de escritorio: "abre youtube" =
+# el sitio, no una ventana nativa. Solo se usa si `find_app` NO encontro nada,
+# asi que "abre spotify" en una maquina con Spotify instalado sigue abriendo la
+# app.
+_SITIO_CONOCIDO = {
+    "youtube": "youtube.com", "yt": "youtube.com",
+    "gmail": "mail.google.com", "correo de google": "mail.google.com",
+    "google maps": "maps.google.com", "maps": "maps.google.com",
+    "google drive": "drive.google.com", "google fotos": "photos.google.com",
+    "facebook": "facebook.com", "instagram": "instagram.com",
+    "twitter": "twitter.com", "chatgpt": "chat.openai.com",
+    "netflix": "netflix.com", "twitch": "twitch.tv", "reddit": "reddit.com",
+    "linkedin": "linkedin.com", "wikipedia": "wikipedia.org",
+    "outlook": "outlook.com", "hotmail": "outlook.com",
+}
+
+
 # Palabras que indican que el objeto de "abrir" no es una aplicacion
 _NOT_APP_WORDS = ("archivo", "carpeta", "fichero", "documento", "directorio",
                   "comando", "script", "ruta")
@@ -885,6 +902,13 @@ def parse_intent(message: str) -> IntentResult:
                         reason=f"Abrir {cand} (app instalada)")
             except Exception:
                 pass
+            # No es una app instalada: ¿un servicio web conocido? ("abre youtube")
+            sitio = _SITIO_CONOCIDO.get(_sin_tildes(cand).lower().strip())
+            if sitio:
+                return IntentResult(
+                    kind="tool_execute", tool="open_website",
+                    arguments={"site": sitio},
+                    reason=f"Abrir {cand} en el navegador")
 
     # --- LISTAR ARCHIVOS ---
     # El objeto ("archivos", "carpeta"...) es OBLIGATORIO y los verbos van con

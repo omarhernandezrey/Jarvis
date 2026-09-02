@@ -88,6 +88,11 @@ CASES = [
     ("busca en google gatos", "google_search"),
     ("abre https://example.com", "open_website"),
     ("reproduce lofi en youtube", "youtube_play"),
+    ("abre youtube", "open_website"),          # A5
+    ("abre el youtube", "open_website"),       # A5
+    ("abre gmail", "open_website"),            # A5
+    ("abre netflix", "open_website"),          # A5
+    ("abre spotify", "open_app"),              # A5: sitio conocido NO roba app instalada
 
     # ---- info ----
     ("quien es Gabriel Garcia Marquez", "wiki"),
