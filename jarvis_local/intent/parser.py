@@ -486,8 +486,20 @@ def _parse_fase4(m: str) -> IntentResult | None:
                                 reason="Ubicar lugar en el mapa")
 
     # --- ESTADO DEL SISTEMA ---
-    if re.search(r'\b(estado del sistema|uso de ram|uso de cpu|uso de memoria|'
-                 r'bateria|cuanta ram|cuanta memoria|rendimiento del (?:sistema|equipo|pc))\b', low):
+    _equipo = r'(?:maquina|equipo|pc|computador(?:a)?|compu|portatil|laptop|ordenador|sistema)'
+    if re.search(
+            r'\b(?:estado del sistema|uso de ram|uso de cpu|uso de memoria|memoria ram|'
+            r'bateria|cuanta ram|cuanta memoria|rendimiento del (?:sistema|equipo|pc))\b'
+            # coloquial: "como anda la maquina", "que tal el equipo", "como van
+            # los recursos", "esta pesado el pc"
+            r'|(?:como|que tal)\s+(?:anda|andan|va|van|esta|estan)\s+'
+            r'(?:la\s+|el\s+|mi\s+|este\s+)?' + _equipo + r'\b'
+            r'|que tal\s+(?:la\s+|el\s+|mi\s+)?' + _equipo + r'\b'
+            r'|(?:como|que tal)\s+(?:anda|andan|va|van|esta|estan)\s+'
+            r'(?:de\s+)?(?:los\s+|mis\s+)?recursos\b'
+            r'|(?:esta|va|anda)\s+(?:muy\s+)?(?:pesad[oa]|lent[oa]|cargad[oa]|'
+            r'a\s+tope|al\s+limite)\s+(?:la\s+|el\s+|mi\s+)?' + _equipo + r'\b',
+            low):
         return IntentResult(kind="tool_read", tool="system_status",
                             reason="Consultar estado del sistema")
 
