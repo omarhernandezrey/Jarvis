@@ -465,6 +465,23 @@ conversacionales que NO captura), #3, #5, #6.
 **Pruebas:** #1, #3, y revisión de que cada afirmación del README tiene respaldo.
 
 ---
+
+## HALLAZGOS DURANTE LA EJECUCIÓN (micro-tareas fuera de fase)
+
+### H1 — Test flaky `test_history_performance`  ✅ COMPLETADA
+**Rama:** `fix/flaky-history-perf`
+**Archivo:** `test/test_storage_load.py`
+
+- [x] `assert elapsed < 5.0` reventaba de forma intermitente (visto 5,01 s) con
+  la máquina cargada (`jarvis.service` + suite a la vez). No es una regresión:
+  aislado corre en 0,85 s.
+- [x] Reconvertido a **guarda de patología** (regresión O(n²)): techos amplios
+  (`15 s` / `10 s`) con mensaje de aserción; una regresión real los supera por
+  un orden de magnitud.
+- [x] Además: se para `jarvis.service` mientras corre la batería de pruebas
+  (recomendación del usuario) para no falsear latencias ni cargar la máquina.
+
+---
 ---
 
 ## SEGUIMIENTO
