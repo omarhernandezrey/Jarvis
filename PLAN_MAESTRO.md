@@ -219,7 +219,7 @@ encontré ninguna app parecida a 'android studio'"* (honesto — no está instal
 lo pule B7), NO ejecuta shell ni pasa al agente. `"ejecuta rm -rf /"` →
 BLOQUEADO. Batería: **100 passed, 5 xfailed**. `ruff` limpio.
 
-## A7 — Estado del sistema en lenguaje coloquial
+## A7 — Estado del sistema en lenguaje coloquial  ✅ COMPLETADA
 **Rama:** `fix/parser-sistema-coloquial`
 **Archivo:** `jarvis_local/intent/parser.py`
 
@@ -473,6 +473,14 @@ conversacionales que NO captura), #3, #5, #6.
 ---
 
 ## HALLAZGOS DURANTE LA EJECUCIÓN (micro-tareas fuera de fase)
+
+### H2 — Apps se abren más de una vez (VS Code, otros)  ⬜ PENDIENTE
+**Reportado por el usuario durante la ejecución.** `jarvis_local/tools/apps.py`
+(`open_app` / `_open_installed_app` / `_register_opened`): al pedir abrir una
+app ya lanzada, o dos veces seguidas, se abren instancias duplicadas. Debe
+detectar si la app ya está corriendo (por proceso/ventana) y enfocarla en vez
+de relanzar. Rama `fix/apps-doble-apertura`. Pruebas: #1, #2 (mock de
+subprocess + psutil), #3, #5, #8. Encaja como micro-tarea antes de la Fase C.
 
 ### H1 — Test flaky `test_history_performance`  ✅ COMPLETADA
 **Rama:** `fix/flaky-history-perf`

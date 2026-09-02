@@ -27,7 +27,6 @@ from jarvis_local.intent.parser import (
     parse_intent,
 )
 
-_A7 = pytest.mark.xfail(strict=True, reason="TAREA A7 — estado del sistema coloquial")
 _B2 = pytest.mark.xfail(strict=True, reason="TAREA B2 — calculadora lenguaje natural")
 _B3 = pytest.mark.xfail(strict=True, reason="TAREA B3 — ecuaciones lineales")
 
@@ -104,7 +103,12 @@ CASES = [
     ("dame los titulares", "news_headlines"),
     ("cual es mi ip", "get_ip"),
     ("estado del sistema", "system_status"),
-    pytest.param("como anda la maquina", "system_status", marks=_A7),
+    ("como anda la maquina", "system_status"),     # A7
+    ("que tal el equipo", "system_status"),        # A7
+    ("como van los recursos", "system_status"),    # A7
+    ("esta pesado el pc", "system_status"),        # A7
+    ("como va todo", "chat"),                      # A7 negativo (conversacion)
+    ("como anda el proyecto", "chat"),             # A7 negativo
     ("cuentame un chiste", "tell_joke"),
     ("dame el resumen del dia", "daily_briefing"),
     ("pregunta a wolfram la derivada de x^2", "wolfram"),
