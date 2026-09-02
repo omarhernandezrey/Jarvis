@@ -206,6 +206,21 @@ def test_reintento_ante_herramienta_inventada():
 
 
 @skip_sin_ollama
+def test_c2_maximo_un_reintento():
+    """TAREA C2: cada llamada al modelo cuesta 20-70 s en CPU. Ante salidas
+    invalidas repetidas se corta tras UN reintento (2 llamadas), no se insiste."""
+    client = _cliente(
+        _llamada("no_existe_1", {}),
+        _llamada("no_existe_2", {}),
+        _llamada("contar_chiste", {}),   # nunca se llega aqui
+    )
+    r = run_agent(client, "cuentame un chiste")
+    assert client.chat_with_tools.call_count == 2
+    assert r.needs_clarification is True
+    assert not r.tools_used
+
+
+@skip_sin_ollama
 def test_peticion_simple_usa_una_sola_llamada_al_llm():
     """Cada llamada extra al modelo cuesta ~15 s en CPU. Una peticion de una
     sola accion no debe pagar una segunda pasada solo para 'redactar'."""
