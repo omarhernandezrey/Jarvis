@@ -32,6 +32,10 @@ logger = get_logger("tools.spotify")
 
 SCOPES = "user-modify-playback-state user-read-playback-state"
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:8888/callback"
+
+REAUTH_MSG = ("El acceso a su cuenta de Spotify caduco o fue revocado, senor. "
+              "Vuelva a autorizar con:\n"
+              "  python -m jarvis_local.cli --reauth-spotify")
 # Cuantos segundos esperar a que la app recien abierta se registre como
 # dispositivo Connect. Con menos, la primera peticion del dia falla por
 # pura carrera con el arranque de la app.
@@ -70,9 +74,47 @@ def _client():
         redirect_uri=cfg.get("redirect_uri", DEFAULT_REDIRECT_URI),
         scope=SCOPES,
         cache_path=str(data_dir / ".spotify_cache"),
-        open_browser=True,
+        # NUNCA abrir el navegador por su cuenta en una peticion normal (puede
+        # venir por voz, headless...). Si el token esta muerto se da un mensaje
+        # accionable; la re-autorizacion se hace con `--reauth-spotify`.
+        open_browser=False,
     )
     return spotipy.Spotify(auth_manager=auth)
+
+
+_CACHE_PATH = BASE_DIR / "data" / ".spotify_cache"
+
+
+def _es_error_auth(e: Exception) -> bool:
+    """El fallo es de autenticacion/token, no de reproduccion."""
+    if getattr(e, "http_status", None) == 401:
+        return True
+    n = type(e).__name__.lower()
+    m = str(e).lower()
+    return ("oauth" in n or "invalid_grant" in m or "refresh token" in m
+            or "no token" in m or "revoked" in m)
+
+
+def reauthorize() -> str:
+    """Borra el token cacheado y corre el flujo OAuth (abre el navegador una
+    vez). Para el comando `--reauth-spotify`, no para una peticion normal."""
+    if not has_credentials():
+        return ("Spotify no esta configurado, senor. Agregue client_id y "
+                "client_secret a secrets.yaml.")
+    try:
+        import spotipy  # noqa: F401
+        from spotipy.oauth2 import SpotifyOAuth
+    except ImportError:
+        return "Falta instalar la libreria de Spotify: pip install spotipy."
+    _CACHE_PATH.unlink(missing_ok=True)
+    cfg = get_secrets()["spotify"]
+    auth = SpotifyOAuth(
+        client_id=cfg["client_id"], client_secret=cfg["client_secret"],
+        redirect_uri=cfg.get("redirect_uri", DEFAULT_REDIRECT_URI),
+        scope=SCOPES, cache_path=str(_CACHE_PATH), open_browser=True,
+    )
+    auth.get_access_token(as_dict=False)
+    return "Spotify autorizado, senor. Ya puedo reproducir su musica."
 
 
 def _pc_device(devices: list[dict]) -> dict | None:
@@ -288,15 +330,16 @@ def play_song(query: str) -> ActionPlan:
         plan.status = ActionStatus.ERROR
         plan.error = msg
         status = getattr(e, "http_status", None)
-        if status == 403 or "premium" in msg.lower():
+        if _es_error_auth(e):
+            # token muerto y sin refresh posible: borrarlo y dar el comando
+            _CACHE_PATH.unlink(missing_ok=True)
+            plan.result = REAUTH_MSG
+        elif status == 403 or "premium" in msg.lower():
             plan.result = ("Spotify rechazo la reproduccion, senor. Esta "
                            "funcion requiere una cuenta Premium.")
         elif status == 404:
             plan.result = ("El dispositivo dejo de estar disponible justo "
                            "antes de reproducir, senor. Intentelo de nuevo.")
-        elif status == 401:
-            plan.result = ("Spotify rechazo la credencial, senor. Puede que "
-                           "haya que autorizar la app de nuevo.")
         elif status == 429:
             plan.result = "Spotify esta limitando las solicitudes, senor. Espere un momento."
         else:
