@@ -417,10 +417,28 @@ def _parse_fase4(m: str) -> IntentResult | None:
     low = m.lower()
 
     # --- CLIMA ---
-    if re.search(r'\b(clima|temperatura)\b', low):
-        m_city = re.search(r'\b(?:clima|temperatura)\b(?:\s+\w+)?\s+(?:en|de)\s+(.+)',
-                           low)
+    # Además de "clima/temperatura en X", lenguaje natural: "qué tiempo hace en
+    # X", "cómo está/estará el tiempo en X", "va a llover en X", "pronóstico
+    # para X". "tiempo" solo dispara acompañado de un verbo meteorológico, para
+    # no confundirlo con "no tengo tiempo" / "hace tiempo".
+    _clima = re.search(
+        r'\b(?:clima|temperatura|pronostico'
+        r'|(?:que|como)\s+tiempo\s+(?:hace|hara|va\s+a\s+hacer|habra)'
+        r'|(?:como|que)\s+(?:esta|estara)\s+el\s+tiempo'
+        r'|va\s+a\s+llover|llover(?:a|ia)|va\s+a\s+haber\s+lluvia|hay\s+lluvia'
+        r')\b', low)
+    if _clima:
+        resto = low[_clima.start():]
+        m_city = (re.search(r'\ben\s+(.+)', resto)
+                  or re.search(r'\b(?:de|para|por)\s+(.+)', resto))
         city = m_city.group(1).strip().rstrip('.!?') if m_city else ""
+        # quitar adverbios temporales que no son ciudad
+        city = re.sub(
+            r'\b(?:hoy|manana|ahora|ahorita|luego|mas\s+tarde|'
+            r'el\s+fin\s+de\s+semana|esta\s+(?:tarde|noche|semana)|'
+            r'el\s+(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo))\b',
+            '', city)
+        city = re.sub(r'\s{2,}', ' ', city).strip(' ,.')
         return IntentResult(kind="tool_read", tool="weather",
                             arguments={"city": city},
                             reason="Consultar clima")
