@@ -11,9 +11,67 @@ Item {
     // ¿hay al menos un turno? (para el scrim localizado de Main en fondo transp.)
     readonly property bool hasContent: list.count > 0
 
+    // ── CABECERA DE CONSOLA ───────────────────────────────────────────────
+    // Le da marco de "terminal real" sin ser un panel: rótulo + reloj de
+    // sesión, corchetes de mira a los lados, punto que late con el núcleo.
+    Item {
+        id: header
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: Design.sp(6)
+        visible: root.hasContent
+        opacity: visible ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
+
+        HoloFrame {
+            anchors.fill: parent
+            accent: Design.consoleHeader
+            radius: Design.radiusHud
+            fillSurface: false
+            showBorder: false
+        }
+        Row {
+            anchors { left: parent.left; leftMargin: Design.sp(2)
+                      verticalCenter: parent.verticalCenter }
+            spacing: Design.sp(1.5)
+            Rectangle {
+                width: 6; height: 6; radius: 3
+                anchors.verticalCenter: parent.verticalCenter
+                color: Design.ok
+                opacity: 0.4 + 0.6 * Math.min(1.0, 0.3 + Design.coreEnergy * 1.6)
+            }
+            Text {
+                text: "jarvis · consola"
+                color: Design.consoleHeader
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMeta
+                font.letterSpacing: Design.trkLabel
+                style: Text.Outline; styleColor: Design.textEdge
+            }
+        }
+        Text {
+            id: clock
+            anchors { right: parent.right; rightMargin: Design.sp(2)
+                      verticalCenter: parent.verticalCenter }
+            color: Design.chatMeta
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsMeta
+            style: Text.Outline; styleColor: Design.textEdge
+            text: Qt.formatDateTime(new Date(), "hh:mm:ss")
+            // reloj de sesión: sólo corre con la consola visible (1 Hz, coste
+            // nulo). No es el bucle de animación del sistema — ese sigue único.
+            Timer {
+                interval: 1000; repeat: true
+                running: header.visible
+                onTriggered: clock.text = Qt.formatDateTime(new Date(), "hh:mm:ss")
+            }
+        }
+    }
+
     ListView {
         id: list
-        anchors.fill: parent
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom
+                  top: root.hasContent ? header.bottom : parent.top
+                  topMargin: root.hasContent ? Design.sp(2) : 0 }
         model: ConversationModel        // context property (ver app.py bind_context)
         clip: true
         spacing: Design.sp(4)

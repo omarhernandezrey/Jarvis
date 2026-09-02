@@ -1736,3 +1736,84 @@ técnicamente; el ajuste fino (densidad del plasma, tamaño del iris, brillo de
 las células, radio de la corona) y los fps en uso real necesitan mirarlo.
 Para verlo: mira la ventana y **mueve el ratón junto al orbe** — el iris debe
 seguirte y el interior debe cambiar de profundidad.
+
+## Fase 10 — El resto de la interfaz a la altura del orbe
+
+El usuario: *"el orbe está listo; los demás elementos necesito que estén a la
+altura. Dame lo mejor."* El HUD eran widgets competentes pero estáticos: cajas
+que se quedaban ahí mientras el orbe respira, reacciona y comparte su luz. Fase
+10 les da UN lenguaje: superficies **holográficas** proyectadas por la misma
+entidad.
+
+### Nuevo: `Design.hudLift(sx, sy)` y `HoloFrame.qml`
+
+- **`Design.hudLift`** — un único número 0..1 ("cuánta energía tiene el HUD
+  aquí") que sube con la luz del núcleo, la energía REAL (RMS de voz / tok·s) y
+  el ping de atención. TODOS los componentes lo leen para latir al unísono con
+  el orbe; nunca baja de legible.
+- **`HoloFrame`** — marco compartido: fondo con gradiente (iluminado desde
+  arriba), borde de 1px teñido por el acento, **corchetes de mira en las 4
+  esquinas**, brillo de vidrio. Su intensidad respira con `hudLift`. Lo usan las
+  celdas del HUD, la lectura de estado, el campo de comando, la cabecera de
+  consola y el micrófono — un solo idioma, no cinco.
+
+### Celdas del HUD (`HudCell`)
+
+- Superficie `HoloFrame` en vez de rectángulo plano.
+- **Telemetría que RUEDA**: si el valor empieza por un número (`72%`, `940 ms`,
+  `12.4`), se separa número + sufijo y se anima al destino (`Design.durRoll`);
+  al aparecer sube desde 0 — un barrido de encendido.
+- Barra de acento en **degradado** (emisor brillante arriba → se apaga abajo) +
+  chispa en la cabeza que late con `coreEnergy`.
+- **Entrada escalonada**: las celdas se ENSAMBLAN (opacidad + deslizamiento
+  vertical), retardo `ordinal * 45 ms`, no aparecen de golpe.
+- Un cambio de dato ilumina brevemente toda la celda (`bump` → `extraLift`).
+
+### Lectura de estado (`CoreStatus`)
+
+- Superficie `HoloFrame`; un "kick" de luz en cada cambio de estado.
+- **Base de energía**: una barra fina bajo la palabra cuya longitud sigue
+  `Design.coreEnergy` — el mismo dato real que mueve el orbe, aquí cuantificado.
+
+### Consola (`Conversation` / `Turn`)
+
+- **Cabecera de consola**: `● jarvis · consola` + reloj de sesión (1 Hz, sólo
+  con la consola visible — no es el bucle de animación del sistema), con
+  corchetes a los lados y el punto latiendo con el núcleo. Marco de "terminal
+  real" sin ser un panel.
+- Cada turno: **nodo** (rombo) donde el prompt toca el espinazo; la regla
+  vertical ahora es un degradado que nace brillante en el nodo y se apaga.
+- El cursor de streaming toma el color del canal (verde usuario / cian JARVIS).
+
+### Barra de comando (`CommandBar`)
+
+- Corchetes de mira en el campo (`HoloFrame` sólo-esquinas) que se encienden con
+  el foco y con la energía del núcleo.
+- El chevron del prompt **respira** con `coreEnergy` en reposo; pleno con foco.
+- Pista de envío `↵` tenue a la derecha (hueco reservado, sin reflujo).
+- El barrido de "generando" pasa de un rectángulo duro a un **cometa** (borde
+  con degradado transparente→cian→transparente).
+
+### Micrófono (`MicButton`)
+
+- Los corchetes de mira sustituyen al recuadro plano al pasar el ratón / al
+  escuchar; acento cian (rojo si sin permiso).
+
+### Validación
+
+- `ruff check .` → limpio.
+- `pytest test/test_ui_hud.py` → 25 verde, incluido
+  `test_qml_engine_loads_without_warnings` (cero warnings QML con los archivos
+  nuevos) y `test_responsive_layout_no_overlap_no_overflow` (sin solapes ni
+  desbordes en 1700×900 / 1360×820 / 1000×760 / 430×360).
+- `pytest test` (suite completa) → sin fallos.
+- `systemctl --user restart jarvis` → `active (running)`, `NRestarts=0`, RHI
+  OpenGL, `journalctl` sin warnings/errores QML.
+- **Verificado visualmente (parcial):** render offscreen por software con 6
+  turnos reales en la consola → confirma que aparecen corchetes, barras en
+  degradado, números rodando, cabecera de consola con reloj, nodos de turno,
+  corchetes del campo y base de energía del estado. El backend de software NO
+  dibuja el shader del orbe y compone sobre un fondo claro (los paneles se ven
+  pálidos ahí; sobre el escritorio real con OpenGL y alfa componen como vidrio
+  oscuro). El ajuste fino de opacidades/gradientes sobre wallpaper real y el
+  latido de `hudLift` con el orbe encendido necesitan mirarse en la máquina.

@@ -15,20 +15,25 @@ Item {
         : micState === "listening" ? Design.cyan
         : hover.hovered ? Design.emitCore : Design.textPrimary
 
-    // En reposo NO hay recuadro: sólo el icono (antes su propio contenedor lo
-    // apretaba). El recuadro aparece al pasar el ratón o al escuchar.
+    // En reposo NO hay recuadro: sólo el icono. Al pasar el ratón o al
+    // escuchar aparecen los corchetes de mira (mismo lenguaje que el HUD).
     Rectangle {
         anchors.fill: parent
         radius: Design.radiusHud
         color: micState === "listening" ? Design.glow(Design.cyan, 0.12)
              : hover.hovered && micState !== "denied" ? Qt.rgba(1, 1, 1, 0.05)
              : "transparent"
-        border.width: 1
-        border.color: micState === "listening" ? Design.glow(Design.cyan, 0.5)
-             : hover.hovered && micState !== "denied" ? Design.hairline
-             : "transparent"
-        Behavior on border.color { ColorAnimation { duration: Design.durFast } }
         Behavior on color { ColorAnimation { duration: Design.durFast } }
+    }
+    HoloFrame {
+        anchors.fill: parent
+        radius: Design.radiusHud
+        fillSurface: false
+        showBorder: false
+        accent: mic.micState === "denied" ? Design.alert : Design.cyan
+        opacity: (mic.micState === "listening"
+                  || (hover.hovered && mic.micState !== "denied")) ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation { duration: Design.durFast } }
     }
 
     // icono vectorial trazado (sin emojis). Todo el dibujo queda DENTRO de los

@@ -91,6 +91,7 @@ Item {
             model: hud.keys
             delegate: HudCell {
                 required property string modelData
+                required property int index
                 property var c: hud.cell(modelData)   // re-evalúa al cambiar hud.m
                 label: modelData
                 absent: c[0]
@@ -98,6 +99,7 @@ Item {
                 accent: c[2]
                 valueColor: c[3]
                 vertical: hud.vertical
+                ordinal: index                        // entrada escalonada
                 // "SYSTEM ONLINE" no es un LED fijo: late con el núcleo
                 pulse: modelData === "sistema" && !c[0]
                        && hud.m !== undefined && hud.m.online === true

@@ -1,12 +1,12 @@
 import QtQuick
 import "."
 
-// Lectura de estado del núcleo. Mismo lenguaje visual que HudCell (etiqueta
-// susurra / valor domina) pero el valor es la palabra de estado, no un dato
-// numérico: "STANDBY", "LISTENING", "PROCESSING", "EXECUTING", "SPEAKING",
-// "SYSTEM ALERT", "OFFLINE". El punto de presencia no es una animación
-// inventada: su opacidad sigue `Design.coreEnergy`, el mismo dato real
-// (RMS de voz / tokens·s / pulso de ejecución) que ya mueve el núcleo.
+// Lectura de estado del núcleo. Mismo lenguaje holográfico que HudCell
+// (HoloFrame: gradiente + corchetes de mira + borde que respira) pero el valor
+// es la palabra de estado: "STANDBY", "LISTENING", "PROCESSING", "EXECUTING",
+// "SPEAKING", "SYSTEM ALERT", "OFFLINE". Bajo la palabra, una BASE de energía
+// cuya longitud sigue `Design.coreEnergy` — el mismo dato real (RMS de voz /
+// tokens·s / pulso de ejecución) que mueve el orbe, aquí cuantificado.
 Item {
     id: root
     property string coreState: "idle"
@@ -27,26 +27,23 @@ Item {
     readonly property color  _accent: _entry[1]
 
     implicitWidth: col.implicitWidth + Design.sp(6)
-    implicitHeight: col.implicitHeight + Design.sp(3)
+    implicitHeight: col.implicitHeight + Design.sp(4)
 
-    // El cambio de estado es UNA reacción del sistema: el color del núcleo
-    // hace cross-fade de 220 ms (Design.stateXfade); aquí igual, para que
-    // núcleo y lectura de estado transicionen juntos y no en desfase.
-    onCoreStateChanged: ackFlash.restart()
+    // El cambio de estado es UNA reacción del sistema: núcleo y lectura
+    // transicionan juntos (Design.stateXfade), nunca en desfase.
+    onCoreStateChanged: { ackFlash.restart(); liftKick.restart() }
+    property real _kick: 0
+    NumberAnimation {
+        id: liftKick
+        target: root; property: "_kick"
+        from: 0.35; to: 0.0; duration: Design.durSlow; easing.type: Easing.OutCubic
+    }
 
-    // superficie de widget: vidrio oscuro, borde teñido por el color de estado
-    Rectangle {
+    HoloFrame {
         anchors.fill: parent
+        accent: root._accent
         radius: Design.widgetRadius
-        color: Design.widgetFill
-        border.width: 1
-        border.color: Design.widgetEdge(root._accent)
-        Behavior on border.color { ColorAnimation { duration: Design.stateXfade } }
-        Rectangle {
-            anchors { top: parent.top; left: parent.left; right: parent.right
-                      leftMargin: parent.radius; rightMargin: parent.radius; topMargin: 1 }
-            height: 1; color: Qt.rgba(1, 1, 1, 0.10)
-        }
+        extraLift: root._kick + 0.08
     }
 
     Column {
@@ -65,8 +62,8 @@ Item {
         Row {
             id: valueRow
             spacing: Design.sp(2)
-            // acuse breve del cambio de estado: una caída de opacidad de
-            // ~90 ms y vuelta (no un parpadeo repetido, un solo pulso).
+            // acuse breve del cambio de estado: una caída de opacidad y vuelta
+            // (un solo pulso, no un parpadeo).
             SequentialAnimation {
                 id: ackFlash
                 NumberAnimation { target: valueRow; property: "opacity"
@@ -98,6 +95,21 @@ Item {
                     duration: Design.stateXfade; easing.type: Design.easeType
                     easing.bezierCurve: Design.easeCurve } }
             }
+        }
+    }
+
+    // ── BASE DE ENERGÍA — la longitud sigue Design.coreEnergy (dato real) ──
+    Rectangle {
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom
+                  leftMargin: Design.sp(2.5); rightMargin: Design.sp(2.5)
+                  bottomMargin: Design.sp(1.5) }
+        height: 1.5
+        color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.16)
+        Rectangle {
+            anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+            width: parent.width * Math.min(1.0, Math.max(0.015, Design.coreEnergy))
+            color: root._accent
+            opacity: 0.85
         }
     }
 }

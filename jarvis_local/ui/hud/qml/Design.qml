@@ -63,6 +63,27 @@ QtObject {
     // borde de un widget teñido por su acento (alpha ~0.5)
     function widgetEdge(accent) { return Qt.rgba(accent.r, accent.g, accent.b, 0.5) }
 
+    // ── SUPERFICIE HOLOGRÁFICA (Fase 10) ──────────────────────────────────
+    // Los elementos del HUD no son rectángulos planos pegados encima: son
+    // PROYECCIONES del núcleo. Fondo con gradiente (iluminado desde arriba),
+    // corchetes de mira en las 4 esquinas, y una intensidad que RESPIRA con la
+    // luz y la energía reales del orbe (Design.hudLift). Mismo lenguaje en las
+    // celdas, la lectura de estado, el campo de comando y la consola.
+    readonly property color holoTop: Qt.rgba(0x0E / 255, 0x18 / 255, 0x2C / 255, 0.50)
+    readonly property color holoBot: Qt.rgba(0x05 / 255, 0x0A / 255, 0x14 / 255, 0.44)
+    readonly property real  bracketLen:   7     // px del brazo del corchete
+    readonly property real  bracketInset: 3     // px de separación del borde
+    readonly property color consoleHeader: "#5FA8C8"   // cian apagado — cabecera de consola
+
+    // Energía del HUD 0..1 en un punto de escena (sx, sy): reposo/lejos → 0,3;
+    // activo/cerca del núcleo trabajando → ~1. TODOS los componentes leen ESTE
+    // número para latir al unísono con el orbe. Sube con la luz, la energía
+    // real (RMS de voz / tok·s) y el ping de atención; nunca baja de legible.
+    function hudLift(sx, sy) {
+        var l = lightLevel(sx, sy)
+        return Math.min(1.0, 0.15 + 0.50 * l + 0.50 * coreEnergy + 0.30 * attention)
+    }
+
     // ── CONVERSACIÓN estilo TERMINAL ──────────────────────────────────────
     // Monoespaciada y con colores ANSI vivos: la entrada del usuario en verde
     // brillante (como el eco de un shell), la respuesta de JARVIS en verde
@@ -203,6 +224,9 @@ QtObject {
     readonly property int stateXfade: 380
     readonly property int durHold: 1400
     readonly property int durBoot: 1100
+    // conteo de un valor numérico del HUD a otro (telemetría que "rueda", no
+    // salta). Al aparecer, sube desde 0: un barrido de encendido.
+    readonly property int durRoll: 560
 
     // Latido del cursor de streaming: regular pero con easing (no lineal, que
     // se lee como máquina). Un ciclo = 2 * este valor.

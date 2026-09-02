@@ -1,10 +1,12 @@
 import QtQuick
 import "."
 
-// Un dato del HUD como WIDGET moderno: vidrio oscuro translúcido, esquina
-// redondeada, barra de acento a la izquierda en el color de firma del dato,
-// etiqueta arriba (susurra) + valor abajo (domina, en el color vivo). El
-// orbe se queda en azul/cian; aquí manda el color.
+// Un dato del HUD como PROYECCIÓN del núcleo (Fase 10): superficie holográfica
+// compartida (HoloFrame: gradiente + corchetes de mira + borde que respira con
+// la energía real), barra de acento en degradado con emisor arriba, etiqueta
+// que susurra + valor que domina. Si el valor empieza por un número, RUEDA a su
+// destino en vez de saltar; al aparecer sube desde 0 (barrido de encendido).
+// El orbe se queda en azul/cian; aquí manda el color de firma.
 Item {
     id: cell
     property string label: ""
@@ -13,8 +15,8 @@ Item {
     property color accent: Design.sky              // color de FIRMA (barra + borde)
     property color valueColor: accent              // color del VALOR (estado)
     property bool vertical: false      // banda superior vs. regla lateral
-    // punto de presencia: su opacidad respira con Design.coreEnergy (dato real).
-    property bool pulse: false
+    property bool pulse: false         // punto de presencia (respira con coreEnergy)
+    property int  ordinal: 0           // orden en la fila → entrada escalonada
 
     readonly property color _accent: absent ? Design.textDisabled : accent
     readonly property color _value:  absent ? Design.textDisabled : valueColor
@@ -23,36 +25,81 @@ Item {
                    + Design.sp(vertical ? 6 : 9)
     implicitHeight: vertical ? Design.sp(13) : Design.sp(17)
 
-    // ── superficie del widget ──────────────────────────────────────────────
-    Rectangle {
-        id: surface
-        anchors.fill: parent
-        radius: Design.widgetRadius
-        color: Design.widgetFill
-        border.width: 1
-        border.color: cell.absent ? Design.widgetStroke
-                                  : Design.widgetEdge(cell._accent)
-        Behavior on border.color { ColorAnimation { duration: Design.durBase } }
+    // ── telemetría que rueda ───────────────────────────────────────────────
+    // Si `value` empieza por un número ("72%", "12.4", "1500 ms"), separamos
+    // número + sufijo y animamos hacia el número; el sufijo se mantiene.
+    readonly property var parsed: {
+        var m = /^-?\d+(?:\.\d+)?/.exec(cell.value || "")
+        if (!m) return null
+        return { num: parseFloat(m[0]),
+                 dec: m[0].indexOf(".") >= 0 ? 1 : 0,
+                 suf: cell.value.slice(m[0].length) }
+    }
+    property real rolled: 0
+    property real bump: 0
+    onParsedChanged: {
+        if (parsed) rollAnim.restart()
+        bumpAnim.restart()
+    }
+    NumberAnimation {
+        id: rollAnim
+        target: cell; property: "rolled"
+        to: cell.parsed ? cell.parsed.num : 0
+        duration: Design.durRoll
+        easing.type: Design.easeType; easing.bezierCurve: Design.easeCurve
+    }
+    // un cambio de dato ilumina brevemente toda la celda
+    NumberAnimation {
+        id: bumpAnim
+        target: cell; property: "bump"
+        from: 0.45; to: 0.0; duration: Design.durSlow; easing.type: Easing.OutCubic
+    }
 
-        // brillo de vidrio en el borde superior
-        Rectangle {
-            anchors { top: parent.top; left: parent.left; right: parent.right
-                      leftMargin: parent.radius; rightMargin: parent.radius
-                      topMargin: 1 }
-            height: 1
-            color: Qt.rgba(1, 1, 1, 0.10)
+    // ── entrada escalonada: las celdas se ENSAMBLAN, no aparecen de golpe ──
+    opacity: 0
+    property real introY: Design.sp(2)
+    transform: Translate { y: cell.introY }
+    SequentialAnimation {
+        running: true
+        PauseAnimation { duration: cell.ordinal * 45 }
+        ParallelAnimation {
+            NumberAnimation { target: cell; property: "opacity"
+                to: 1.0; duration: Design.durBase }
+            NumberAnimation { target: cell; property: "introY"
+                to: 0.0; duration: Design.durSlow
+                easing.type: Design.easeType; easing.bezierCurve: Design.easeCurve }
         }
     }
 
-    // barra de acento a la izquierda — el color de firma del dato
+    // ── superficie holográfica ─────────────────────────────────────────────
+    HoloFrame {
+        anchors.fill: parent
+        accent: cell._accent
+        radius: Design.widgetRadius
+        extraLift: cell.bump
+    }
+
+    // barra de acento a la izquierda — degradado (emisor arriba) + punto
     Rectangle {
         anchors { left: parent.left; top: parent.top; bottom: parent.bottom
-                  topMargin: Design.sp(1); bottomMargin: Design.sp(1) }
+                  topMargin: Design.sp(1); bottomMargin: Design.sp(1)
+                  leftMargin: 1 }
         width: 2.5
         radius: 1.5
+        opacity: cell.absent ? 0.30 : 0.95
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: cell._accent }
+            GradientStop { position: 1.0
+                color: Qt.rgba(cell._accent.r, cell._accent.g, cell._accent.b, 0.25) }
+        }
+        Behavior on opacity { NumberAnimation { duration: Design.durBase } }
+    }
+    Rectangle {   // emisor: chispa en la cabeza de la barra
+        visible: !cell.absent
+        x: 1 + 1.25; y: Design.sp(1) - 1
+        width: 4; height: 4; radius: 2
         color: cell._accent
-        opacity: cell.absent ? 0.35 : 0.95
-        Behavior on color { ColorAnimation { duration: Design.durBase } }
+        opacity: 0.5 + 0.5 * Math.min(1.0, 0.25 + Design.coreEnergy * 1.6 + cell.bump)
     }
 
     Column {
@@ -81,7 +128,9 @@ Item {
             }
             Text {
                 id: valueText
-                text: cell.absent ? "—" : cell.value
+                text: cell.absent ? "—"
+                    : cell.parsed ? (cell.rolled.toFixed(cell.parsed.dec) + cell.parsed.suf)
+                    : cell.value
                 color: cell._value
                 font.family: Design.fontMono
                 font.pixelSize: cell.vertical ? Design.fsBody : Design.fsTitle

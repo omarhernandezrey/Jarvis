@@ -76,6 +76,19 @@ Item {
         Behavior on border.color { ColorAnimation { duration: Design.durFast } }
         Behavior on border.width { NumberAnimation { duration: Design.durFast } }
 
+        // corchetes de mira: mismo lenguaje que el resto del HUD. Sin fondo ni
+        // borde propios (el campo ya los pinta); sólo las esquinas, que se
+        // encienden con el foco y con la energía del núcleo.
+        HoloFrame {
+            anchors.fill: parent
+            fillSurface: false
+            showBorder: false
+            radius: field.radius
+            accent: bar.busy ? Design.azure
+                  : editor.activeFocus ? Design.cyan : Design.textSecondary
+            extraLift: editor.activeFocus ? 0.22 : 0.0
+        }
+
         // brillo de vidrio en el borde superior (look "widget moderno")
         Rectangle {
             anchors { top: parent.top; left: parent.left; right: parent.right
@@ -89,13 +102,18 @@ Item {
         // un toque en cualquier parte del campo enfoca el editor
         TapHandler { onTapped: editor.forceActiveFocus() }
 
-        // "generating": barrido azul lento en el borde inferior
+        // "generating": un cometa (degradado) recorre el borde inferior
         Rectangle {
             visible: bar.busy
-            height: 1
-            width: parent.width * 0.35
-            y: parent.height - 1
-            color: Design.azure
+            height: 1.5
+            width: parent.width * 0.30
+            y: parent.height - 1.5
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "transparent" }
+                GradientStop { position: 0.5; color: Design.cyan }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
             SequentialAnimation on x {
                 running: bar.busy; loops: Animation.Infinite
                 NumberAnimation { from: 0; to: field.width * 0.65
@@ -167,6 +185,12 @@ Item {
             width: Design.sp(2.75); height: Design.sp(3.25)
             x: Design.sp(4)
             y: bar._vpad + (bar.lineH - height) / 2
+            // el prompt de la entidad: pleno con foco/trabajo, atenuado y
+            // "respirando" con la energía del núcleo en reposo.
+            opacity: (editor.activeFocus || bar.busy)
+                     ? 1.0
+                     : 0.55 + 0.35 * Math.min(1.0, Design.coreEnergy * 2.2)
+            Behavior on opacity { NumberAnimation { duration: Design.durBase } }
             onPaint: {
                 var ctx = getContext("2d"); ctx.reset()
                 var w = width, h = height
@@ -195,12 +219,26 @@ Item {
             }
         }
 
+        // pista de envío: ↵ tenue a la derecha. Reserva su hueco siempre (sin
+        // reflujo); se enciende cuando hay algo que enviar.
+        Text {
+            id: sendHint
+            anchors { right: parent.right; rightMargin: Design.sp(3.5)
+                      verticalCenter: parent.verticalCenter }
+            text: "↵"
+            color: bar.busy ? Design.azure : Design.textMeta
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsBody
+            opacity: (editor.text.length > 0 && !bar.busy) ? 0.75 : 0.0
+            Behavior on opacity { NumberAnimation { duration: Design.durFast } }
+        }
+
         // ── editor ──────────────────────────────────────────────────────
         Flickable {
             id: flick
             anchors {
                 left: chevron.right; leftMargin: Design.sp(2.5)
-                right: parent.right; rightMargin: Design.sp(4)
+                right: parent.right; rightMargin: Design.sp(8)
                 top: parent.top; bottom: parent.bottom
                 topMargin: bar._vpad; bottomMargin: bar._vpad
             }

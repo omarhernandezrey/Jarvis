@@ -37,13 +37,29 @@ Item {
         font.letterSpacing: 0.6
         style: Text.Outline; styleColor: Design.textEdge
     }
+    // regla vertical del turno: degradado que nace brillante en el NODO
+    // (donde el prompt toca el espinazo) y se apaga hacia abajo.
     Rectangle {
         x: Design.sp(17)
         y: 2
         width: 1
         height: turn.implicitHeight - Design.sp(4)
-        color: turn._accent
         opacity: kind === "error" ? 0.95 : 0.7
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: turn._accent }
+            GradientStop { position: 1.0
+                color: Qt.rgba(turn._accent.r, turn._accent.g, turn._accent.b, 0.18) }
+        }
+    }
+    // nodo: pequeño rombo en la cabeza de la regla, en el color del canal
+    Rectangle {
+        x: Design.sp(17) + 0.5 - 2.5
+        y: 2
+        width: 5; height: 5
+        radius: 1
+        rotation: 45
+        color: turn._accent
+        opacity: kind === "error" ? 1.0 : 0.85
     }
 
     Column {
@@ -70,11 +86,11 @@ Item {
                 measure: turn.measure
                 textColor: turn._bodyColor
             }
-            // cursor de bloque estilo terminal
+            // cursor de bloque estilo terminal — en el color del canal
             Text {
                 visible: turn.streaming
                 text: "▌"
-                color: Design.chatUser
+                color: turn._bodyColor
                 font.family: Design.fontMono
                 font.pixelSize: Design.fsBody
                 SequentialAnimation on opacity {
