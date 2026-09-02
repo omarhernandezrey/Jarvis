@@ -27,9 +27,6 @@ from jarvis_local.intent.parser import (
     parse_intent,
 )
 
-_B3 = pytest.mark.xfail(strict=True, reason="TAREA B3 — ecuaciones lineales")
-
-
 # ── (frase, esperado, marks) ────────────────────────────────────────────────
 CASES = [
     # ---- apps y ventanas ----
@@ -121,8 +118,10 @@ CASES = [
     ("el factorial de 5", "calculate"),            # B2
     ("20% de 350", "calculate"),                   # B2
     ("5 al cubo", "calculate"),                    # B2
-    pytest.param("resuelve x + 135 - 234 = 345", "calculate", marks=_B3),
-    pytest.param("despeja x en 2x + 4 = 10", "calculate", marks=_B3),
+    ("resuelve x + 135 - 234 = 345", "calculate"),  # B3
+    ("despeja x en 2x + 4 = 10", "calculate"),      # B3
+    ("x + 10 = 25", "calculate"),                   # B3
+    ("que significa x en algebra", "chat"),         # B3 negativo
 
     # ---- recordatorios ----
     ("recuerdame llamar a mama en 10 minutos", "set_reminder"),

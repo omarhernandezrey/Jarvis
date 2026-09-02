@@ -259,7 +259,7 @@ del agente).
 #4 (`--cov=jarvis_local.tools.calculator` ≥ 95%), #5, #7 (que `"__import__('os')"`
 y similares sigan lanzando `ValueError`).
 
-## B3 — Calculadora: ecuaciones lineales de una incógnita
+## B3 — Calculadora: ecuaciones lineales de una incógnita  ✅ COMPLETADA
 **Rama:** `fix/calculadora-ecuaciones`
 **Archivo:** `jarvis_local/tools/calculator.py` (+ posible `equation.py`)
 
