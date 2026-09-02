@@ -371,7 +371,7 @@ respuesta útil), #8.
 **Pruebas:** #1, #2 (batería: N frases que ahora resuelve sin LLM; M frases
 conversacionales que NO captura), #3, #5, #6.
 
-## C4 — Keep-alive y `num_predict` del agente
+## C4 — Keep-alive y `num_predict` del agente  ✅ COMPLETADA
 **Rama:** `fix/ollama-keepalive`
 **Archivo:** `jarvis_local/ollama_client/client.py`, `config.yaml`
 
