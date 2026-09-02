@@ -25,8 +25,14 @@ MAX_LINEAS = 5000  # rotacion simple: el log no debe crecer sin limite
 
 
 def log_decision(entrada: str, confianza: float, herramientas: list[str],
-                 salidas: list[str], resultado: str) -> None:
-    """Registra una decision de enrutamiento. Nunca lanza excepcion."""
+                 salidas: list[str], resultado: str,
+                 llm_calls: int = 0, llm_secs: float = 0.0) -> None:
+    """Registra una decision de enrutamiento. Nunca lanza excepcion.
+
+    `llm_calls` / `llm_secs` (C1): cuantas veces se llamo al modelo en este
+    turno y el tiempo total en esas llamadas. Un turno de 1 accion deberia ser
+    1 llamada; mas indica un bucle de reintentos o multi-paso que no termina.
+    """
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         registro = {
@@ -36,6 +42,8 @@ def log_decision(entrada: str, confianza: float, herramientas: list[str],
             "herramientas": herramientas,
             "resultado": resultado,
             "salida": (salidas[-1][:160] if salidas else ""),
+            "llm_calls": int(llm_calls),
+            "llm_secs": round(float(llm_secs), 2),
         }
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(registro, ensure_ascii=False) + "\n")

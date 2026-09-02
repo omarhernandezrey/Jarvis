@@ -254,18 +254,28 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     resultados: list[str] = []
     reintentos = 0
 
+    # Instrumentacion (C1): nº de llamadas al LLM y tiempo total en ellas.
+    # Un turno de 1 accion deberia hacer 1 sola llamada; mas de 2-3 indica un
+    # bucle de reintentos o multi-paso que no termina.
+    import time as _time
+    _llm_calls = 0
+    _llm_secs = 0.0
+
     for _paso in range(max_steps + MAX_REINTENTOS):
         try:
+            _t0 = _time.perf_counter()
             msg = client.chat_with_tools(messages, tools)
+            _llm_calls += 1
+            _llm_secs += _time.perf_counter() - _t0
         except Exception as e:
             # Timeout o error de conexión: devolver error claro
             error_msg = str(e).lower()
             if "timeout" in error_msg or "timed out" in error_msg:
-                log_decision(user_message, conf, usadas, resultados, "timeout_llm")
+                log_decision(user_message, conf, usadas, resultados, "timeout_llm", llm_calls=_llm_calls, llm_secs=_llm_secs)
                 return AgentResult(
                     text="El modelo tardo demasiado en responder, senor. Intente de nuevo.",
                     confidence=conf)
-            log_decision(user_message, conf, usadas, resultados, f"error_llm:{e}")
+            log_decision(user_message, conf, usadas, resultados, f"error_llm:{e}", llm_calls=_llm_calls, llm_secs=_llm_secs)
             return AgentResult(
                 text="Tuve un inconveniente al comunicarme con el modelo, senor.",
                 confidence=conf)
@@ -277,13 +287,13 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
             if usadas:
                 # Ya hicimos el trabajo: la salida de las herramientas ES la
                 # respuesta. El texto del modelo solo la diluiria.
-                log_decision(user_message, conf, usadas, resultados, "ok")
+                log_decision(user_message, conf, usadas, resultados, "ok", llm_calls=_llm_calls, llm_secs=_llm_secs)
                 return AgentResult(text="\n".join(resultados), tools_used=usadas,
                                    confidence=conf)
 
             # Sin herramientas y sin texto util: no sabemos que quiere.
             if not texto:
-                log_decision(user_message, conf, [], [], "sin_respuesta")
+                log_decision(user_message, conf, [], [], "sin_respuesta", llm_calls=_llm_calls, llm_secs=_llm_secs)
                 return AgentResult(text="", confidence=conf)
 
             # Texto sin herramientas: puede ser una negativa honesta, una
@@ -342,6 +352,7 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
         break
 
     log_decision(user_message, conf, usadas, resultados,
-                 "ok" if usadas else "limite_de_pasos")
+                 "ok" if usadas else "limite_de_pasos",
+                 llm_calls=_llm_calls, llm_secs=_llm_secs)
     return AgentResult(text="\n".join(resultados), tools_used=usadas,
                        confidence=conf)

@@ -216,6 +216,22 @@ def test_peticion_simple_usa_una_sola_llamada_al_llm():
 
 
 @skip_sin_ollama
+def test_c1_instrumentacion_registra_llamadas_al_llm():
+    """TAREA C1: cada turno del agente deja en decisions.jsonl cuantas veces
+    se llamo al modelo (llm_calls) y el tiempo (llm_secs)."""
+    import json
+
+    from jarvis_local.agent import decision_log
+
+    client = _cliente(_llamada("contar_chiste", {}))
+    run_agent(client, "cuentame un chiste")
+
+    d = json.loads(decision_log.LOG_PATH.read_text(encoding="utf-8").splitlines()[-1])
+    assert d["llm_calls"] == 1
+    assert "llm_secs" in d and d["llm_secs"] >= 0.0
+
+
+@skip_sin_ollama
 def test_reintento_ante_argumentos_faltantes():
     client = _cliente(
         _llamada("clima", {}),                    # sin city... pero city es opcional
