@@ -395,7 +395,7 @@ conversacionales que NO captura), #3, #5, #6.
 
 **Pruebas:** #1, #3, y el informe de `eval/` adjunto al commit.
 
-## C6 — Caché de decisiones del agente
+## C6 — Caché de decisiones del agente  ✅ COMPLETADA
 **Rama:** `feat/agente-cache`
 **Archivo:** `jarvis_local/agent/loop.py` (+ `agent/decision_cache.py`)
 
