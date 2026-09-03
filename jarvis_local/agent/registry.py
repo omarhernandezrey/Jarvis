@@ -190,11 +190,8 @@ def _delete_file(path: str):
 
 
 def _run_command(command: str):
-    # Defensa en profundidad: verificar blocklist antes de delegar
-    from jarvis_local.safety.permissions import is_command_blocked
-    blocked, reason = is_command_blocked(command)
-    if blocked:
-        return f"Comando bloqueado: {reason}"
+    # Un solo guardia: execute_command llama a validate_shell_command
+    # (safety.permissions), el unico punto que valida todo comando de shell.
     from jarvis_local.tools.terminal import execute_command
     return execute_command(command)
 

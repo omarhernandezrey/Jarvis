@@ -3,6 +3,7 @@ JARVIS Local - Permisos y Whitelists (Fase 2)
 Define carpetas, apps y comandos permitidos. Valida rutas contra escapes.
 """
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -162,12 +163,52 @@ BLOCKED_CMD_KEYWORDS = [
     "restart-computer", "stop-computer",
     "stop-process", "set-itemproperty", "new-itemproperty",
     "remove-itemproperty", "set-acl",
+    # cmdlets de almacenamiento de PowerShell: "formatea el disco" hacia que
+    # el agente emitiera `Get-Disk | ... | Clear-Disk` y no lo frenaba nada.
+    "get-disk", "set-disk", "clear-disk", "initialize-disk", "update-disk",
+    "format-volume", "new-partition", "remove-partition", "resize-partition",
+    "get-partition", "set-partition",
     # bash/Linux: solo matchean si el token aparece de verdad, asi que
     # convivir en la misma lista con las palabras de Windows no causa falsos
     # positivos de un lado ni del otro.
     "sudo", "dd", "mkfs", "passwd", "userdel", "visudo",
     "iptables", "ufw", "crontab",
+    "wipefs", "parted", "fdisk", "cfdisk", "sgdisk", "mkswap", "shred",
+    "chpasswd", "usermod", "groupdel", "chattr",
 ]
+
+# Operadores que encadenan o inyectan comandos. El pipe simple `|` NO esta:
+# es legitimo para filtrar salidas ("ps aux | grep foo").
+_SHELL_CHAINING = re.compile(r'[;`]|&&|\|\||\$\(|\$\{|>\s*/dev/|<\(')
+
+
+def _sanitize_shell(command: str) -> str:
+    """Colapsa saltos de linea/tabs/espacios. Comun a plan y ejecucion."""
+    limpio = command.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    return re.sub(r"\s+", " ", limpio).strip()
+
+
+def validate_shell_command(command: str) -> tuple[bool, str, str]:
+    """GUARDIA UNICO de todo comando de shell (parser, agente, terminal…).
+
+    Todo camino que acabe en `subprocess` con un shell pasa por aqui. Si hay
+    mas de una puerta con reglas distintas, hay un agujero: por eso esta es la
+    unica.
+
+    Returns:
+        (permitido, motivo, comando_saneado)
+    """
+    saneado = _sanitize_shell(command)
+    if not saneado:
+        return False, "Comando vacio", saneado
+    if _SHELL_CHAINING.search(saneado):
+        return (False,
+                "Comando bloqueado: operadores de encadenamiento/inyeccion no "
+                "permitidos ( ; ` && || $() ${} >/dev/ )", saneado)
+    bloqueado, motivo = is_command_blocked(saneado)
+    if bloqueado:
+        return False, motivo, saneado
+    return True, "", saneado
 
 
 def is_within_allowed(path_str: str) -> tuple[bool, Path | None]:

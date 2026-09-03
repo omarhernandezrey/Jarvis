@@ -79,6 +79,17 @@ def _client():
         # accionable; la re-autorizacion se hace con `--reauth-spotify`.
         open_browser=False,
     )
+    # Sin token cacheado valido NO se crea el cliente: `spotipy.Spotify`
+    # llamaria a auth.get_access_token() sin codigo, que imprime la URL de
+    # autorizacion y BLOQUEA en input() esperando que el usuario pegue la
+    # URL de retorno -> cuelga JARVIS (visto en el banco de pruebas).
+    # get_cached_token() lee/refresca el cache sin pedir nada por stdin.
+    try:
+        token = auth.get_cached_token()
+    except Exception:  # noqa: BLE001
+        token = None
+    if not token:
+        return None
     return spotipy.Spotify(auth_manager=auth)
 
 
@@ -299,7 +310,14 @@ def play_song(query: str) -> ActionPlan:
     sp = _client()
     if sp is None:
         plan.status = ActionStatus.ERROR
-        plan.result = "Falta instalar la libreria de Spotify: pip install spotipy."
+        try:
+            import spotipy  # noqa: F401
+        except ImportError:
+            plan.result = "Falta instalar la libreria de Spotify: pip install spotipy."
+        else:
+            # spotipy esta, pero no hay token cacheado valido: reautorizar.
+            _CACHE_PATH.unlink(missing_ok=True)
+            plan.result = REAUTH_MSG
         return plan
 
     try:
