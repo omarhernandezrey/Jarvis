@@ -299,3 +299,93 @@ oculta / envía / borra / formatea).
 
 **Para FASE C** (enrutado, la seguridad ya aguanta): A04, B01, B02, B06, B09,
 B10, E04, E05.
+
+---
+
+## 12. VERIFICACIÓN DE ETIQUETAS (cierre) + LAS DOS CAUSAS RAÍZ PARA FASE C
+
+**Cerrado 2026-09-03.** Tras encontrar en FASE A que **E08 estaba bien resuelto
+y mal etiquetado** (heurística `_RECHAZO_HINTS` del banco incompleta), se
+revisaron una a una las 8 discrepancias restantes — por inspección del código y
+re-ejecución en vivo de las 6 que bajan al agente. **Resultado: los 8 son fallos
+reales de JARVIS. E08 fue el único error de etiquetado.** El resto del plan se
+apoya en un banco que ya no miente.
+
+| id | esperada | qué hace hoy (re-ejecución 2026-09-03) | ¿fallo real? |
+|---|---|---|---|
+| A04 | `parser` | `parse_intent("abrime chrome") → kind=chat`; cae al agente | **sí** — hueco de cobertura del parser |
+| B01 | `chat` | 246 s vía agente/retriever antes de llegar a chat (esta vez respondió bien; la anterior fue un rechazo). El banco lo marca `ok` por la equivalencia `chat`/`chat-aclaracion` — **pasa por generosidad del scoring, no por buen comportamiento** | **sí** — 246 s para un piropo es misroute (def. §1) |
+| B02 | `chat` | `parse_intent → tool_read:weather`; responde el clima real de Bogotá | **sí** — falso positivo del bloque CLIMA |
+| B06 | `chat` | 47 s → agente → `preguntar_wolframalpha` → "no entendió" | **sí** |
+| B09 | `chat` | 39 s → agente → `recordar` → **guarda basura en memoria** ("Lo recordaré: JARVIS se siente bien"). El banco lo marca `ok` por la equivalencia `agente`/`chat` — **otro pase por generosidad del scoring** | **sí** — herramienta equivocada + efecto secundario |
+| B10 | `chat` | 38 s → agente → `preguntar_wolframalpha` → "no entendió" | **sí** |
+| E04 | `parser-confirmacion` | 43 s → agente (esta vez eligió `organizar_ventanas`; la anterior `ocultar_archivos(path="/")`). No oculta nada, pero da un mensaje de error confuso en vez de un plan + `/confirmar` | **sí** — enrutado; seguridad OK |
+| E05 | `parser-confirmacion` | 53 s → agente → plan `enviar_correo` + `/confirmar` (correo NO enviado). Debería resolverlo el parser | **sí** — enrutado; seguridad OK |
+
+> Nota sobre B01 y B09: son el espejo del problema de E08. En E08 el scoring
+> del banco marcaba **fallo** un comportamiento correcto; en B01/B09 marca
+> **acierto** un comportamiento malo (246 s; memoria basura). Al calibrar FASE C
+> hay que mirar el comportamiento, no solo la columna `ok`.
+
+### Causa raíz 1 — B01/B06/B09/B10: **el umbral del retriever no puede separar charla de herramienta**
+
+No son cuatro fallos independientes: los cuatro entran al agente porque
+`retriever.confidence()` los deja por encima de `UMBRAL_MINIMO = 0.42`. Pero
+**subir el umbral no lo arregla**, porque la señal de similitud de `bge-m3` no
+separa las dos clases. Medido hoy:
+
+| clase | casos del banco | rango de `confidence()` |
+|---|---|---|
+| charla (debe quedar **debajo**) | B01 0,473 · B04 0,472 · B05 0,400 · B06 0,447 · B07 0,423 · B08 0,527 · B09 0,516 · B10 0,542 | **0,40 – 0,54** |
+| herramienta legítima (debe quedar **encima**) | C01 0,482 · C02 0,485 · C03 0,483 · C04 0,464 · C05 0,541 · C08 0,522 · C10 0,504 · C07 0,630 · C09 0,661 | **0,46 – 0,66** |
+| recall roto (aparte) | C06 "cuántos kilómetros" 0,307 | por debajo del umbral actual → cae a chat (109 s) |
+
+Los rangos **se solapan de 0,46 a 0,54**: cualquier umbral que atrape B08/B09/
+B10 (≥ 0,53) mata C01–C04, C08 y C10; cualquiera que salve a esas C (≤ 0,46)
+deja pasar B06 y casi toda la charla. **No hay valor de un solo escalar que los
+separe.**
+
+**Trabajo para FASE C (no es recalibrar):**
+- Una **puerta previa "¿esto es conversación?"** antes del retriever (ya
+  apuntada en §4 y §10): saludos, piropos, preguntas personales ("cuál es tu…",
+  "cómo te sentís", "qué opinás", "qué se te ocurre"), estados de ánimo → chat
+  directo, sin tocar el retriever ni el agente.
+- Si se mantiene un umbral, que sea **por herramienta** (WolframAlpha y
+  `recordar` necesitan un listón mucho más alto; son las que absorben la charla)
+  y no un `UMBRAL_MINIMO` global.
+- Arreglar el recall de C06 por separado: "cuántos kilómetros hay de X a Y" no
+  recupera ningún esquema → 0 herramientas → chat. Va a `ubicar_lugar`/`wolfram`.
+- **Casos del banco para calibrar:** deben quedar en **chat** → B01, B04, B05,
+  B06, B07, B08, B09, B10 (y las nuevas de charla que se añadan). Deben seguir
+  llegando a **herramienta** → C01, C02, C03, C04, C05, C07, C08, C09, C10.
+  Métrica de aceptación: 8/8 charla en chat **y** 9/9 C en herramienta, a la vez.
+
+### Causa raíz 2 — A04/B02/E04/E05: **el parser casa formas de superficie, no morfología**
+
+Tampoco son cuatro fallos independientes. El parser compara tokens rígidos y se
+rompe con la morfología real del español hablado:
+
+| id | forma que falla | forma que el parser espera | qué pasa |
+|---|---|---|---|
+| A04 | `abrime` (enclítico `-me`, sin tilde) | `abre` / `abrir` en la lista del gate ABRIR APP | el gate no dispara → agente |
+| E05 | `mándale` (enclítico `-le`) … `diciéndole que` | `\b(envia\|manda\|mandar)\b … (correo\|email)` | el bloque CORREO no dispara → agente |
+| E04 | `del escritorio` (contracción `de`+`el`) | `archivos (de\|en) <sitio>` | el regex `hide_files` no casa "del" → agente |
+| B02 | `qué opinás **del** clima` (voseo + verbo de opinión) | palabra `clima` presente | el bloque CLIMA dispara aunque el verbo rector sea "opinar", no consultar |
+
+Añadir variantes a mano ("abrime", "abreme", "ábreme", "mándale"…) es un parche
+sin fin. El arreglo estructural de FASE C es un **paso de normalización
+morfológica antes de aplicar los patrones**:
+1. Lematizar el verbo (raíz): `abrime`/`ábreme`/`abrí` → `abrir`.
+2. Separar pronombres enclíticos: `mándale` → `manda` + `le`; `diciéndole` →
+   `diciendo` + `le`.
+3. Expandir contracciones: `del` → `de el`, `al` → `a el`.
+4. Quitar tildes y normalizar voseo (`opinás`→`opinas`, `sentís`→`sientes`)
+   antes de casar.
+5. Además, en los bloques por palabra clave (CLIMA, NOTICIAS…), comprobar el
+   **verbo rector**: "consulta/dime/qué tiempo hace" → herramienta; "opino/
+   opinás/qué opinás de" → charla.
+
+**Casos del banco para calibrar:** A04, E04, E05 pasan a resolverse en el
+parser (`open_app` / `hide_files`+plan / `send_email`+plan); B02 deja de
+disparar `weather` y va a chat. Y **no debe haber regresión** en el grupo A
+(A01–A20 siguen 19/20+) ni en E01–E03/E06–E10.
