@@ -43,11 +43,23 @@ def test_play_song_no_credentials():
 
 
 def test_play_song_missing_spotipy():
+    import sys
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=None), \
+         patch.dict(sys.modules, {"spotipy": None}):
+        plan = play_song("bohemian rhapsody")
+        assert plan.status == ActionStatus.ERROR
+        assert "spotipy" in plan.result.lower()
+
+
+def test_play_song_sin_token_pide_reautorizar():
+    """_client() devuelve None si no hay token cacheado valido (para no
+    bloquear en input() con el flujo OAuth). play_song da el comando de reauth."""
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=None):
         plan = play_song("bohemian rhapsody")
         assert plan.status == ActionStatus.ERROR
-        assert "spotipy" in plan.result.lower()
+        assert "--reauth-spotify" in plan.result
 
 
 def test_play_song_not_found():

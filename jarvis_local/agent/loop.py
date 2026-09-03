@@ -73,12 +73,19 @@ _ANAFORA = re.compile(
 
 # Deicticos: palabras que senalan a algo sin nombrarlo. Una orden construida
 # solo con estos no tiene objeto identificable.
+# El espanol pega el cliticо al verbo ("hazlo", "buscalo", "mandalo", "ponlo"):
+# esas formas tambien son ordenes sin objeto y hay que pedir aclaracion.
+_MULETILLA = r'(?:\s+(?:ya|pues|porfa|porfis|parce|hermano|man|vale|si|de\s+una))*'
 _VAGO = re.compile(
-    r'^\s*(?:hazlo|haz\s+eso|hazme\s+eso|dale|listo|eso|ahi|'
-    r'(?:abre|abreme|cierra|busca|buscame|pon|ponme|dame|muestra|muestrame|'
-    r'ejecuta|corre|borra|elimina|toma|manda|envia|reproduce|lanza|inicia)'
+    r'^\s*(?:'
+    r'hazlo|hazlo\s+ya|haz\s+eso|hazme\s+eso|hacelo|dale|dele|listo|eso|ahi|'
+    r'(?:abre|abreme|cierra|cierralo|busca|buscalo|buscame|pon|ponlo|ponme|'
+    r'dame|damelo|muestra|muestralo|muestrame|ejecuta|ejecutalo|corre|borra|'
+    r'borralo|elimina|eliminalo|toma|tomalo|manda|mandalo|mandelo|envia|envialo|'
+    r'reproduce|reproducelo|lanza|lanzalo|inicia|trae|traelo|dilo|dimelo|hazme)'
     r'(?:\s+(?:eso|esto|aquello|ese|esa|ahi|alli|el|la|lo|los|las|algo|'
-    r'una?\s+cosa))?\s*[.!?]*)\s*$',
+    r'una?\s+cosa))?'
+    r')' + _MULETILLA + r'\s*[.!?]*\s*$',
     re.IGNORECASE)
 
 # "necesito ayuda con algo", "quiero hacer una cosa": peticion sin contenido.
@@ -107,12 +114,13 @@ def _consulta_de_recuperacion(message: str, history: list[dict] | None) -> str:
 def _es_orden_vaga(message: str) -> bool:
     """Es una ORDEN pero sin objeto: hay que preguntar, no adivinar ni callar.
 
-    Distingue "hazlo" / "abre eso" / "busca" (ordenes incompletas -> aclarar)
-    de "de que color es el cielo" (conversacion -> responder). Ambas dan
-    confianza semantica baja, pero exigen respuestas opuestas: ante una orden
-    incompleta, quedarse callado o divagar es el peor resultado posible.
+    Distingue "hazlo" / "abre eso" / "mándalo pues" (ordenes incompletas ->
+    aclarar) de "de que color es el cielo" (conversacion -> responder). Ambas
+    dan confianza semantica baja, pero exigen respuestas opuestas: ante una
+    orden incompleta, quedarse callado o divagar es el peor resultado posible.
     """
-    m = message.strip()
+    from jarvis_local.intent.parser import _sin_tildes
+    m = _sin_tildes(message.strip())  # "mándalo" -> "mandalo": el patron es ASCII
     if not m or len(m.split()) > 6:
         return False
     return bool(_VAGO.match(m) or _SIN_OBJETO.search(m))
@@ -297,12 +305,17 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     consulta = _consulta_de_recuperacion(user_message, history)
     conf = confidence(consulta)
 
-    # Orden sin objeto ("hazlo", "abre eso", "busca") y sin conversacion previa
-    # de donde deducirlo: preguntar. Se comprueba ANTES de mirar la confianza,
-    # porque el retriever puede estar muy seguro de la ACCION ("abre") y aun asi
-    # no haber ningun objeto que abrir. Ejecutar aqui seria adivinar.
-    # Con historial no se corta: "abreme la segunda" SI es resoluble con contexto.
-    if _es_orden_vaga(user_message) and not history:
+    # Orden sin objeto ("hazlo", "buscalo", "mandalo pues"): preguntar, nunca
+    # adivinar ni fabricar. Antes solo se cortaba SIN historial; el banco de
+    # pruebas encontro que basta un turno previo ("hola") para saltarse el
+    # guardia y que el chat invente ("hazlo" -> "la respuesta es 45").
+    # Una orden puramente deictica no gana nada con el historial: no hay
+    # antecedente accion+objeto. Solo se deja pasar cuando HAY historial Y la
+    # frase es anaforica ("abreme la segunda", "abre eso" tras "muestrame las
+    # fotos"): ahi el contexto si puede resolverla. Sin historial, cualquier
+    # orden vaga -> aclarar.
+    from jarvis_local.intent.parser import es_anaforica
+    if _es_orden_vaga(user_message) and not (history and es_anaforica(user_message)):
         texto = ("Que desea que haga exactamente, senor? Necesito que me "
                  "precise la accion o el objeto.")
         log_decision(user_message, conf, [], [texto], "aclaracion_orden_vaga")

@@ -442,9 +442,85 @@ def informe(filas: list[dict], prefill: list[dict] | None) -> str:
     return "\n".join(L)
 
 
+_CHAT_PROBE_FRASES = [
+    "explicame rapidito que es un contenedor de docker",
+    "cual es tu color favorito",
+    "que se te ocurre para el almuerzo de hoy",
+    "vos si sos bacano",
+]
+
+
+def _tok_aprox(texto: str) -> int:
+    """~1 token cada 4 chars (aprox. para es)."""
+    return max(1, len(texto) // 4)
+
+
+def desglose_chat() -> list[dict]:
+    """ROADMAP FASE 1 punto 2: qué compone la ENTRADA del chat directo (capa 4)
+    y cuánto cuesta SOLO la llamada al chat (sin el agente que corre antes).
+    NO arregla nada: deja los datos."""
+    import httpx
+
+    from jarvis_local.config import get_config
+    from jarvis_local.jarvis import SYSTEM_PROMPT, Jarvis
+
+    j = Jarvis()
+    cfg = get_config()["ollama"]
+    host, model = cfg["host"], cfg["model"]
+    filas = []
+    for frase in _CHAT_PROBE_FRASES:
+        partes = {"system_txt": SYSTEM_PROMPT}
+        ctx = j.memory_context.build_context()
+        if ctx:
+            partes["memoria_manual"] = ctx
+        if j.auto_recall is not None:
+            auto = j.auto_recall.build_context(frase)
+            if auto:
+                partes["auto_recall"] = auto
+        hist = j.history.get_messages()
+        sys_content = "\n\n".join(partes.values())
+        messages = [{"role": "system", "content": sys_content}, *hist,
+                    {"role": "user", "content": frase}]
+        payload = {"model": model, "messages": messages, "stream": False,
+                   "keep_alive": cfg.get("keep_alive", "30m"),
+                   "options": {"num_ctx": cfg.get("num_ctx", 2048),
+                               "num_predict": cfg.get("num_predict", 120),
+                               "temperature": 0.7}}
+        t0 = time.perf_counter()
+        try:
+            d = httpx.post(f"{host}/api/chat", json=payload, timeout=240).json()
+        except Exception as e:  # noqa: BLE001
+            filas.append({"frase": frase, "error": str(e)})
+            continue
+        wall = time.perf_counter() - t0
+        ns = 1_000_000
+        filas.append({
+            "frase": frase[:45],
+            "chars_system": len(sys_content),
+            "tok_system_txt": _tok_aprox(partes["system_txt"]),
+            "tok_memoria_manual": _tok_aprox(partes.get("memoria_manual", "")),
+            "tok_auto_recall": _tok_aprox(partes.get("auto_recall", "")),
+            "n_historial": len(hist),
+            "prompt_tokens": d.get("prompt_eval_count"),
+            "prefill_ms": round(d.get("prompt_eval_duration", 0) / ns),
+            "out_tokens": d.get("eval_count"),
+            "decode_ms": round(d.get("eval_duration", 0) / ns),
+            "load_ms": round(d.get("load_duration", 0) / ns),
+            "total_ms": round(d.get("total_duration", 0) / ns),
+            "wall_ms": round(wall * 1000),
+        })
+    return filas
+
+
 def main() -> None:
     solo_clasificar = "--solo-clasificar" in sys.argv
     con_prefill = "--prefill" in sys.argv
+    solo_chat_probe = "--chat-probe" in sys.argv
+
+    if solo_chat_probe:
+        for f in desglose_chat():
+            print(json.dumps(f, ensure_ascii=False))
+        return
 
     out_dir = _RAIZ / "scripts" / "_out"
     out_dir.mkdir(exist_ok=True)

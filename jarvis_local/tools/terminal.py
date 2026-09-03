@@ -2,30 +2,11 @@
 JARVIS Local - Herramientas de Terminal (Fase 2)
 Preparacion y ejecucion de comandos PowerShell/CMD.
 """
-import re
 import subprocess
 
 from jarvis_local.config import IS_WINDOWS
-from jarvis_local.safety.permissions import is_command_blocked
+from jarvis_local.safety.permissions import validate_shell_command
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel, policy
-
-# Metacaracteres de shell que permiten ejecución de comandos arbitrarios
-# NOTA: No incluimos | (pipe) porque es un operador legítimo para filtrar salidas
-_INJECTION_PATTERN = re.compile(r'[;`]|&&|\|\||\$\(')
-
-
-def _has_shell_metacharacters(command: str) -> bool:
-    """Detecta metacaracteres de shell que permiten ejecución arbitraria."""
-    return bool(_INJECTION_PATTERN.search(command))
-
-
-def _sanitize_command(command: str) -> str:
-    """Sanitiza un comando eliminando metacaracteres peligrosos."""
-    # Eliminar caracteres de control y saltos de línea
-    clean = command.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
-    # Eliminar espacios múltiples
-    clean = re.sub(r'\s+', ' ', clean).strip()
-    return clean
 
 
 def _shell_argv(command: str) -> list[str]:
@@ -37,19 +18,9 @@ def _shell_argv(command: str) -> list[str]:
 
 
 def plan_command(command: str) -> ActionPlan:
-    blocked, reason = is_command_blocked(command)
-    if blocked:
-        return policy.block(f"Comando bloqueado: {reason}")
-
-    # Sanitizar el comando
-    clean_command = _sanitize_command(command)
-
-    # Verificar metacaracteres de shell peligrosos
-    if _has_shell_metacharacters(clean_command):
-        return policy.block(
-            "Comando contiene operadores de inyeccion no permitidos: "
-            "; ` && || $()"
-        )
+    permitido, motivo, clean_command = validate_shell_command(command)
+    if not permitido:
+        return policy.block(motivo)
 
     plan = ActionPlan(
         action="ejecutar_comando",
@@ -69,19 +40,10 @@ def plan_command(command: str) -> ActionPlan:
 
 
 def execute_command(command: str) -> ActionPlan:
-    blocked, reason = is_command_blocked(command)
-    if blocked:
-        return policy.block(f"Comando bloqueado: {reason}")
-
-    # Sanitizar el comando antes de ejecutar
-    clean_command = _sanitize_command(command)
-
-    # Verificar metacaracteres de shell peligrosos
-    if _has_shell_metacharacters(clean_command):
-        return policy.block(
-            "Comando contiene operadores de inyeccion no permitidos: "
-            "; ` && || $()"
-        )
+    # GUARDIA UNICO: unico punto que llega a subprocess con un shell.
+    permitido, motivo, clean_command = validate_shell_command(command)
+    if not permitido:
+        return policy.block(motivo)
 
     plan = ActionPlan(
         action="ejecutar_comando",
@@ -90,6 +52,11 @@ def execute_command(command: str) -> ActionPlan:
         reason="Ejecutar comando",
     )
     try:
+        # Defensa en profundidad: aunque el llamante haya validado, se
+        # revalida justo antes de subprocess. Nada llega aqui sin pasar.
+        _ok, _motivo, clean_command = validate_shell_command(clean_command)
+        if not _ok:
+            return policy.block(_motivo)
         result = subprocess.run(
             _shell_argv(clean_command),
             capture_output=True, text=True, timeout=30, shell=False,

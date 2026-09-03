@@ -8,7 +8,7 @@ import re
 
 from jarvis_local.config import user_dir
 from jarvis_local.intent.schemas import IntentResult
-from jarvis_local.safety.permissions import is_command_blocked, is_within_allowed
+from jarvis_local.safety.permissions import is_within_allowed, validate_shell_command
 
 # El dictado (whisper) devuelve texto CON tildes: "¿cuánta batería queda?",
 # "recuérdame...". Los patrones de este parser se escribieron sin tildes, así
@@ -936,8 +936,11 @@ def parse_intent(message: str) -> IntentResult:
                                 reason=f"Cerrar {cand}")
 
     # --- ABRIR APLICACION ---
+    # "ejecuta" NO va aqui: ese verbo es para comandos de shell (run_command),
+    # y su blocklist. Antes "ejecuta rm -rf / en la terminal" se enrutaba a
+    # abrir la app "terminal" y el comando ni se validaba.
     if any(kw in m.lower() for kw in ["abre", "abrir", "abras", "abra", "lanza",
-                                      "lanzar", "inicia", "iniciar", "ejecuta"]):
+                                      "lanzar", "inicia", "iniciar"]):
         app = _match_app_name(m)
         if app:
             return IntentResult(
@@ -1186,10 +1189,11 @@ def parse_intent(message: str) -> IntentResult:
         m, re.IGNORECASE)
     if m_exec:
         cmd = m_exec.group(1).strip().strip("'\"")
-        blocked, reason = is_command_blocked(cmd)
-        if blocked:
-            return IntentResult(kind="unsupported", reason=reason,
-                                clarification=f"Comando bloqueado: {reason}")
+        # mismo guardia que la ejecucion (safety.permissions), no una copia
+        permitido, motivo, _saneado = validate_shell_command(cmd)
+        if not permitido:
+            return IntentResult(kind="unsupported", reason=motivo,
+                                clarification=motivo)
         return IntentResult(kind="tool_execute", tool="run_command",
                             arguments={"command": cmd},
                             reason="Ejecutar comando")
@@ -1206,7 +1210,7 @@ def parse_intent(message: str) -> IntentResult:
                                 arguments={"path": path}, reason="Operacion de solo lectura")
 
     # --- APPS (genérico, sin app especifica) ---
-    if any(kw in m.lower() for kw in ["abre", "abrir", "lanza", "ejecuta"]):
+    if any(kw in m.lower() for kw in ["abre", "abrir", "lanza"]):
         return IntentResult(kind="ambiguous",
                             clarification="Que aplicacion quieres abrir? Puedo abrir cualquier app instalada: dime su nombre (por ejemplo Chrome, WhatsApp, Word, Notion).",
                             reason="App no especificada")
