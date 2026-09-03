@@ -223,10 +223,10 @@ BLOQUEADO. Batería: **100 passed, 5 xfailed**. `ruff` limpio.
 **Rama:** `fix/parser-sistema-coloquial`
 **Archivo:** `jarvis_local/intent/parser.py`
 
-- [ ] Descubierto en A1: `"como anda la maquina"`, `"que tal el equipo"`,
+- [x] Descubierto en A1: `"como anda la maquina"`, `"que tal el equipo"`,
   `"como van los recursos"` → `chat` (caen al agente). Añadir patrones para que
   vayan a `system_status`.
-- [ ] Quitar el `xfail` correspondiente en `test_parser_coverage.py`.
+- [x] Quitar el `xfail` correspondiente en `test_parser_coverage.py`.
 
 **Pruebas:** #1, #2, #3, #5, #6 (frase coloquial de sistema < 3 s vs. los ~25 s
 del agente).
@@ -239,8 +239,8 @@ del agente).
 **Rama:** `fix/fast-response-saludo-hora`
 **Archivo:** `jarvis_local/fast_response.py`
 
-- [ ] El saludo genérico debe usar `datetime.now().hour` (mañana/tarde/noche).
-- [ ] `"buenas noches"` / `"buenas tardes"` / `"buenos días"` explícitos deben
+- [x] El saludo genérico debe usar `datetime.now().hour` (mañana/tarde/noche).
+- [x] `"buenas noches"` / `"buenas tardes"` / `"buenos días"` explícitos deben
   respetar lo que dijo el usuario, no devolver siempre "Buenos días".
 
 **Pruebas:** #1, #2 (parametrizado con `freezegun` o `monkeypatch` sobre
@@ -250,10 +250,10 @@ del agente).
 **Rama:** `fix/calculadora-lenguaje-natural`
 **Archivo:** `jarvis_local/tools/calculator.py` (`normalize_expression`, `_WORDS`, `_FUNCS`)
 
-- [ ] Soportar `"20% de 350"`, `"el 20 por ciento de 350"` → `0.20 * 350`.
-- [ ] Soportar `"raíz cuadrada de 144"`, `"la raíz de 144"` → `sqrt(144)`.
-- [ ] Soportar `"144 elevado a 2"`, `"2 al cubo"`, `"factorial de 5"`.
-- [ ] Mantener el AST seguro (sin `eval`, sin `Name` no permitidos).
+- [x] Soportar `"20% de 350"`, `"el 20 por ciento de 350"` → `0.20 * 350`.
+- [x] Soportar `"raíz cuadrada de 144"`, `"la raíz de 144"` → `sqrt(144)`.
+- [x] Soportar `"144 elevado a 2"`, `"2 al cubo"`, `"factorial de 5"`.
+- [x] Mantener el AST seguro (sin `eval`, sin `Name` no permitidos).
 
 **Pruebas:** #1, #2 (una decena de casos con resultado exacto esperado), #3,
 #4 (`--cov=jarvis_local.tools.calculator` ≥ 95%), #5, #7 (que `"__import__('os')"`
@@ -263,15 +263,15 @@ y similares sigan lanzando `ValueError`).
 **Rama:** `fix/calculadora-ecuaciones`
 **Archivo:** `jarvis_local/tools/calculator.py` (+ posible `equation.py`)
 
-- [ ] `"resuelve x + 135 - 234 = 345"`, `"despeja x en 2x + 4 = 10"` → `x = 444`
+- [x] `"resuelve x + 135 - 234 = 345"`, `"despeja x en 2x + 4 = 10"` → `x = 444`
   / `x = 3`. (Ejemplo insignia del README.)
-- [ ] **Decisión documentada en el commit:** solver propio (parseo simbólico
+- [x] **Decisión documentada en el commit:** solver propio (parseo simbólico
   mínimo con el AST ya existente, sin `sympy` para no engordar dependencias) vs.
   rutar a WolframAlpha. Preferencia: solver propio para lineales de 1 incógnita;
   Wolfram como fallback para lo no lineal.
-- [ ] El parser debe rutar `"resuelve …"` / `"despeja …"` a esta ruta
+- [x] El parser debe rutar `"resuelve …"` / `"despeja …"` a esta ruta
   (añadir en Fase A si no se cubrió; si no, aquí).
-- [ ] Errores claros: `"esa ecuación no es lineal, señor"` en vez de crash.
+- [x] Errores claros: `"esa ecuación no es lineal, señor"` en vez de crash.
 
 **Pruebas:** #1–#5, #7. Incluir los ejemplos exactos del README.
 
@@ -279,13 +279,13 @@ y similares sigan lanzando `ValueError`).
 **Rama:** `fix/locate-fallback`
 **Archivo:** `jarvis_local/tools/location.py`
 
-- [ ] Si `geocode_city()` (API de ciudades de Open-Meteo) no encuentra el lugar:
+- [x] Si `geocode_city()` (API de ciudades de Open-Meteo) no encuentra el lugar:
   1. reintentar con **Nominatim / OpenStreetMap** (`User-Agent` obligatorio,
      máx. 1 petición/s, `timeout` corto).
   2. si aún falla, abrir `https://www.google.com/maps/search/?api=1&query=<texto>`
      con la consulta cruda y responder *"Abrí el mapa. No pude calcular la
      distancia."*.
-- [ ] Nunca devolver *"No encontré el lugar"* para un POI conocido.
+- [x] Nunca devolver *"No encontré el lugar"* para un POI conocido.
 
 **Pruebas:** #1, #2 (mock de las dos APIs: éxito directo, fallback OSM, fallback
 Maps), #3, #5 (`Jarvis.chat("dónde queda la Torre Eiffel")` con red real →
@@ -295,12 +295,12 @@ respuesta útil), #8.
 **Rama:** `fix/gcalendar-reauth`
 **Archivo:** `jarvis_local/tools/gcalendar.py:23` (`_get_service`)
 
-- [ ] Al construir el servicio, si las credenciales están vencidas pero hay
+- [x] Al construir el servicio, si las credenciales están vencidas pero hay
   `refresh_token`, refrescar y guardar el token nuevo.
-- [ ] Si el refresh falla (`RefreshError` / `invalid_grant`): NO crashear;
+- [x] Si el refresh falla (`RefreshError` / `invalid_grant`): NO crashear;
   devolver *"El acceso a tu Google Calendar caducó, señor. Vuelve a autorizar
   con: `python -m jarvis_local.cli --reauth-calendar`"* (o el comando real).
-- [ ] Implementar ese comando/flag de re-autorización si no existe.
+- [x] Implementar ese comando/flag de re-autorización si no existe.
 
 **Pruebas:** #1, #2 (mock de credenciales: válidas / refrescables / muertas),
 #3, #5 (con el token actual real: debe dar el mensaje accionable, no un
@@ -310,7 +310,7 @@ respuesta útil), #8.
 **Rama:** `fix/spotify-reauth`
 **Archivo:** `jarvis_local/tools/spotify.py`
 
-- [ ] Mismo patrón que B5: si el token de Spotify está muerto y no se puede
+- [x] Mismo patrón que B5: si el token de Spotify está muerto y no se puede
   refrescar, mensaje accionable con el comando para re-autorizar, no un error
   técnico.
 
@@ -320,10 +320,10 @@ respuesta útil), #8.
 **Rama:** `fix/find-app-fuzzy`
 **Archivo:** `jarvis_local/tools/app_index.py:175`
 
-- [ ] Revisar por qué `find_app("android studio")` devuelve `[]` en esta máquina
+- [x] Revisar por qué `find_app("android studio")` devuelve `[]` en esta máquina
   (¿no instalada? ¿umbral de similitud demasiado alto? ¿falta sinónimo?).
-- [ ] Ajustar el umbral y/o la tabla de sinónimos para nombres compuestos.
-- [ ] Test parametrizado con **nombres reales** leídos de `data/apps_index.json`
+- [x] Ajustar el umbral y/o la tabla de sinónimos para nombres compuestos.
+- [x] Test parametrizado con **nombres reales** leídos de `data/apps_index.json`
   de la máquina (todos deben resolverse por su nombre y por 1–2 variantes).
 
 **Pruebas:** #1, #2, #3, #5, #8.
@@ -338,9 +338,9 @@ respuesta útil), #8.
 **Rama:** `feat/agente-instrumentacion`
 **Archivo:** `jarvis_local/agent/loop.py`, `jarvis_local/agent/decision_log.py`
 
-- [ ] Registrar por turno: nº de llamadas a `chat_with_tools`, tiempo de cada
+- [x] Registrar por turno: nº de llamadas a `chat_with_tools`, tiempo de cada
   una, tiempo del retriever, nº de pasos, resultado.
-- [ ] Script `scripts/bench_agente.py` que corre un set fijo de frases y vuelca
+- [x] Script `scripts/bench_agente.py` que corre un set fijo de frases y vuelca
   una tabla (frase → pasos → llamadas LLM → tiempo total) a
   `docs/AUDITORIA_2026-09.md` bajo "latencia — ANTES".
 
@@ -350,11 +350,11 @@ respuesta útil), #8.
 **Rama:** `fix/agente-bucle`
 **Archivo:** `jarvis_local/agent/loop.py` (`MAX_STEPS`, `MAX_REINTENTOS`)
 
-- [ ] `MAX_REINTENTOS: 2 → 1`. `MAX_STEPS: 3 → 2` salvo cuando
+- [x] `MAX_REINTENTOS: 2 → 1`. `MAX_STEPS: 3 → 2` salvo cuando
   `dividir_acciones` detectó multi-acción explícita.
-- [ ] Test: una petición de **1 acción simple** hace **exactamente 1** llamada a
+- [x] Test: una petición de **1 acción simple** hace **exactamente 1** llamada a
   `chat_with_tools` (mock del cliente que cuenta invocaciones).
-- [ ] Confirmar con `eval/` que el acierto no baja.
+- [x] Confirmar con `eval/` que el acierto no baja.
 
 **Pruebas:** #1, #2, #3, #5, #6 (agente 1 acción, medir antes/después).
 
@@ -362,10 +362,10 @@ respuesta útil), #8.
 **Rama:** `feat/parser-first-reforzado`
 **Archivo:** `jarvis_local/intent/parser.py` o `jarvis_local/jarvis.py`
 
-- [ ] Antes de invocar el agente, un segundo pase de patrones "casi-deterministas"
+- [x] Antes de invocar el agente, un segundo pase de patrones "casi-deterministas"
   (verbo de acción claro + objeto identificable) que resuelva sin LLM las frases
   que el parser estricto no cazó pero que son inequívocas.
-- [ ] No debe capturar conversación ni órdenes vagas (esas siguen al agente / a
+- [x] No debe capturar conversación ni órdenes vagas (esas siguen al agente / a
   la aclaración).
 
 **Pruebas:** #1, #2 (batería: N frases que ahora resuelve sin LLM; M frases
@@ -375,10 +375,10 @@ conversacionales que NO captura), #3, #5, #6.
 **Rama:** `fix/ollama-keepalive`
 **Archivo:** `jarvis_local/ollama_client/client.py`, `config.yaml`
 
-- [ ] Enviar `keep_alive` (p. ej. `"30m"`) en las llamadas, y/o documentar
+- [x] Enviar `keep_alive` (p. ej. `"30m"`) en las llamadas, y/o documentar
   `OLLAMA_KEEP_ALIVE`.
-- [ ] `agent_num_predict: 120 → 60` (el router elige, no redacta).
-- [ ] Medir el coste de la primera llamada en frío vs. caliente.
+- [x] `agent_num_predict: 120 → 60` (el router elige, no redacta).
+- [x] Medir el coste de la primera llamada en frío vs. caliente.
 
 **Pruebas:** #1, #2, #3, #6.
 
@@ -386,10 +386,10 @@ conversacionales que NO captura), #3, #5, #6.
 **Rama:** `research/modelo-router`
 **Archivos:** `jarvis_local/eval/`, `config.yaml`
 
-- [ ] Con `ollama pull llama3.2:3b` (y opcional `qwen2.5:1.5b`), correr la
+- [x] Con `ollama pull llama3.2:3b` (y opcional `qwen2.5:1.5b`), correr la
   batería de `eval/` midiendo **acierto de herramienta** y **latencia** para
   cada modelo en el paso de *tool calling*.
-- [ ] **Decisión documentada** en `docs/AUDITORIA_2026-09.md`: cambiar el modelo
+- [x] **Decisión documentada** en `docs/AUDITORIA_2026-09.md`: cambiar el modelo
   del agente o mantener `qwen2.5:3b`. Si se cambia, dejar `config.yaml` con un
   `agent_model` separado del `model` del chat.
 
@@ -399,9 +399,9 @@ conversacionales que NO captura), #3, #5, #6.
 **Rama:** `feat/agente-cache`
 **Archivo:** `jarvis_local/agent/loop.py` (+ `agent/decision_cache.py`)
 
-- [ ] Cachear `frase normalizada → (herramienta, args)` con TTL corto (p. ej.
+- [x] Cachear `frase normalizada → (herramienta, args)` con TTL corto (p. ej.
   10 min) y tamaño máximo. Una frase repetida no vuelve a pagar el LLM.
-- [ ] Invalidación: la caché es sólo para la **elección**; la ejecución (y sus
+- [x] Invalidación: la caché es sólo para la **elección**; la ejecución (y sus
   datos frescos: clima, sistema…) siempre se re-ejecuta.
 
 **Pruebas:** #1, #2 (2ª llamada idéntica no invoca `chat_with_tools`), #3, #6.
@@ -410,13 +410,13 @@ conversacionales que NO captura), #3, #5, #6.
 **Rama:** `test/latencia-presupuestos`
 **Archivo:** `test/test_latency.py`
 
-- [ ] Afirmaciones (con `pytest-timeout` y medición explícita), Ollama vivo
+- [x] Afirmaciones (con `pytest-timeout` y medición explícita), Ollama vivo
   requerido (`skipif` si no):
   - L1 instantánea `< 0.15 s`
   - L2 parser `< 0.35 s`
   - e2e frase-de-parser (`"pon X"`, `"clima en X"`) `< 3 s`
   - agente 1 acción `< 20 s`
-- [ ] Falla la CI si algún presupuesto se degrada.
+- [x] Falla la CI si algún presupuesto se degrada.
 
 **Pruebas:** #1, #2, #3, #9.
 
