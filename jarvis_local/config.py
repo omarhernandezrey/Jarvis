@@ -111,7 +111,31 @@ class ConfigManager:
             with open(CONFIG_FILE, encoding="utf-8") as f:
                 user_cfg = yaml.safe_load(f) or {}
                 ConfigManager._deep_merge(cfg, user_cfg)
+        ConfigManager._apply_env_overrides(cfg)
         return cfg
+
+    @staticmethod
+    def _apply_env_overrides(cfg: dict) -> None:
+        """Permite cambiar el modelo del agente o del chat sin editar
+        config.yaml (PLAN_HERMES FASE 5). Útil para A/B de modelos y para
+        volver a `qwen2.5:3b`/`llama3.2:3b` al instante:
+
+            JARVIS_AGENT_MODEL=hermes3:3b python -m jarvis_local.cli
+            JARVIS_CHAT_MODEL=qwen2.5:3b  ...
+
+        Mapeo:
+            JARVIS_AGENT_MODEL -> ollama.agent_model  (routing / tool calling)
+            JARVIS_CHAT_MODEL  -> ollama.model        (conversación)
+        """
+        env_map = {
+            "JARVIS_AGENT_MODEL": "agent_model",
+            "JARVIS_CHAT_MODEL": "model",
+        }
+        overrides = {clave: os.environ[var].strip()
+                     for var, clave in env_map.items()
+                     if os.environ.get(var, "").strip()}
+        if overrides:
+            cfg.setdefault("ollama", {}).update(overrides)
 
     @staticmethod
     def _deep_merge(base: dict, override: dict) -> None:

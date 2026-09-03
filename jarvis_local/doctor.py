@@ -29,6 +29,17 @@ def _check_red() -> tuple[bool, str]:
         return _linea(WARN, "Internet", "sin conexión — clima/wiki/empleo no funcionarán")
 
 
+def _modelo_soporta_tools(c, modelo: str) -> bool | None:
+    """True/False si se puede determinar por /api/show; None si no se sabe."""
+    try:
+        caps = c.get_model_info(modelo).get("capabilities")
+        if isinstance(caps, list):
+            return "tools" in caps
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _check_ollama() -> list[tuple[bool, str]]:
     from jarvis_local.config import get_config
     from jarvis_local.ollama_client.client import OllamaClient
@@ -40,9 +51,10 @@ def _check_ollama() -> list[tuple[bool, str]]:
 
     out = [_linea(OK, "Ollama", cfg["host"])]
     instalados = {m.get("name", "").split(":")[0] for m in c.list_models()}
+    agente = cfg.get("agent_model", cfg.get("model", "qwen2.5:3b"))
     requeridos = {
         "chat": cfg.get("model", "qwen2.5:3b"),
-        "agente (routing)": cfg.get("agent_model", cfg.get("model", "qwen2.5:3b")),
+        "agente (routing)": agente,
         "memoria semántica": "bge-m3",
     }
     for rol, modelo in requeridos.items():
@@ -51,6 +63,13 @@ def _check_ollama() -> list[tuple[bool, str]]:
             out.append(_linea(OK, f"Modelo {rol}", modelo))
         else:
             out.append(_linea(NO, f"Modelo {rol}", f"falta {modelo} — `ollama pull {modelo}`"))
+
+    # El modelo de routing DEBE soportar tool calling nativo. Si no, el agente
+    # no puede elegir herramientas (PLAN_HERMES FASE 5/9).
+    if agente.split(":")[0] in instalados and _modelo_soporta_tools(c, agente) is False:
+        out.append(_linea(NO, "Tool calling",
+                          f"{agente} no soporta 'tools' — usa un modelo con "
+                          "function calling (llama3.2:3b, qwen2.5:3b)"))
     return out
 
 
