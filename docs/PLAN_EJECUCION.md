@@ -24,7 +24,7 @@
 | Fase | Descripción | Estado |
 |------|-------------|--------|
 | A | Deuda abierta: push + análisis de los fallos del banco, arreglar los de seguridad | ✅ 2026-09-03 (commit `<pendiente>`) |
-| B | Catálogo único de herramientas + contrato de herramienta | ⬜ pendiente |
+| B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (rama `feat/catalogo-unico-herramientas`) |
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ⬜ pendiente |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ⬜ pendiente |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ⬜ pendiente |
@@ -60,20 +60,43 @@
       `weather`; B06/B09/B10 charla → agente/WolframAlpha/`recordar`; E04/E05 →
       agente en vez de parser (seguridad aguanta: whitelist + confirmación).
 
-## FASE B — Catálogo único y contrato de herramienta
+## FASE B — Catálogo único y contrato de herramienta ✅
 
-Va antes que la latencia a propósito: los fallos de enrutado nacen de tener dos
-catálogos que no se conocen.
-- Fusionar `_READ_TOOLS`/`_WRITE_TOOLS`/`_PLAN_TOOLS` (parser, inglés) y
-  `registry.TOOLS` (agente, 46, español) en una fuente de verdad única de la
-  que se deriven ambos. Un idioma para los nombres, justificado; los viejos
-  siguen resolviendo por alias.
-- Cada herramienta declara: nombre, descripción, esquema tipado, nivel de
-  riesgo (lectura/escritura/destructivo/sistema), si requiere confirmación,
-  cómo se verifica su efecto, cómo se revierte, qué frases del parser la
-  disparan. Reportar qué herramientas solo son alcanzables por el camino lento.
-- Aceptar cuando: dar de alta una herramienta toca un solo archivo (demostrado
-  con el diff de una de prueba) + test que falla si se declara a medias.
+Diseño: `docs/FASE_B_DISENO.md`. Decisiones: idioma canónico **español** (los
+nombres del parser quedan como alias); migración **catálogo-fuente + adaptadores**
+(no cutover: los dicts viejos se derivan, revert limpio).
+
+- [x] `jarvis_local/tools/catalog.py` — fuente única de verdad. 67 `ToolContract`
+      (46 visibles al LLM + 21 entradas finas sólo-parser). Cada uno declara
+      nombre canónico, descripción, esquema tipado, `risk` (`RiskLevel`:
+      lectura→READ, escritura→CREATE/EXECUTE, destructivo→DELETE, sistema→
+      CRITICAL), `needs_confirmation`, `verify` y `revert` (declarativos en
+      FASE B; ejecutables en FASE D), `parser_intents` + `parser_argmap`/
+      `parser_fixed` (qué emite el parser y cómo se traduce). `validate_contract`
+      corre en el import: un contrato a medias rompe el arranque.
+- [x] `agent/registry.py` (746→169 líneas) y `jarvis._READ_/_WRITE_/_PLAN_TOOLS`
+      pasan a **derivarse** del catálogo. Paridad verificada contra snapshot
+      congelado (`test/_fixtures_catalogo_baseline.json`): mismos 46 nombres y
+      **mismo orden**, esquemas byte-idénticos, `needs_confirmation` idéntico;
+      las 19+41+10 claves de los dicts viejos siguen resolviendo.
+- [x] Alta de herramienta = **un solo `ToolContract`** en catalog.py
+      (`test_alta_*` lo demuestra pasando por las 3 vistas derivadas).
+- [x] `test/test_catalog.py` (30 tests): completitud, detección de contrato a
+      medias (9 casos), alta en un archivo, paridad, informe camino lento,
+      riesgo↔confirmación.
+- [x] Informe **sólo camino lento** (`slow_path_only()`): `controlar_musica`,
+      `controlar_volumen`, `energia_del_equipo`, `organizar_ventanas`,
+      `recordar`. Inverso (`parser_only()`): 21 entradas finas (volumen/energía
+      sueltos, copiar/mover/renombrar archivo, contactos…).
+
+**Evidencia:** `ruff check .` limpio · suite completa `pytest test -q` sin
+FAILED/ERROR · cobertura de la lógica nueva de `catalog.py` (contrato,
+validador, adaptadores) 100 % vía `test_catalog.py` (los 147 no cubiertos son
+los wrappers de ejecutor movidos verbatim de `registry.py`) · banco
+`--solo-clasificar` **idéntico** a la línea base (el catálogo no toca el
+enrutado) · e2e con Ollama: `abre la calculadora`→`open_app`, `pon bohemian
+rhapsody`→`spotify_play`, `qué clima…`→`weather`, `borra el archivo…`→plan +
+`/confirmar`.
 
 ## FASE C — Latencia y enrutado
 

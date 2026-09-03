@@ -16,6 +16,7 @@ from jarvis_local.ollama_client.client import OllamaClient
 from jarvis_local.safety.logger import logger
 from jarvis_local.safety.secrets import redact_secrets
 from jarvis_local.storage.history import HistoryStore
+from jarvis_local.tools import catalog as _catalog
 
 _EXACT_TRIGGERS = [
     "responde solamente",
@@ -33,114 +34,18 @@ _TRAILING_PUNCT = ".!?\u00a1\u00bf"
 
 
 # =============================================================================
-# TOOL REGISTRY: mapeo nombre_herramienta -> función
+# CATÁLOGO DE HERRAMIENTAS
 # =============================================================================
-
-def _get_weather(args: dict) -> Any:
-    from jarvis_local.tools.location import my_location
-    from jarvis_local.tools.weather import get_weather
-    city = args.get("city", "")
-    if not city:
-        loc = my_location()
-        city = loc["city"] if loc else ""
-    if not city:
-        return "De que ciudad desea saber el clima, senor?"
-    return get_weather(city)
-
-
-def _get_calculate(args: dict) -> Any:
-    from jarvis_local.safety.policy import ActionStatus
-    from jarvis_local.tools.calculator import calculate
-    from jarvis_local.tools.wolfram import ask_wolfram, has_app_id
-    plan = calculate(args.get("expression", ""))
-    if plan.status == ActionStatus.ERROR and has_app_id():
-        wa = ask_wolfram(args.get("expression", ""))
-        if wa.status != ActionStatus.ERROR:
-            plan = wa
-    return plan
-
-
-# Herramientas de lectura (solo consultan, no modifican)
-_READ_TOOLS: dict[str, Callable[[dict], Any]] = {
-    "list_files": lambda args: __import__("jarvis_local.tools.files", fromlist=["list_files"]).list_files(args.get("path", ".")),
-    "search_files": lambda args: __import__("jarvis_local.tools.files", fromlist=["search_files"]).search_files(args.get("name", ""), args.get("path", ".")),
-    "file_info": lambda args: __import__("jarvis_local.tools.files", fromlist=["read_metadata"]).read_metadata(args.get("path", "")),
-    "list_apps": lambda args: __import__("jarvis_local.tools.apps", fromlist=["list_apps"]).list_apps(),
-    "weather": _get_weather,
-    "system_status": lambda args: __import__("jarvis_local.tools.system_info", fromlist=["system_status"]).system_status(),
-    "calendar_events": lambda args: __import__("jarvis_local.tools.gcalendar", fromlist=["upcoming_events"]).upcoming_events(),
-    "wiki": lambda args: __import__("jarvis_local.tools.wiki", fromlist=["wiki_summary"]).wiki_summary(args.get("topic", "")),
-    "news_headlines": lambda args: __import__("jarvis_local.tools.news", fromlist=["headlines"]).headlines(),
-    "calculate": _get_calculate,
-    "wolfram": lambda args: __import__("jarvis_local.tools.wolfram", fromlist=["ask_wolfram"]).ask_wolfram(args.get("question", "")),
-    "tell_joke": lambda args: __import__("jarvis_local.tools.jokes", fromlist=["tell_joke"]).tell_joke(),
-    "get_ip": lambda args: __import__("jarvis_local.tools.ip_info", fromlist=["get_ip"]).get_ip(),
-    "search_jobs": lambda args: __import__("jarvis_local.tools.jobs", fromlist=["search_jobs"]).search_jobs(args.get("puesto", ""), args.get("ciudad", "")),
-    "list_reminders": lambda args: __import__("jarvis_local.tools.reminders", fromlist=["list_reminders"]).list_reminders(),
-    "list_contacts": lambda args: __import__("jarvis_local.tools.whatsapp", fromlist=["list_contacts"]).list_contacts(),
-    "read_clipboard": lambda args: __import__("jarvis_local.tools.reader", fromlist=["read_clipboard"]).read_clipboard(),
-    "read_file": lambda args: __import__("jarvis_local.tools.reader", fromlist=["read_file_aloud"]).read_file_aloud(args.get("path", "")),
-    "daily_briefing": lambda args: __import__("jarvis_local.tools.briefing", fromlist=["daily_briefing"]).daily_briefing(),
-}
-
-# Herramientas de escritura (planificación y ejecución)
-_WRITE_TOOLS: dict[str, Callable[[dict], Any]] = {
-    "open_app": lambda args: __import__("jarvis_local.tools.apps", fromlist=["open_app"]).open_app(args.get("app", "")),
-    "create_directory": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_directory"]).create_directory(args.get("path", "")),
-    "create_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_file"]).create_file(args.get("path", ""), args.get("content", "")),
-    "copy_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["copy_file"]).copy_file(args.get("src", ""), args.get("dst", "")),
-    "move_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["move_file"]).move_file(args.get("src", ""), args.get("dst", "")),
-    "rename_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["rename_file"]).rename_file(args.get("path", ""), args.get("new_name", "")),
-    "delete_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["plan_delete"]).plan_delete(args.get("path", "")),
-    "run_command": lambda args: __import__("jarvis_local.tools.terminal", fromlist=["execute_command"]).execute_command(args.get("command", "")),
-    "open_website": lambda args: __import__("jarvis_local.tools.web", fromlist=["open_website"]).open_website(args.get("site", "")),
-    "google_search": lambda args: __import__("jarvis_local.tools.web", fromlist=["google_search"]).google_search(args.get("query", "")),
-    "youtube_play": lambda args: __import__("jarvis_local.tools.web", fromlist=["youtube_play"]).youtube_play(args.get("query", "")),
-    "spotify_play": lambda args: __import__("jarvis_local.tools.spotify", fromlist=["play_song"]).play_song(args.get("song", "")),
-    "play_music": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["play_music"]).play_music(args.get("song", "")),
-    "take_note": lambda args: __import__("jarvis_local.tools.notes", fromlist=["take_note"]).take_note(args.get("text", "")),
-    "switch_window": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["switch_window"]).switch_window(),
-    "screenshot": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["take_screenshot"]).take_screenshot(args.get("name", "")),
-    "locate": lambda args: __import__("jarvis_local.tools.location", fromlist=["locate"]).locate(args.get("place", "")),
-    "open_job": lambda args: __import__("jarvis_local.tools.jobs", fromlist=["open_job"]).open_job(args.get("number", 1)),
-    "show_jobs": lambda args: __import__("jarvis_local.tools.browser", fromlist=["show_jobs_in_browser"]).show_jobs_in_browser(args.get("puesto", ""), args.get("ciudad", "")),
-    "browser_navigate": lambda args: __import__("jarvis_local.tools.browser", fromlist=["navigate"]).navigate(args.get("url", "")),
-    "close_browser": lambda args: __import__("jarvis_local.tools.browser", fromlist=["close_browser"]).close_browser(),
-    "close_app": lambda args: __import__("jarvis_local.tools.apps", fromlist=["close_app"]).close_app(args.get("app", "")),
-    "close_all_apps": lambda args: __import__("jarvis_local.tools.apps", fromlist=["close_all_apps"]).close_all_apps(),
-    "volume_set": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["set_volume"]).set_volume(args.get("level", 50)),
-    "volume_up": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["volume_up"]).volume_up(),
-    "volume_down": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["volume_down"]).volume_down(),
-    "volume_mute": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["volume_mute"]).volume_mute(args.get("mute", True)),
-    "media_play_pause": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["media_play_pause"]).media_play_pause(),
-    "media_next": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["media_next"]).media_next(),
-    "media_previous": lambda args: __import__("jarvis_local.tools.media_controls", fromlist=["media_previous"]).media_previous(),
-    "set_reminder": lambda args: __import__("jarvis_local.tools.reminders", fromlist=["set_reminder"]).set_reminder(args.get("text", ""), args.get("minutes", 0), args.get("at", "")),
-    "cancel_reminder": lambda args: __import__("jarvis_local.tools.reminders", fromlist=["cancel_reminder"]).cancel_reminder(args.get("which", "todos")),
-    "send_whatsapp": lambda args: __import__("jarvis_local.tools.whatsapp", fromlist=["send_whatsapp"]).send_whatsapp(args.get("to", ""), args.get("message", "")),
-    "add_contact": lambda args: __import__("jarvis_local.tools.whatsapp", fromlist=["add_contact"]).add_contact(args.get("name", ""), args.get("phone", "")),
-    "lock_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["lock_pc"]).lock_pc(),
-    "shutdown_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["shutdown_pc"]).shutdown_pc(args.get("seconds", 60)),
-    "restart_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["restart_pc"]).restart_pc(args.get("seconds", 60)),
-    "cancel_shutdown": lambda args: __import__("jarvis_local.tools.power", fromlist=["cancel_shutdown"]).cancel_shutdown(),
-    "suspend_pc": lambda args: __import__("jarvis_local.tools.power", fromlist=["suspend_pc"]).suspend_pc(),
-    "minimize_all": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["minimize_all"]).minimize_all(),
-    "snap_window": lambda args: __import__("jarvis_local.tools.desktop_actions", fromlist=["snap_window"]).snap_window(args.get("direction", "")),
-}
-
-# Herramientas que requieren planificación (confirmación)
-_PLAN_TOOLS: dict[str, Callable[[dict], Any]] = {
-    "open_app": lambda args: __import__("jarvis_local.tools.apps", fromlist=["open_app"]).open_app(args.get("app", "")),
-    "create_directory": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_directory"]).create_directory(args.get("path", "")),
-    "create_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["create_file"]).create_file(args.get("path", ""), args.get("content", "")),
-    "copy_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["copy_file"]).copy_file(args.get("src", ""), args.get("dst", "")),
-    "move_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["move_file"]).move_file(args.get("src", ""), args.get("dst", "")),
-    "rename_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["rename_file"]).rename_file(args.get("path", ""), args.get("new_name", "")),
-    "delete_file": lambda args: __import__("jarvis_local.tools.files", fromlist=["plan_delete"]).plan_delete(args.get("path", "")),
-    "run_command": lambda args: __import__("jarvis_local.tools.terminal", fromlist=["plan_command"]).plan_command(args.get("command", "")),
-    "send_email": lambda args: __import__("jarvis_local.tools.email_sender", fromlist=["plan_email"]).plan_email(args.get("to", ""), args.get("subject", ""), args.get("body", "")),
-    "hide_files": lambda args: __import__("jarvis_local.tools.hidden_files", fromlist=["plan_hide"]).plan_hide(args.get("path", ""), args.get("hide", True)),
-}
+# Fuente única de verdad: jarvis_local/tools/catalog.py (PLAN_EJECUCION FASE B).
+# Estos tres dicts (que consume la RUTA DEL PARSER, más abajo en
+# _execute_tool_read / _execute_tool_write / _create_tool_plan) se DERIVAN del
+# catálogo: cada clave es un intent que emite intent/parser.py y su valor el
+# ejecutor real, ya con la traducción de argumentos hecha. Antes eran literales
+# aquí y divergían de agent/registry.py; ahora los dos catálogos salen del mismo
+# sitio. Dar de alta una herramienta = un ToolContract en catalog.py.
+_READ_TOOLS: dict[str, Callable[[dict], Any]] = _catalog.read_tools()
+_WRITE_TOOLS: dict[str, Callable[[dict], Any]] = _catalog.write_tools()
+_PLAN_TOOLS: dict[str, Callable[[dict], Any]] = _catalog.plan_tools()
 
 
 def _exact_response(message: str) -> str | None:
