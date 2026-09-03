@@ -1,15 +1,26 @@
-# PLAN HERMES — INTEGRACIÓN PROFESIONAL DE HERMES 3:3B
+# PLAN — JARVIS LOCAL ROBUSTO (post-evaluación de Hermes)
 
-> **Plan activo.** Sucede a `PLAN_MAESTRO.md` (completo el 2026-09-03, queda como
-> histórico). Mismo método: una rama por tarea → protocolo de pruebas completo
-> hasta verde → merge a `main` → marcar `[x]`.
+> **Plan activo.** Sucede a `PLAN_MAESTRO.md` (completo el 2026-09-03). Mismo
+> método: una rama por tarea → protocolo de pruebas completo hasta verde →
+> merge a `main` → marcar `[x]`.
 >
-> **Prioridad absoluta:** PRECISIÓN > SEGURIDAD > ESTABILIDAD > LATENCIA >
-> FUNCIONES NUEVAS.
+> **Resultado de la evaluación de Hermes 3:3b** (FASE 9, batería real en este
+> equipo): `llama3.2:3b` 10/12 · `qwen2.5:3b` 10/12 · **`hermes3:3b` 1/12**.
+> **Hermes queda descartado como router/agente.** El modelo único de JARVIS
+> pasa a ser **`llama3.2:3b`** (chat + routing). `qwen2.5:3b` queda como
+> *fallback opcional* del router. Evidencia histórica: §RESULTADOS y
+> `docs/AUDITORIA_2026-09.md` §7 — **no se borra**.
 >
-> **Restricción dura:** i5-6200U, 16 GB RAM, sin GPU. La estabilidad del equipo
-> manda sobre tener un modelo mejor. Nada de modelos ≥8B. Todo local, sin API de
-> pago, sin claves nuevas.
+> **Objetivo ahora:** dejar la arquitectura LOCAL, estable y útil en hardware
+> modesto. `ENTENDER → DECIDIR → ACTUAR → VERIFICAR → CORREGIR → RESPONDER`.
+>
+> **Prioridad absoluta:** FIABILIDAD > SEGURIDAD > ESTABILIDAD > EFICIENCIA DE
+> RECURSOS > LATENCIA > CAPACIDAD.
+>
+> **Restricción dura:** i5-6200U, 16 GB RAM, sin GPU. Estabilidad > inteligencia.
+> Nada de modelos ≥8B. Todo local, sin API de pago, sin claves nuevas. No
+> instalar otro modelo porque una prueba falle: primero diagnosticar
+> (parser / tool / schema / prompt / validación / seguridad / latencia / modelo).
 
 ---
 
@@ -40,7 +51,7 @@ Jarvis.chat(texto)                       jarvis_local/jarvis.py
 | Pieza | Archivo | Estado |
 |---|---|---|
 | Tool calling nativo Ollama | `ollama_client/client.py::chat_with_tools` | ✅ ya usa `/api/chat` + `tools`, lee `message.tool_calls`, acepta `model=` |
-| Selección de modelo por config | `config.yaml → ollama.agent_model` / `ollama.model` | ✅ ya separado (routing vs chat). **Hoy: `agent_model: llama3.2:3b` (C5), `model: qwen2.5:3b`** |
+| Selección de modelo por config | `config.yaml → ollama.agent_model` / `ollama.model` + `JARVIS_AGENT_MODEL` / `JARVIS_CHAT_MODEL` | ✅ separado (routing vs chat) + override por entorno. **Hoy: `agent_model` y `model` = `llama3.2:3b`** (modelo único); `router_fallback: qwen2.5:3b` |
 | Validación de tool call | `agent/loop.py::_validar/_limpiar_args`, `registry.py::execute` | ✅ herramienta existe · requeridos · tipos con coerción · args inventados se descartan · excepción → texto |
 | Límites del bucle | `agent/loop.py` | ✅ `MAX_STEPS=2`, `MAX_STEPS_ENCADENADO=4`, `MAX_REINTENTOS=1`, `AGENT_TIMEOUT=30` |
 | Retriever (acota catálogo) | `agent/retriever.py` | ✅ bge-m3, recall alto; cae a léxico si no hay embeddings |
@@ -146,6 +157,36 @@ Jarvis.chat(texto)                       jarvis_local/jarvis.py
 
 > No rescata a `hermes3:3b` (su JSON llega demasiado corrupto, FASE 9). El valor
 > real es blindar a llama/qwen.
+
+## FASE 2b — Hermes eliminado del runtime  ✅ HECHA
+
+**Rama:** `chore/eliminar-hermes-runtime`
+
+Tras el veredicto de FASE 9, se saca Hermes del código productivo (la
+evidencia histórica del benchmark se conserva en `docs/AUDITORIA_2026-09.md`
+§7 y en §RESULTADOS de este archivo).
+
+- [x] `grep -RniE "hermes"` en todo el repo: **ningún path de runtime dependía
+      de Hermes**. Solo comentarios/ejemplos y el nombre del test.
+- [x] `config.yaml` + `config.py::DEFAULT_CONFIG`: **modelo único
+      `llama3.2:3b`** para `model` (chat) y `agent_model` (routing). Antes el
+      chat era `qwen2.5:3b`. Añadido `ollama.router_fallback: qwen2.5:3b`
+      (opcional, se usa en FASE 12).
+- [x] Ejemplos y comentarios: `JARVIS_AGENT_MODEL=hermes3:3b` → `qwen2.5:3b`;
+      referencias `PLAN_HERMES FASE …` en código → `docs/AUDITORIA_2026-09.md §7`.
+- [x] `fast_response.py`: "razonar usando el modelo local qwen2.5" → "el modelo
+      de lenguaje local".
+- [x] `ui/server.py`: el modelo del status se lee de `config` en vez de estar
+      hardcodeado a `qwen2.5:3b`.
+- [x] `test/test_hermes.py` → `test/test_modelo_configurable.py` (mecanismo de
+      override + chequeo de `doctor`, sin depender de Hermes).
+- [x] `scripts/bench_router_modelos.py`: `DEFAULT_MODELS` sin hermes (se puede
+      reevaluar con `--models`).
+- [x] `README.md`: `ollama pull llama3.2:3b` como modelo principal; qwen como
+      fallback opcional; Hermes documentado como descartado.
+- [x] `ollama rm hermes3:3b` (libera 2,0 GB; re-pull para reevaluar).
+
+**Pruebas:** #1, #2 (`test_modelo_configurable`, `test_config`), #3.
 
 ## FASE 7 — Validación + seguridad (regresión dirigida)
 
@@ -342,12 +383,13 @@ No se informa "integración completada" solo porque Hermes responda.
 | 1 Baseline | ✅ |
 | 2 Parser | ✅ (PLAN_MAESTRO) |
 | 3 Funcionalidades rotas | ✅ (PLAN_MAESTRO) |
-| 4 Instalar Hermes | ✅ |
-| 9 Benchmark | ✅ → **Hermes 1/12, descartado como router; sigue `llama3.2:3b`** |
+| 4 Instalar Hermes (para medirlo) | ✅ |
+| 9 Benchmark | ✅ → **Hermes 1/12, descartado; modelo único `llama3.2:3b`** |
 | 5 Modelo configurable (env + doctor) | ✅ |
 | 6 Rescate de tool calls como texto | ✅ |
-| 7 Validación + seguridad | ⬜ |
-| 8 Fallback llama→qwen | ⬜ |
+| 2b Hermes fuera del runtime · `llama3.2:3b` único | ✅ |
+| 7 Validación + seguridad (batería adversarial) | ⬜ |
+| 8 Fallback llama→qwen ante fallo del modelo | ⬜ |
 | 10 Optimización recursos | ⬜ |
 | 11 Verificación post-ejecución | ⬜ |
 | 12 Memoria e2e | ⬜ |

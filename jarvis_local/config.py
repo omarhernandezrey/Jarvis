@@ -50,7 +50,10 @@ def user_dir(kind: str) -> str:
 DEFAULT_CONFIG = {
     "ollama": {
         "host": "http://localhost:11434",
-        "model": "qwen2.5:3b",
+        # Modelo unico por defecto (chat + routing): JARVIS debe funcionar solo
+        # con llama3.2:3b instalado. qwen2.5:3b es opcional (fallback del router).
+        "model": "llama3.2:3b",
+        "agent_model": "llama3.2:3b",
         "timeout": 600,
         "num_ctx": 4096,
     },
@@ -117,10 +120,10 @@ class ConfigManager:
     @staticmethod
     def _apply_env_overrides(cfg: dict) -> None:
         """Permite cambiar el modelo del agente o del chat sin editar
-        config.yaml (PLAN_HERMES FASE 5). Útil para A/B de modelos y para
-        volver a `qwen2.5:3b`/`llama3.2:3b` al instante:
+        config.yaml. Útil para A/B de modelos y para volver a un modelo
+        anterior al instante:
 
-            JARVIS_AGENT_MODEL=hermes3:3b python -m jarvis_local.cli
+            JARVIS_AGENT_MODEL=qwen2.5:3b python -m jarvis_local.cli
             JARVIS_CHAT_MODEL=qwen2.5:3b  ...
 
         Mapeo:

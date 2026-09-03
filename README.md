@@ -33,7 +33,7 @@ Y **recuerda por significado**: le dices *"soy alérgico a los mariscos"*, y sem
 
 | | |
 |---|---|
-| 🔒 **Privado** | LLM (qwen2.5), voz (faster-whisper) y embeddings (bge-m3) corren offline. Nada sale de tu PC. |
+| 🔒 **Privado** | LLM (llama3.2:3b), voz (faster-whisper) y embeddings (bge-m3) corren offline. Nada sale de tu PC. |
 | 🇪🇸 **En español** | Pensado en español, no traducido. Voz masculina neural latina. |
 | 🛡️ **Seguro** | Whitelists, niveles de riesgo y plan→confirmación. El modelo **nunca** borra ni envía nada por su cuenta. |
 | ⚡ **Rápido donde importa** | Cascada de 4 capas: lo trivial responde en 0 s; solo lo complejo llega al LLM. |
@@ -173,9 +173,9 @@ cd Jarvis
 pip install -r requirements.txt
 
 # 3. Modelos locales
-ollama pull qwen2.5:3b        # el cerebro / chat (1.9 GB)
-ollama pull llama3.2:3b       # modelo de routing del agente (2.0 GB)
+ollama pull llama3.2:3b       # el cerebro: chat + routing del agente (2.0 GB)
 ollama pull bge-m3            # memoria semántica (1.2 GB, opcional)
+ollama pull qwen2.5:3b        # fallback opcional del router (1.9 GB)
 
 # 4. Arrancar (desde la raíz del proyecto)
 $env:PYTHONIOENCODING = "utf-8"
@@ -191,9 +191,9 @@ sudo apt install -y xclip playerctl libportaudio2 python3-venv python3-tk python
 
 # 2. Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:3b        # el cerebro / chat (1.9 GB)
-ollama pull llama3.2:3b       # modelo de routing del agente (2.0 GB)
+ollama pull llama3.2:3b       # el cerebro: chat + routing del agente (2.0 GB)
 ollama pull bge-m3            # memoria semantica (1.2 GB, opcional)
+ollama pull qwen2.5:3b        # fallback opcional del router (1.9 GB)
 
 # 3. Clonar (la carpeta puede llamarse como quieras)
 git clone https://github.com/omarhernandezrey/Jarvis.git
@@ -280,7 +280,7 @@ Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `log
 
 | | |
 |---|---|
-| **LLM** | Ollama + qwen2.5:3b para chat (1.9 GB, CPU) · llama3.2:3b para el routing del agente (~18 % más rápido en tool calling, misma precisión) · ambos con tool calling nativo |
+| **LLM** | Ollama + **llama3.2:3b** (2.0 GB, CPU): chat y routing del agente, un solo modelo. Tool calling nativo. qwen2.5:3b opcional como fallback del router. hermes3:3b evaluado y descartado (1/12 en la batería de routing — ver `docs/AUDITORIA_2026-09.md` §7) |
 | **Embeddings** | bge-m3 (multilingüe — elegido midiendo: 4x mejor separación que nomic en español) |
 | **STT** | faster-whisper (int8) |
 | **TTS** | edge-tts neural · respaldo offline (SAPI5 en Windows, espeak-ng en Linux) |

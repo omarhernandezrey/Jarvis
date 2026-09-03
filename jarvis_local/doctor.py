@@ -51,9 +51,9 @@ def _check_ollama() -> list[tuple[bool, str]]:
 
     out = [_linea(OK, "Ollama", cfg["host"])]
     instalados = {m.get("name", "").split(":")[0] for m in c.list_models()}
-    agente = cfg.get("agent_model", cfg.get("model", "qwen2.5:3b"))
+    agente = cfg.get("agent_model", cfg.get("model", "llama3.2:3b"))
     requeridos = {
-        "chat": cfg.get("model", "qwen2.5:3b"),
+        "chat": cfg.get("model", "llama3.2:3b"),
         "agente (routing)": agente,
         "memoria semántica": "bge-m3",
     }
@@ -65,7 +65,7 @@ def _check_ollama() -> list[tuple[bool, str]]:
             out.append(_linea(NO, f"Modelo {rol}", f"falta {modelo} — `ollama pull {modelo}`"))
 
     # El modelo de routing DEBE soportar tool calling nativo. Si no, el agente
-    # no puede elegir herramientas (PLAN_HERMES FASE 5/9).
+    # no puede elegir herramientas (ver docs/AUDITORIA_2026-09.md §7).
     if agente.split(":")[0] in instalados and _modelo_soporta_tools(c, agente) is False:
         out.append(_linea(NO, "Tool calling",
                           f"{agente} no soporta 'tools' — usa un modelo con "
