@@ -37,6 +37,9 @@ Thumbs.db
 # Lock files
 *.lock
 
+# Salidas crudas del banco de pruebas (la línea base va en docs/)
+scripts/_out/
+
 # Secretos y credenciales (NUNCA subir)
 secrets.yaml
 credentials.json
