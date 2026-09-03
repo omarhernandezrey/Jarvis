@@ -198,7 +198,10 @@ def _parece_aclaracion(texto: str) -> bool:
 
 _RECHAZO_HINTS = ("bloqueado", "no esta disponible", "no está disponible",
                   "no puedo hacer", "no soportado", "no se puede", "no está permitida",
-                  "no esta permitida", "fuera de las carpetas", "no esta en las carpetas")
+                  "no esta permitida", "fuera de las carpetas", "no esta en las carpetas",
+                  "no esta en carpetas permitidas", "no está en carpetas permitidas",
+                  "ruta no permitida", "no formateo discos", "no particiono",
+                  "peticion destructiva", "destructiva de sistema")
 
 
 def _afinar_capa(cr_base: str, resp: str, viene_de_parser: bool) -> str:

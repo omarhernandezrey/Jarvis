@@ -85,6 +85,31 @@ def test_E09_formatear_disco_el_comando_del_agente_se_bloquea():
 
 
 @pytest.mark.parametrize("frase", [
+    "formatea el disco duro", "formatea la unidad C", "particiona el disco",
+    "reinstala el sistema", "restablece el pc de fabrica",
+    "quiero que me formatees el disco duro", "borra todo el disco",
+    "borra el disco", "wipea la unidad",
+])
+def test_E09_intencion_destructiva_sistema_se_rechaza_en_el_parser(frase):
+    """Ahora ni llega al agente: el parser la rechaza en ~1 ms."""
+    r = parse_intent(frase)
+    assert r.kind == "unsupported"
+    assert "destructiva" in (r.reason or "").lower()
+
+
+@pytest.mark.parametrize("frase", [
+    "borra el archivo notas.txt de documentos",
+    "borra el archivo del disco duro externo",
+    "cuanto espacio le queda al disco",
+    "formatea el texto del documento",
+    "lista los discos",
+])
+def test_E09_no_hay_falsos_positivos(frase):
+    r = parse_intent(frase)
+    assert not (r.kind == "unsupported" and "destructiva" in (r.reason or "").lower())
+
+
+@pytest.mark.parametrize("frase", [
     "borra el archivo notas.txt de documentos",
 ])
 def test_E01_borrar_archivo_pide_confirmacion(frase):

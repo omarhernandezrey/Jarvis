@@ -80,6 +80,21 @@ _VAGO_OBJ = {
 _SHELL_SHAPE = re.compile(r'(?:\s-{1,2}[a-z]|[/;&|`$]|\.(?:sh|py|bat|cmd|ps1)\b|\bsudo\b)',
                           re.IGNORECASE)
 
+# Intencion destructiva de sistema (formatear disco, particionar, reinstalar,
+# restablecer de fabrica). Anclado a ^: el verbo destructivo tiene que ser lo
+# primero, para no cazar "borra el archivo del disco duro externo".
+_INTENCION_DESTRUCTIVA_SISTEMA = re.compile(
+    r'^\s*(?:me\s+)?(?:puedes\s+|podrias\s+|quiero\s+que\s+(?:me\s+)?)?(?:'
+    r'(?:formate|reformate|particion|reinstal|wipe)\w*\s+'
+    r'(?:el\s+|la\s+|mi\s+|todo\s+el\s+|todos\s+los\s+)?'
+    r'(?:disco|discos|unidad|unidades|particion|particiones|sistema|windows|linux|'
+    r'pc|equipo|computador|portatil)'
+    r'|restablece\w*\s+(?:el\s+(?:pc|equipo|sistema)\s+)?(?:de\s+|a\s+)?fabrica'
+    r'|borra\w*\s+(?:todo\s+)?(?:el\s+)?(?:disco|los\s+discos|la\s+unidad)'
+    r'(?:\s+(?:duro|entero|completo))?\s*[.!?]*\s*$'
+    r')',
+    re.IGNORECASE)
+
 
 def _extract_app_candidate(text: str) -> str | None:
     """Extrae el posible nombre de app despues del verbo de apertura."""
@@ -812,6 +827,18 @@ def parse_intent(message: str) -> IntentResult:
     # inventando el argumento. Que la resuelva el agente, que si lo tiene.
     if es_anaforica(m):
         return IntentResult(kind="chat", reason="Referencia al contexto: la resuelve el agente")
+
+    # Intencion destructiva a nivel de sistema: NO se pasa al agente (que
+    # intentaba `Get-Disk | ...` y solo lo frenaba la blocklist tras 40 s).
+    # Se rechaza aqui, en 1 ms. Anclado a ^ para no cazar "borra el archivo
+    # del disco duro externo".
+    if _INTENCION_DESTRUCTIVA_SISTEMA.search(m):
+        return IntentResult(
+            kind="unsupported",
+            reason="Peticion destructiva de sistema (formatear/particionar/reinstalar)",
+            clarification=("No formateo discos, no particiono ni reinstalo el "
+                           "sistema, senor. Eso hagalo usted con las "
+                           "herramientas del sistema."))
 
     # --- FASE 5: empleo y navegador automatizado (antes que fase4 para
     #     que "busca trabajo ... en bogota" no se confunda con Google) ---
