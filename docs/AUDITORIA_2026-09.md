@@ -134,6 +134,31 @@ casos. El cuello de botella de fondo — un modelo 3B haciendo tool-calling en
 CPU de 2 núcleos — no lo resuelve un cambio de modelo; lo resuelve mantener
 frases fuera del agente (A2–A7, C3).
 
-## 6. Latencia — medición DESPUÉS
+## 6. Latencia — medición DESPUÉS (tras Fases A–D)
 
-_(se rellena al cerrar la Fase C)_
+Mismo equipo (Intel i5-6200U, sin GPU), Ollama caliente, máquina descargada
+(`load ~1,2`). Medido con `scripts/bench_agente.py` y un script ad-hoc que
+cronometra `Jarvis.chat()` de punta a punta.
+
+| Petición | Ruta ANTES → DESPUÉS | ANTES | DESPUÉS | Tarea |
+|---|---|---|---|---|
+| `"qué hora es"` | L1 → L1 | 0 s | **<1 ms** | — |
+| parser `"abre whatsapp"` | L2 → L2 | — | **0,2 ms** (solo enrutado) | — |
+| e2e `"clima en Cali"` | L2→tool → igual | 1,6 s | **1,58 s** (incluye HTTP a Open-Meteo) | — |
+| e2e `"va a llover en Cartagena"` | **L3 agente → L2 parser→clima** | 82–107 s | **1,54 s** | A3 |
+| e2e `"cómo anda la máquina"` | **L3 agente → L2 parser→tool** | 25–112 s | **0,02 s** | A7 |
+| e2e `"pon bohemian rhapsody"` | **L3 agente → L2 parser→spotify** | 92 s | ~0,1 s de enrutado (+ API de Spotify) | A2 |
+| agente puro (frase sin patrón, p. ej. "búscame un chiste de programadores") | L3 | 25–74 s (`qwen2.5:3b`) | **35–70 s** (`llama3.2:3b`, ~18 % menos en el subconjunto de C5) | C5 |
+| chat directo `"2+2"` (modelo caliente) | L4 | 1,5 s | **~1,5 s** | — |
+
+**Conclusión.** El agente 3B en CPU de 2 núcleos sigue siendo lento (35–70 s):
+eso **no se arregla con software**, es el hardware. Lo que el plan sí movió es
+**qué frases llegan al agente**. Las peticiones comunes que antes se colaban a
+la capa 3 (clima natural, estado del sistema, "pon <canción>", "lanza <app>",
+notas, cálculo) ahora las resuelve el parser determinista en milisegundos. El
+caso de "va a llover en Cartagena" — 90 s → 1,5 s — es el resumen del plan.
+
+Palancas secundarias aplicadas: `keep_alive: 30m` (evita ~10 s de recarga entre
+turnos, C4), caché de decisiones (frase repetida = 0 llamadas al LLM, C6),
+bucle podado (`MAX_STEPS 3→2`, `MAX_REINTENTOS 2→1`, C2) y modelo de routing
+`llama3.2:3b` (~18 %, C5).

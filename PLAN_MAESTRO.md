@@ -428,10 +428,11 @@ conversacionales que NO captura), #3, #5, #6.
 **Rama:** `feat/jarvis-doctor`
 **Archivo:** `jarvis_local/cli.py` (+ `jarvis_local/doctor.py`)
 
-- [ ] `python -m jarvis_local.cli doctor` chequea y reporta LISTO/FALTA:
-  Ollama arriba · modelos `qwen2.5:3b` y `bge-m3` presentes · red · token de
-  Google Calendar · token de Spotify · micrófono detectado · `secrets.yaml`
-  legible.
+- [x] `python -m jarvis_local.cli doctor` chequea y reporta LISTO/FALTA:
+  Ollama arriba · modelos `qwen2.5:3b`, `llama3.2:3b` (routing) y `bge-m3`
+  presentes · red · token de Google Calendar · token de Spotify · micrófono
+  detectado · `secrets.yaml` legible. `main()` devuelve 0/1 y NO arranca el
+  asistente.
 
 **Pruebas:** #1, #2 (mock de cada dependencia: presente / ausente), #3, #5.
 
@@ -439,10 +440,10 @@ conversacionales que NO captura), #3, #5, #6.
 **Rama:** `test/live-integracion`
 **Archivos:** `test/`, `pyproject.toml`, `.github/workflows/`
 
-- [ ] Marcar con `@pytest.mark.live` las pruebas que pegan a servicios reales
-  (Open-Meteo, Wikipedia, WolframAlpha, empleo). `addopts = "-q -m 'not live'"`
-  por defecto.
-- [ ] Job nightly en GitHub Actions que corre `-m live`.
+- [x] Marcar con `@pytest.mark.live` las pruebas que pegan a servicios reales
+  (Open-Meteo, Wikipedia, Nominatim, WolframAlpha, IP, empleo).
+  `addopts = "-q -m 'not live'"` por defecto; 9 tests `live`.
+- [x] Job nightly en GitHub Actions (`cron: "17 3 * * *"`) que corre `-m live`.
 
 **Pruebas:** #1, #3 (con y sin `-m live`), #9.
 
@@ -478,16 +479,29 @@ conversacionales que NO captura), #3, #5, #6.
 
 **Pruebas:** #1, #2, #3.
 
-## D4 — README y documentación al día
+## D4 — README y documentación al día  ✅ COMPLETADA
 **Rama:** `docs/estado-real`
-**Archivo:** `README.md`, `CHANGELOG.md`
+**Archivo:** `README.md`, `CHANGELOG.md`, `docs/AUDITORIA_2026-09.md`
 
-- [ ] Sustituir las latencias del README por las **medidas reales** tras las
-  Fases A–C.
-- [ ] Reflejar el estado real de cada feature (lo que arregló este plan).
-- [ ] Quitar o corregir cualquier afirmación que ya no se cumpla (badge de
-  tests, "19 s", etc.).
-- [ ] `CHANGELOG.md`: entrada con el resumen de las Fases A–D.
+- [x] Latencias del README sustituidas por las **medidas reales** tras las
+  Fases A–D: L1 `<1 ms`, parser `~0,2 ms`, e2e clima `1,6 s`, agente puro
+  `35–70 s`, chat caliente `~1,5 s`. Nota al pie con el "antes → después" de
+  los casos que salieron del agente (90 s → 1,5 s).
+- [x] Estado real de cada feature: ecuaciones lineales en local, re-auth
+  accionable de Calendar/Spotify, `jarvis doctor`, tests `live` + nocturno.
+- [x] Afirmaciones corregidas: badge `455 → 772`, "19 s" del agente,
+  recuento de tests en la estructura y en la sección de tests, install
+  añade `ollama pull llama3.2:3b`, Stack refleja el modelo de routing.
+- [x] `CHANGELOG.md`: entrada `[8.0.0] - 2026-09-03` con Added/Changed/Fixed
+  de las Fases A–D + hallazgos H1/H2.
+- [x] `docs/AUDITORIA_2026-09.md` §6 "DESPUÉS" rellenado con la tabla de
+  medición real.
+
+**Evidencia:**
+- `ruff check .` → All checks passed.
+- Regresión completa → exit 0, 0 FAILED/ERROR (sin cambios de código en D4).
+- Cada latencia del README tiene respaldo en `scripts/bench_agente.py` /
+  medición cronometrada de `Jarvis.chat()` (registrada en la auditoría §6).
 
 **Pruebas:** #1, #3, y revisión de que cada afirmación del README tiene respaldo.
 
@@ -527,8 +541,16 @@ subprocess + psutil), #3, #5, #8. Encaja como micro-tarea antes de la Fase C.
 | A | A1–A7 | ✅ completada |
 | B | B1–B7 | ✅ completada |
 | C | C1–C7 | ✅ completada |
-| D | D1–D4 | ⬜ pendiente |
+| D | D1–D4 | ✅ completada |
 
 **Total: 26 tareas.** Se ejecutan en orden. Cada una: rama → implementar →
 protocolo de pruebas completo hasta verde → `push` → CI verde → merge a `main`
 → marcar `[x]`.
+
+> **2026-09-03 — PLAN COMPLETO.** Las 5 fases (0, A, B, C, D) más los hallazgos
+> H1/H2 están mergeados a `main`. La medición "DESPUÉS" está en
+> `docs/AUDITORIA_2026-09.md` §6: las peticiones comunes que antes se colaban al
+> agente lento (clima natural, estado del sistema, "pon <canción>", "lanza
+> <app>", notas, cálculo) ahora las resuelve el parser en milisegundos —
+> "va a llover en Cartagena" pasó de ~90 s a 1,5 s. El agente 3B en CPU de 2
+> núcleos sigue siendo lento (35–70 s) por hardware, no por software.

@@ -5,7 +5,7 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 [![Tests](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml/badge.svg)](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-455%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-772%20passing-brightgreen)
 ![Offline](https://img.shields.io/badge/LLM-100%25%20local-orange)
 ![OS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux-informational)
 
@@ -17,7 +17,7 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 >
 > [`IMPLEMENTACION_DE_MEJORAS.md`](IMPLEMENTACION_DE_MEJORAS.md) está archivado (86/86 tareas completadas).
 
-Plan activo: **PLAN_MAESTRO** | Tareas: 24 | Fases: 5 (0, A, B, C, D) | Base: [`docs/AUDITORIA_2026-09.md`](docs/AUDITORIA_2026-09.md)
+Plan activo: **PLAN_MAESTRO** | Tareas: 26 | Fases: 5 (0, A, B, C, D) | Base: [`docs/AUDITORIA_2026-09.md`](docs/AUDITORIA_2026-09.md)
 
 ---
 
@@ -48,12 +48,12 @@ Cada mensaje baja por esta cascada y se detiene en la primera capa que lo resuel
 
 | Capa | Qué resuelve | Latencia real* |
 |---|---|---|
-| 1. **Respuestas instantáneas** | saludos, hora, fecha, gracias | **0 s** |
-| 2. **Parser determinista** | frases conocidas: "abre whatsapp", "clima en Bogotá" | **1.6 s** |
-| 3. **Agente (tool calling)** | lenguaje libre: "¿va a llover por allá?" | **19 s** |
-| 4. **Chat con el LLM** | conversación, razonamiento, opinión | **~60 s** |
+| 1. **Respuestas instantáneas** | saludos, hora, fecha, gracias | **~0 s** (<1 ms) |
+| 2. **Parser determinista** | frases conocidas: "abre whatsapp" (~0,2 ms de enrutado); "clima en Bogotá" incluye la llamada HTTP | **~1,6 s** |
+| 3. **Agente (tool calling)** | lenguaje libre que ningún patrón cubre: "búscame un chiste de programadores" | **35–70 s** |
+| 4. **Chat con el LLM** | conversación, razonamiento, opinión | **~1,5 s** con modelo caliente, **~60 s** en frío |
 
-<sub>*Medido en el equipo de desarrollo: Intel i5-6200U, 16 GB RAM, sin GPU.</sub>
+<sub>*Medido en el equipo de desarrollo (Intel i5-6200U, 16 GB RAM, sin GPU) con Ollama caliente, tras las Fases A–C. La capa 3 depende del hardware: un modelo 3B haciendo *tool calling* en una CPU de 2 núcleos es lento y variable. El plan de mejora ataca esto **sacando frases del agente**: "va a llover en Cartagena" pasó de ~90 s (agente) a **1,5 s** (parser→clima); "cómo anda la máquina" de ~110 s a **0,02 s** (parser→tool). Detalle en [`docs/AUDITORIA_2026-09.md`](docs/AUDITORIA_2026-09.md).</sub>
 
 ```
                                     ┌─ tools/ ─────────────────┐
@@ -115,9 +115,9 @@ Cada mensaje baja por esta cascada y se detiene en la primera capa que lo resuel
 - **Ubicaciones**: abre el lugar en Maps y calcula la **distancia desde donde estás**.
 - **Wikipedia**: *"¿quién es Gabriel García Márquez?"*.
 - **Noticias**: titulares del día.
-- **Calculadora segura** (AST, sin `eval`) con lenguaje natural, y **WolframAlpha** para ecuaciones: *"calcula x + 135 - 234 = 345"* → *x = 444*.
+- **Calculadora segura** (AST, sin `eval`) con lenguaje natural (*"raíz cuadrada de 144"*, *"15% de 80"*, *"5 al cubo"*) y **ecuaciones lineales resueltas en local**: *"resuelve x + 135 - 234 = 345"* → *x = 444*. **WolframAlpha** para lo que no se puede en local (derivadas, sistemas).
 - **Navegador automatizado** (Selenium): JARVIS controla su propia ventana de Chrome.
-- **Spotify**: *"pon bohemian rhapsody"* → la busca y reproduce con tu cuenta (Premium) en cualquier dispositivo Spotify Connect activo. Setup en [`docs/spotify.md`](docs/spotify.md).
+- **Spotify**: *"pon bohemian rhapsody"* → la busca y reproduce con tu cuenta (Premium) en cualquier dispositivo Spotify Connect activo. Setup en [`docs/spotify.md`](docs/spotify.md). Si el token caduca, lo dice claro y te da el comando exacto (`--reauth-spotify`) en vez de fallar en silencio.
 </details>
 
 <details open>
@@ -136,7 +136,7 @@ Cada mensaje baja por esta cascada y se detiene en la primera capa que lo resuel
 - Listar, buscar, crear, copiar, mover, renombrar y borrar (solo en carpetas permitidas).
 - Ocultar/mostrar archivos de una carpeta.
 - **Correo**: *"envía un correo a Omar asunto Reunión mensaje Nos vemos mañana"* — SMTP, **siempre pide confirmación**.
-- **Google Calendar**: *"mis próximos eventos"*.
+- **Google Calendar**: *"mis próximos eventos"*. Refresca el token solo; si hace falta re-autorizar, lo indica con el comando exacto (`--reauth-calendar`).
 - Notas rápidas con fecha y hora, en el Bloc de notas.
 </details>
 
@@ -173,7 +173,8 @@ cd Jarvis
 pip install -r requirements.txt
 
 # 3. Modelos locales
-ollama pull qwen2.5:3b        # el cerebro (1.9 GB)
+ollama pull qwen2.5:3b        # el cerebro / chat (1.9 GB)
+ollama pull llama3.2:3b       # modelo de routing del agente (2.0 GB)
 ollama pull bge-m3            # memoria semántica (1.2 GB, opcional)
 
 # 4. Arrancar (desde la raíz del proyecto)
@@ -190,7 +191,8 @@ sudo apt install -y xclip playerctl libportaudio2 python3-venv python3-tk python
 
 # 2. Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:3b        # el cerebro (1.9 GB)
+ollama pull qwen2.5:3b        # el cerebro / chat (1.9 GB)
+ollama pull llama3.2:3b       # modelo de routing del agente (2.0 GB)
 ollama pull bge-m3            # memoria semantica (1.2 GB, opcional)
 
 # 3. Clonar (la carpeta puede llamarse como quieras)
@@ -258,25 +260,27 @@ Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, dat
 │   ├── storage/             Historial, memorias y 🆕 índice semántico
 │   ├── memory_context/      Memorias activas y 🆕 recuerdo automático
 │   └── ui/                  Interfaz web y de escritorio
-└── test/                    455 tests
+└── test/                    772 tests
 ```
 
 ## 🧪 Tests y calidad
 
 ```bash
-python -m pytest test -q     # 455 tests (Windows y Linux)
-ruff check .                 # lint
+python -m pytest test -q            # 772 tests (Windows y Linux)
+python -m pytest -m live            # 9 tests que pegan a APIs reales (nocturno en CI)
+ruff check .                        # lint
+python -m jarvis_local.cli doctor   # diagnóstico del entorno (Ollama, red, credenciales, micro)
 ```
 
-Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `loginctl`/Wayland en Linux) se saltan solos en el SO que no les corresponde — no hace falta nada especial para correr la suite en cualquiera de los dos.
+Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `loginctl`/Wayland en Linux) se saltan solos en el SO que no les corresponde — no hace falta nada especial para correr la suite en cualquiera de los dos. Los tests `live` no corren por defecto (`-m 'not live'`); se ejecutan a mano o en el job nocturno de CI.
 
-**CI en GitHub Actions**: tests en Python 3.11/3.12/3.13, lint (ruff), auditoría de seguridad (bandit + pip-audit) y verificación de que ninguna credencial esté versionada.
+**CI en GitHub Actions**: tests en Python 3.11/3.12/3.13, lint (ruff), auditoría de seguridad (bandit + pip-audit), verificación de que ninguna credencial esté versionada, y un job nocturno que corre los tests `live` contra las APIs reales.
 
 ## 🧰 Stack
 
 | | |
 |---|---|
-| **LLM** | Ollama + qwen2.5:3b (1.9 GB, CPU) con tool calling nativo |
+| **LLM** | Ollama + qwen2.5:3b para chat (1.9 GB, CPU) · llama3.2:3b para el routing del agente (~18 % más rápido en tool calling, misma precisión) · ambos con tool calling nativo |
 | **Embeddings** | bge-m3 (multilingüe — elegido midiendo: 4x mejor separación que nomic en español) |
 | **STT** | faster-whisper (int8) |
 | **TTS** | edge-tts neural · respaldo offline (SAPI5 en Windows, espeak-ng en Linux) |
@@ -291,6 +295,7 @@ Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `log
 - ✅ **Fase 5**: Selenium + búsqueda de empleo multi-portal
 - ✅ **Fase 6**: **Agente con tool calling**, memoria semántica, voz por streaming, CI
 - ✅ **Fase 7**: **Soporte Linux** (Ubuntu/GNOME): terminal, energía, volumen, portapapeles y apps con su API nativa; degradado explícito de la gestión de ventanas en Wayland
+- 🔄 **Fase 8 — eficacia** ([`PLAN_MAESTRO.md`](PLAN_MAESTRO.md)): auditoría funcionalidad por funcionalidad y arreglo con test que lo blinde. Fases A–D: huecos del parser (clima, notas, cálculo, ubicaciones), re-autorización accionable de Calendar/Spotify, apps que no se abren dos veces, instrumentación y poda de la latencia del agente, `jarvis doctor`, tests `live` + nocturno, prueba de voz e2e
 - ⏳ **Siguiente**: visión (que JARVIS *vea* tu pantalla), proactividad, instalador
 
 ---
