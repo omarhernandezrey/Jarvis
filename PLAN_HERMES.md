@@ -124,20 +124,28 @@ Jarvis.chat(texto)                       jarvis_local/jarvis.py
 
 **Pruebas:** `test/test_hermes.py` (8) + `ruff` + regresión completa.
 
-## FASE 6 — Tool calling robusto (endurecer lo que ya hay)
+## FASE 6 — Rescate de tool calls escritos como texto  ✅ HECHA
 
-**Rama:** `feat/hermes-toolcall-guard`
+**Rama:** `feat/hermes-toolcall-rescate`
 
-- [ ] Revisar el formato de `tool_calls` que emite Hermes vs el que espera
-      `_arguments()` (`function.arguments` dict **o** string JSON). Añadir test
-      con una respuesta de Hermes real capturada.
-- [ ] Si Hermes tiende a emitir el tool call como texto `<tool_call>{…}` en vez
-      de por el canal nativo: parsearlo en `_clean_text` / un `_extract_texto_toolcall`
-      y NO mostrarlo al usuario (hoy `_JSON_LEAK` solo lo oculta).
-- [ ] Test: herramienta inexistente inventada por el modelo → corrección → 2º
-      intento → si sigue mal, aclaración (ya existe; blindar con caso Hermes).
+- [x] `agent/loop.py::_salvage_tool_calls(content, ofrecidas)`: si el modelo NO
+      usó el canal nativo `tool_calls` pero escribió la llamada en el texto, se
+      extrae. Formatos: `<tool_call>…`, objeto suelto `{"name","arguments"}`,
+      anidado `{"function":{...}}`. Args como string JSON también. Solo rescata
+      si el nombre es una herramienta **realmente ofrecida** ese turno.
+- [x] `_objetos_json()`: extractor de `{…}` con llaves balanceadas (respeta
+      strings y escapes); las regex no cuentan anidamiento.
+- [x] En `_run_simple`: tras `tool_calls` vacío se intenta rescatar antes de
+      tratarlo como conversación. Se registra `tool_call_rescatado` en
+      `decisions.jsonl`; el JSON crudo NO queda en el historial.
+- [x] Beneficia a **cualquier** modelo débil (llama/qwen a veces filtran; antes
+      `_JSON_LEAK` solo lo ocultaba y se perdía la acción).
+- [x] `test/test_agent.py`: 7 tests nuevos.
 
-**Pruebas:** #1, #2, #3, #5 (Ollama vivo).
+**Pruebas:** #1, #2, #3.
+
+> No rescata a `hermes3:3b` (su JSON llega demasiado corrupto, FASE 9). El valor
+> real es blindar a llama/qwen.
 
 ## FASE 7 — Validación + seguridad (regresión dirigida)
 
@@ -337,7 +345,7 @@ No se informa "integración completada" solo porque Hermes responda.
 | 4 Instalar Hermes | ✅ |
 | 9 Benchmark | ✅ → **Hermes 1/12, descartado como router; sigue `llama3.2:3b`** |
 | 5 Modelo configurable (env + doctor) | ✅ |
-| 6 Tool calling robusto | ⬜ (parser de rescate: mejora también a llama/qwen) |
+| 6 Rescate de tool calls como texto | ✅ |
 | 7 Validación + seguridad | ⬜ |
 | 8 Fallback llama→qwen | ⬜ |
 | 10 Optimización recursos | ⬜ |

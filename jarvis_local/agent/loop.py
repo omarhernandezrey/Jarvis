@@ -138,6 +138,73 @@ def _arguments(call: dict) -> dict:
     return args if isinstance(args, dict) else {}
 
 
+# Un modelo debil a veces "llama" a la herramienta escribiendo el JSON en el
+# texto en vez de usar el canal nativo de tool_calls de Ollama. Formatos vistos:
+#   <tool_call>{"name": "clima", "arguments": {"city": "Cali"}}</tool_call>
+#   {"name": "clima", "arguments": {"city": "Cali"}}
+#   {"function": {"name": "clima", "arguments": {...}}}
+# Se rescata SOLO si el nombre extraido es una herramienta realmente ofrecida.
+
+
+def _objetos_json(texto: str) -> list[str]:
+    """Subcadenas `{...}` con llaves balanceadas (ignora llaves dentro de
+    strings). Las expresiones regulares no cuentan anidamiento; esto si."""
+    objetos: list[str] = []
+    profundidad = 0
+    inicio = -1
+    en_string = False
+    escape = False
+    for i, ch in enumerate(texto):
+        if en_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                en_string = False
+            continue
+        if ch == '"':
+            en_string = True
+        elif ch == "{":
+            if profundidad == 0:
+                inicio = i
+            profundidad += 1
+        elif ch == "}" and profundidad > 0:
+            profundidad -= 1
+            if profundidad == 0 and inicio >= 0:
+                objetos.append(texto[inicio:i + 1])
+    return objetos
+
+
+def _salvage_tool_calls(content: str, ofrecidas: list[dict]) -> list[dict]:
+    """Extrae una llamada a herramienta escrita como texto. [] si no hay una
+    valida. Devuelve el mismo formato que Ollama: [{"function": {name, arguments}}]."""
+    if not content or "{" not in content:
+        return []
+    nombres = {t.get("function", {}).get("name") for t in ofrecidas}
+
+    for blob in _objetos_json(content):
+        try:
+            data = json.loads(blob)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        fn = data.get("function") if isinstance(data.get("function"), dict) else data
+        name = fn.get("name") if isinstance(fn, dict) else None
+        if name not in nombres:
+            continue
+        args = fn.get("arguments", fn.get("parameters", {}))
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except (json.JSONDecodeError, ValueError):
+                args = {}
+        return [{"function": {"name": name,
+                              "arguments": args if isinstance(args, dict) else {}}}]
+    return []
+
+
 def _clean_text(text: str) -> str:
     """Descarta la respuesta si el modelo filtro un tool call como texto."""
     t = (text or "").strip()
@@ -308,10 +375,23 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
                 text="Tuve un inconveniente al comunicarme con el modelo, senor.",
                 confidence=conf)
         calls = msg.get("tool_calls") or []
+        contenido = msg.get("content", "")
+
+        # El modelo escribio el tool call como texto en vez de usar el canal
+        # nativo: rescatarlo si es una herramienta valida (modelos debiles lo
+        # hacen; sin esto se perderia la accion y caeria a conversacion).
+        if not calls:
+            rescatadas = _salvage_tool_calls(contenido, tools)
+            if rescatadas:
+                calls = rescatadas
+                contenido = ""   # el JSON crudo no debe quedar en el historial
+                log_decision(user_message, conf, usadas, resultados,
+                             "tool_call_rescatado", llm_calls=_llm_calls,
+                             llm_secs=_llm_secs)
 
         # --- El modelo no llamo a ninguna herramienta ---
         if not calls:
-            texto = _clean_text(msg.get("content", ""))
+            texto = _clean_text(contenido)
             if usadas:
                 # Ya hicimos el trabajo: la salida de las herramientas ES la
                 # respuesta. El texto del modelo solo la diluiria.
@@ -332,7 +412,7 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
             return AgentResult(text=texto, needs_clarification=aclara,
                                confidence=conf)
 
-        messages.append({"role": "assistant", "content": msg.get("content", ""),
+        messages.append({"role": "assistant", "content": contenido,
                          "tool_calls": calls})
 
         detener = False

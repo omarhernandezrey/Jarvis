@@ -9,7 +9,12 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jarvis_local.agent.loop import _arguments, _clean_text, run_agent
+from jarvis_local.agent.loop import (
+    _arguments,
+    _clean_text,
+    _salvage_tool_calls,
+    run_agent,
+)
 from jarvis_local.agent.registry import (
     TOOLS,
     all_schemas,
@@ -171,6 +176,60 @@ def test_agente_no_muere_si_la_herramienta_falla():
     r = run_agent(client, "clima en Ciudad Inexistente XYZ")
     assert r.tools_used == ["clima"]  # respondio algo, no lanzo excepcion
     assert isinstance(r.text, str) and r.text
+
+
+# ---------- FASE 6: rescate de tool calls escritos como texto ----------
+
+_OFRECIDAS = [
+    {"function": {"name": "clima"}},
+    {"function": {"name": "abrir_aplicacion"}},
+]
+
+
+def test_salvage_etiqueta_tool_call():
+    calls = _salvage_tool_calls(
+        'claro senor <tool_call>{"name": "clima", "arguments": {"city": "Cali"}}'
+        '</tool_call>', _OFRECIDAS)
+    assert calls == [{"function": {"name": "clima",
+                                   "arguments": {"city": "Cali"}}}]
+
+
+def test_salvage_objeto_suelto():
+    calls = _salvage_tool_calls(
+        '{"name": "abrir_aplicacion", "arguments": {"app": "chrome"}}', _OFRECIDAS)
+    assert calls[0]["function"]["name"] == "abrir_aplicacion"
+    assert calls[0]["function"]["arguments"] == {"app": "chrome"}
+
+
+def test_salvage_formato_openai_function():
+    calls = _salvage_tool_calls(
+        '{"function": {"name": "clima", "arguments": {"city": "Bogota"}}}', _OFRECIDAS)
+    assert calls[0]["function"]["name"] == "clima"
+
+
+def test_salvage_ignora_herramienta_no_ofrecida():
+    assert _salvage_tool_calls(
+        '{"name": "borrar_todo", "arguments": {}}', _OFRECIDAS) == []
+
+
+def test_salvage_texto_normal_no_es_tool_call():
+    assert _salvage_tool_calls("El cielo es azul, senor.", _OFRECIDAS) == []
+    assert _salvage_tool_calls("", _OFRECIDAS) == []
+
+
+def test_salvage_json_corrupto_no_rompe():
+    assert _salvage_tool_calls('{"name": "clima", "arg', _OFRECIDAS) == []
+
+
+def test_agente_rescata_tool_call_escrito_como_texto():
+    """El modelo 'llama' a la herramienta en el texto, no por el canal nativo."""
+    client = _mock_client({
+        "role": "assistant",
+        "content": '<tool_call>{"name": "contar_chiste", "arguments": {}}</tool_call>',
+    })
+    r = run_agent(client, "cuentame algo gracioso")
+    assert r.tools_used == ["contar_chiste"]
+    assert len(r.text) > 10
 
 
 # ---------- Saneado de la respuesta ----------
