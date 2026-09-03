@@ -73,6 +73,47 @@ def test_listen_model_not_downloaded():
 
 
 
+def _seg(txt):
+    s = MagicMock()
+    s.text = txt
+    return s
+
+
+def test_transcribe_file_devuelve_texto():
+    """transcribe_file une los segmentos y limpia espacios."""
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([_seg("  Abre la "), _seg("calculadora ")], None)
+    with patch.object(stt_mod, "_get_whisper_model", return_value=fake_model):
+        out = stt_mod.transcribe_file("/tmp/x.wav")
+    assert out == "Abre la calculadora"
+    # se pasa la ruta como str y con VAD activado
+    args, kwargs = fake_model.transcribe.call_args
+    assert args[0] == "/tmp/x.wav"
+    assert kwargs["language"] == "es"
+    assert kwargs["vad_filter"] is True
+
+
+def test_transcribe_file_sin_texto_es_none():
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([], None)
+    with patch.object(stt_mod, "_get_whisper_model", return_value=fake_model):
+        assert stt_mod.transcribe_file("/tmp/x.wav") is None
+
+
+def test_transcribe_file_error_no_propaga():
+    with patch.object(stt_mod, "_get_whisper_model", side_effect=RuntimeError("boom")), \
+         patch.object(stt_mod, "logger"):
+        assert stt_mod.transcribe_file("/tmp/x.wav") is None
+
+
+def test_transcribe_file_respeta_language_explicito():
+    fake_model = MagicMock()
+    fake_model.transcribe.return_value = ([_seg("hello")], None)
+    with patch.object(stt_mod, "_get_whisper_model", return_value=fake_model):
+        stt_mod.transcribe_file("/tmp/x.wav", language="en")
+    assert fake_model.transcribe.call_args.kwargs["language"] == "en"
+
+
 def test_tts_list_voices():
     from jarvis_local.voice.tts import list_voices
     voices = list_voices()

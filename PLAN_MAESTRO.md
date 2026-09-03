@@ -446,14 +446,35 @@ conversacionales que NO captura), #3, #5, #6.
 
 **Pruebas:** #1, #3 (con y sin `-m live`), #9.
 
-## D3 — Prueba de voz e2e
+## D3 — Prueba de voz e2e  ✅ COMPLETADA
 **Rama:** `test/voz-e2e`
 **Archivos:** `test/fixtures/`, `test/test_voice_e2e.py`
 
-- [ ] Un WAV corto en español en `test/fixtures/` (frase conocida, p. ej.
-  *"abre la calculadora"*).
-- [ ] Test: STT (faster-whisper) transcribe → el texto esperado (tolerancia) →
-  `Jarvis.chat()` lo enruta bien. Marcado `live` (descarga el modelo STT).
+- [x] WAV corto en español (`test/fixtures/abre_la_calculadora.wav`, 16 kHz mono
+  PCM16, 2,16 s) sintetizado con edge-tts. Reproducible con
+  `test/fixtures/_generar_fixture_voz.py`. `.gitignore` versiona
+  `test/fixtures/*.wav` a propósito.
+- [x] `jarvis_local/voice/stt.py::transcribe_file(path)` — nuevo helper que
+  transcribe un archivo con el mismo modelo Whisper que la escucha en vivo
+  (reutiliza `_get_whisper_model`, VAD, idioma de config). Devuelve texto o
+  `None`.
+- [x] `test/test_voice_e2e.py` (marcado `live`): transcribe el fixture →
+  `_norm()` tolerante (quita tildes/mayúsculas/puntuación) → asserts
+  `"abre"` y `"calculadora"` → `Jarvis.chat(texto)` → `last_reply_kind ==
+  "tool"` y enruta a `open_app` con arg *calculadora* (se intercepta
+  `_execute_tool_write` para no abrir la app de verdad).
+- [x] 4 tests unitarios no-`live` en `test/test_voice.py` cubren
+  `transcribe_file` (texto, sin-texto→None, excepción→None, `language`
+  explícito) al 100 %.
+
+**Evidencia:**
+- `ruff check .` → All checks passed.
+- `pytest -m live test/test_voice_e2e.py` → 2 passed en 6,48 s
+  (STT real: *"Abre la calculadora."*).
+- Regresión completa `pytest test --ignore=test/test_ui_hud.py` → exit 0, 0
+  FAILED/ERROR; `test/test_ui_hud.py` aparte → exit 0.
+- Cobertura del bloque nuevo de `stt.py` (`transcribe_file`): 100 %
+  (el 67 % global del fichero es código previo sin tocar).
 
 **Pruebas:** #1, #2, #3.
 
