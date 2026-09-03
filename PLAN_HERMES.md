@@ -106,19 +106,23 @@ Jarvis.chat(texto)                       jarvis_local/jarvis.py
 
 ---
 
-## FASE 5 — Integración aislada de Hermes
+## FASE 5 — Modelo del agente configurable  ✅ HECHA
 
 **Rama:** `feat/hermes-modelo-configurable`
 
-- [ ] `config.yaml`: añadir `ollama.router_candidates` (lista) y dejar
-      `agent_model` como el activo. Documentar cómo cambiarlo y cómo revertir.
-- [ ] Permitir override por entorno: `JARVIS_AGENT_MODEL` / `JARVIS_CHAT_MODEL`
-      (si no chocan con `ConfigManager`; si chocan, adaptarlo sin romper).
-- [ ] `jarvis doctor`: comprobar que el `agent_model` configurado existe y
-      reporta `tools` en capabilities; si no, `NO` accionable.
-- [ ] Sin cambiar el `agent_model` por defecto todavía (eso lo decide FASE 9).
+- [x] Override por entorno en `ConfigManager._apply_env_overrides`:
+      `JARVIS_AGENT_MODEL` → `ollama.agent_model`,
+      `JARVIS_CHAT_MODEL` → `ollama.model`. Vacío / espacios se ignora.
+      Se aplica tras el merge de `config.yaml`, en cada `reload_config()`.
+- [x] `config.yaml`: comentario que documenta agent_model vs model, el override
+      por env y cómo revertir.
+- [x] `jarvis doctor` (`_check_ollama` + `_modelo_soporta_tools`): si el
+      `agent_model` está instalado pero `/api/show` dice que NO tiene la
+      capacidad `tools` → línea `[FALTA] Tool calling` accionable. Capacidad
+      desconocida (API vieja) → no se inventa nada.
+- [x] `agent_model` por defecto sigue siendo `llama3.2:3b` (FASE 9).
 
-**Pruebas:** #1, #2 (config con/sin la clave, env var), #3.
+**Pruebas:** `test/test_hermes.py` (8) + `ruff` + regresión completa.
 
 ## FASE 6 — Tool calling robusto (endurecer lo que ya hay)
 
@@ -332,7 +336,7 @@ No se informa "integración completada" solo porque Hermes responda.
 | 3 Funcionalidades rotas | ✅ (PLAN_MAESTRO) |
 | 4 Instalar Hermes | ✅ |
 | 9 Benchmark | ✅ → **Hermes 1/12, descartado como router; sigue `llama3.2:3b`** |
-| 5 Integración configurable | ⬜ (útil igual: modelo por config/env + doctor) |
+| 5 Modelo configurable (env + doctor) | ✅ |
 | 6 Tool calling robusto | ⬜ (parser de rescate: mejora también a llama/qwen) |
 | 7 Validación + seguridad | ⬜ |
 | 8 Fallback llama→qwen | ⬜ |
