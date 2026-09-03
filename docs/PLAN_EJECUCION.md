@@ -50,6 +50,12 @@
       +14 casos en `test/test_banco_seguridad.py`.
 - [x] Arreglado (precisión de la red de seguridad): heurística `_RECHAZO_HINTS`
       del banco (E08 estaba bien resuelto, mal etiquetado).
+- [x] Verificación de etiquetas del banco cerrada (2026-09-03): revisados uno a
+      uno los 8 fallos restantes → **los 8 son fallos reales**; E08 fue el único
+      mal etiquetado. Las **dos causas raíz** (umbral del retriever que no
+      separa charla de herramienta; parser que casa formas de superficie y no
+      morfología) quedan documentadas en `docs/BANCO_PRUEBAS_BASELINE.md §12`
+      como insumo de la FASE C.
 - [ ] Enrutado → **FASE C**: A04 "abrime chrome"; B02 opinión sobre el clima →
       `weather`; B06/B09/B10 charla → agente/WolframAlpha/`recordar`; E04/E05 →
       agente en vez de parser (seguridad aguanta: whitelist + confirmación).
