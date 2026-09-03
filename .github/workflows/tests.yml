@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Job nocturno (03:17 UTC): corre los tests `live` que pegan a APIs reales
+    # (Open-Meteo, Wikipedia, WolframAlpha, empleo). No se corren en cada push.
+    - cron: "17 3 * * *"
 
 jobs:
   test:
@@ -43,6 +47,26 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: python -m pytest test -v --tb=short
+
+  live:
+    name: Integracion live (nocturno)
+    # Solo en el cron nocturno o lanzado a mano; nunca en push/PR.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Tests live (APIs reales)
+        env:
+          PYTHONIOENCODING: utf-8
+        # sin WolframAlpha app_id en CI: ese test se skippea solo
+        run: python -m pytest -m live -v --tb=short
 
   security:
     name: Auditoria de seguridad

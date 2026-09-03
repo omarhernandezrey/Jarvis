@@ -59,7 +59,14 @@ packages = [
 [tool.pytest.ini_options]
 testpaths = ["test"]
 python_files = ["test_*.py"]
-addopts = "-q"
+# Los tests marcados `live` pegan a servicios externos reales (Open-Meteo,
+# Wikipedia, WolframAlpha, portales de empleo). No corren por defecto: se
+# ejecutan aparte (`pytest -m live`) y en un job nocturno de CI.
+addopts = "-q -m 'not live'"
+markers = [
+    "live: pega a un servicio externo real; requiere red y a veces una API key",
+    "slow: tarda varios segundos (portales de empleo, modelos grandes)",
+]
 
 [tool.ruff]
 line-length = 100
