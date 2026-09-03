@@ -162,3 +162,33 @@ Palancas secundarias aplicadas: `keep_alive: 30m` (evita ~10 s de recarga entre
 turnos, C4), caché de decisiones (frase repetida = 0 llamadas al LLM, C6),
 bucle podado (`MAX_STEPS 3→2`, `MAX_REINTENTOS 2→1`, C2) y modelo de routing
 `llama3.2:3b` (~18 %, C5).
+
+---
+
+## 7. Evaluación de `hermes3:3b` como modelo de routing (2026-09-03)
+
+Contexto: se evaluó `hermes3:3b` (Nous Research, orientado a *function calling*)
+como posible reemplazo de `llama3.2:3b` en el paso de routing. Ver
+`PLAN_HERMES.md`.
+
+Batería `scripts/bench_router_modelos.py` (12 frases de routing, 1 llamada
+`chat_with_tools` por frase, i5-6200U sin GPU, un modelo residente a la vez):
+
+| modelo | herramienta correcta | JSON válido | latencia media |
+|---|---|---|---|
+| `llama3.2:3b` (actual) | **10/12** | 12/12 | **19,5 s** |
+| `qwen2.5:3b` | 10/12 | 12/12 | 21,7 s |
+| `hermes3:3b` | **1/12** | 12/12 | 28,8 s |
+
+`hermes3:3b` **no emitió `tool_calls`** en 11 de 12 casos: devolvió el intento
+de llamada como texto y, casi siempre, con el JSON corrupto
+(`,{"arguments": "app", "name": …, "function": …}`). La plantilla de Ollama para
+`hermes3` además **descarta el system prompt propio** cuando se pasan `tools`
+(usa el suyo de *function calling*). Se probó `num_predict` 60→400, con/sin
+system prompt, y un parser de rescate sobre el `content`: 0/4 recuperables.
+
+**Decisión:** se mantiene `ollama.agent_model: llama3.2:3b`. El 3B de Hermes es
+demasiado débil para su propio formato de tool calling; las variantes que lo
+hacen bien (8B/70B) están fuera del presupuesto de hardware. `hermes3:3b` queda
+instalado por si cambia la plantilla de Ollama; `ollama rm hermes3:3b` para
+liberarlo.
