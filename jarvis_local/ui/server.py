@@ -73,9 +73,14 @@ def _get_status() -> dict:
     except Exception:
         mic_name = "No detectado"
 
+    try:
+        from jarvis_local.config import get_config
+        _model_name = get_config().get("ollama", {}).get("model", "llama3.2:3b")
+    except Exception:
+        _model_name = "llama3.2:3b"
     return {
         "ollama": ollama_ok,
-        "model": "qwen2.5:3b" if ollama_ok else "N/A",
+        "model": _model_name if ollama_ok else "N/A",
         "stt_model": vcfg.get("stt_model", "small"),
         "mic": mic_name,
         "tts": tts_ok,
@@ -406,7 +411,7 @@ HTML = r"""<!DOCTYPE html>
       <div class="status-dot on" id="stOllama">Ollama</div>
       <div class="status-dot on" id="stMic">Micrófono</div>
       <div class="status-dot on" id="stTTS">Voz</div>
-      <div class="status-dot on" id="stModel">qwen2.5:3b</div>
+      <div class="status-dot on" id="stModel">llama3.2:3b</div>
     </div>
 
     <!-- Chat -->

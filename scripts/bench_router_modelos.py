@@ -5,7 +5,7 @@ ejecuta la herramienta (no abre apps, no toca la red). Para cada modelo:
 frase -> herramienta elegida -> ¿correcta? -> ¿JSON válido? -> tiempo.
 
     python -m scripts.bench_router_modelos
-    python -m scripts.bench_router_modelos --models hermes3:3b,llama3.2:3b
+    python -m scripts.bench_router_modelos --models llama3.2:3b,qwen2.5:3b
 
 Descarga el modelo de RAM (`ollama stop`) al terminar con cada uno para no
 acumular 3 modelos residentes en una máquina de 16 GB.
@@ -31,7 +31,9 @@ CASOS: list[tuple[str, str | None]] = [
     ("de que color es el cielo", None),
 ]
 
-DEFAULT_MODELS = ["llama3.2:3b", "qwen2.5:3b", "hermes3:3b"]
+# hermes3:3b se evaluó (1/12, descartado — ver docs/AUDITORIA_2026-09.md §7).
+# Para reevaluarlo: --models llama3.2:3b,hermes3:3b
+DEFAULT_MODELS = ["llama3.2:3b", "qwen2.5:3b"]
 
 
 def _tool_call(msg: dict) -> tuple[str | None, dict, bool]:

@@ -38,17 +38,20 @@ ollama:
   host: http://localhost:11434
   # C4: mantener el modelo en RAM entre turnos (evita ~10 s de recarga)
   keep_alive: 30m
-  # Modelo del paso de routing (elegir herramienta) vs modelo del chat.
+  # Modelo unico de JARVIS: llama3.2:3b para routing (agent_model) y para el
+  # chat (model). JARVIS funciona solo con este modelo instalado.
   #   agent_model -> tool calling / router      model -> conversacion
-  # C5: llama3.2:3b elegido para routing (~18% mas rapido que qwen2.5:3b, mismo
-  # acierto). PLAN_HERMES FASE 9: hermes3:3b evaluado y DESCARTADO como router
-  # (1/12 en la bateria; no emite tool_calls fiables en el 3B). Ver
-  # docs/AUDITORIA_2026-09.md §7.
-  # Cambio rapido sin editar este archivo (PLAN_HERMES FASE 5):
+  # Historico: qwen2.5:3b y hermes3:3b se evaluaron para routing. hermes3:3b
+  # DESCARTADO (1/12; no emite tool_calls fiables en el 3B). qwen2.5:3b empata
+  # con llama pero es mas lento; queda como fallback opcional del router
+  # (router_fallback). Ver docs/AUDITORIA_2026-09.md §7.
+  # Cambio rapido sin editar este archivo:
   #   JARVIS_AGENT_MODEL=<modelo>  y/o  JARVIS_CHAT_MODEL=<modelo>
-  # Volver atras = restaurar estas dos lineas.
   agent_model: llama3.2:3b
-  model: qwen2.5:3b
+  model: llama3.2:3b
+  # Fallback del router SOLO ante fallo tecnico del modelo (no ante fallo de
+  # una herramienta). Vacio o ausente = sin fallback. Requiere tenerlo pulled.
+  router_fallback: qwen2.5:3b
   num_ctx: 2048
   num_predict: 120
   timeout: 600

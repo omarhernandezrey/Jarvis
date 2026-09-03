@@ -119,7 +119,7 @@ def fast_respond(message: str) -> str | None:
     # --- QUE PUEDES HACER ---
     if _RE_CAPACIDADES.search(m):
         return (f"A sus ordenes, {_sr()}. Puedo gestionar archivos, abrir aplicaciones como Chrome y VS Code, "
-                "ejecutar comandos de terminal, responder preguntas y razonar usando el modelo local qwen2.5. "
+                "ejecutar comandos de terminal, responder preguntas y razonar usando el modelo de lenguaje local. "
                 "Todo opera de forma privada en su propio equipo.")
 
     # --- GRACIAS ---

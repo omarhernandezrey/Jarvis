@@ -15,7 +15,7 @@ def test_default_config():
     cfg_module._config_cache = None
     cfg = cfg_module.get_config()
     assert cfg["ollama"]["host"] == "http://localhost:11434"
-    assert cfg["ollama"]["model"] == "qwen2.5:3b"
+    assert cfg["ollama"]["model"] == "llama3.2:3b"
     assert cfg["jarvis"]["name"] == "JARVIS"
     assert cfg["jarvis"]["max_history"] == 20
 
