@@ -52,6 +52,30 @@ def _get_whisper_model(model_name: str, compute_type: str):
         return _whisper_model
 
 
+def transcribe_file(path: str, language: str | None = None,
+                    beam_size: int = 5) -> str | None:
+    """Transcribe un archivo de audio (WAV/MP3/…) con el mismo modelo Whisper
+    que usa la escucha en vivo. Devuelve el texto o None si no reconoce nada.
+
+    Uso: notas de voz, y la prueba e2e de voz (test/test_voice_e2e.py).
+    """
+    cfg = load_voice_config()
+    model_name = cfg.get("stt_model", "small")
+    compute_type = cfg.get("stt_compute_type", "int8")
+    lang = language or cfg.get("stt_language", "es")
+    try:
+        model = _get_whisper_model(model_name, compute_type)
+        segments, _ = model.transcribe(
+            str(path), language=lang, beam_size=beam_size,
+            vad_filter=True, vad_parameters={"min_silence_duration_ms": 500},
+        )
+        text = " ".join(s.text.strip() for s in segments).strip()
+        return text or None
+    except Exception as e:
+        logger.error(f"Error transcribiendo {path}: {type(e).__name__}: {e}")
+        return None
+
+
 def _get_threshold() -> float:
     cfg = load_voice_config()
     noise_floor = cfg.get("stt_noise_floor")

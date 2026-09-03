@@ -31,6 +31,8 @@ Thumbs.db
 # Archivos temporales de voz/audio
 *.wav
 *.mp3
+# ...salvo los fixtures de prueba (audio sintético, versionado a propósito)
+!test/fixtures/*.wav
 
 # Lock files
 *.lock
