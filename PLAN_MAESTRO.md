@@ -435,7 +435,7 @@ conversacionales que NO captura), #3, #5, #6.
 
 **Pruebas:** #1, #2 (mock de cada dependencia: presente / ausente), #3, #5.
 
-## D2 — Tests `live` opt-in + CI nightly
+## D2 — Tests `live` opt-in + CI nightly  ✅ COMPLETADA
 **Rama:** `test/live-integracion`
 **Archivos:** `test/`, `pyproject.toml`, `.github/workflows/`
 
