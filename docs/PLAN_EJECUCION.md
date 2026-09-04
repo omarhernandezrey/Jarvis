@@ -24,7 +24,7 @@
 | Fase | Descripción | Estado |
 |------|-------------|--------|
 | A | Deuda abierta: push + análisis de los fallos del banco, arreglar los de seguridad | ✅ 2026-09-03 (commit `<pendiente>`) |
-| B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (rama `feat/catalogo-unico-herramientas`) |
+| B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (merge `b82760c`) |
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ⬜ pendiente |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ⬜ pendiente |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ⬜ pendiente |
@@ -98,23 +98,67 @@ enrutado) · e2e con Ollama: `abre la calculadora`→`open_app`, `pon bohemian
 rhapsody`→`spotify_play`, `qué clima…`→`weather`, `borra el archivo…`→plan +
 `/confirmar`.
 
-## FASE C — Latencia y enrutado
+## FASE C — Latencia y enrutado  🚧 EN CURSO (rama `feature/fase-c-latencia-enrutado`)
 
-Datos: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a 2,1 s.
-La entrada es el problema, no la generación.
-1. Ampliar cobertura del parser con las peticiones que el banco vio caer al
-   agente pudiendo resolverse antes ("abrime chrome" y compañía).
-2. Puerta de herramientas: clasificador barato (<300 ms) decide si hacen falta
-   herramientas. Si no → generación directa en streaming. Si sí → 5 más
-   relevantes, no 46.
-3. Arreglar el enrutado de charla que acaba en el agente o WolframAlpha.
-4. Caché de prefijo: `[system estable][esquemas][memoria][historial][mensaje]`.
-   Nada variable en el prefijo. Verificar que el 2.º mensaje de una sesión
-   tiene prefill mucho menor; si no baja, encontrar qué lo invalida.
-5. `num_ctx` a lo que se ocupa de verdad. `keep_alive` explícito, un modelo
-   residente.
-- Aceptar cuando: conversacional ≤3 s al primer token, parser ≤200 ms,
-  herramientas ≤15 s, con tabla antes/después.
+**Un commit por punto. Ninguna de las 19 del grupo A del banco puede empeorar.**
+Al cerrar: banco completo + tabla antes/después con p50/p95 por capa. Objetivos:
+conversacional ≤3 s al primer token · parser ≤200 ms · herramientas ≤15 s.
+
+Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
+2,1 s. La entrada es el problema, no la generación.
+
+### Estado
+- [x] **Higiene previa**: FASE B mergeada a `main` (`b82760c`) + `main` y
+      `feature/*` subidos. CI de Windows sigue en rojo (pre-existe a FASE B,
+      15+ merges; el desarrollo Windows se pospone — solo interesa Linux).
+- [ ] **C1 — Normalización morfológica** (causa raíz 2, `BANCO §12`). El parser
+      casa formas de superficie y falla con enclíticos/contracciones/voseo/
+      tildes. NO añadir regex caso por caso. Diseño:
+      - Nueva función `_normalizar_morfologia(texto)` en `intent/parser.py`,
+        se aplica en `parse_intent` justo tras `_sin_tildes`.
+      - Contracciones: `\bdel\b`→`de el`, `\bal\b`→`a el`.
+      - Enclíticos: split guiado por (a) lista de raíces imperativas de mando
+        (`abre|abri|cierra|pon|manda|envia|busca|da|haz|di|lee|muestra|baja|
+        sube|quita|reproduce|calcula|resuelve|oculta|borra|elimina|renombra|
+        copia|mueve|apaga|reinicia|bloquea|suspende|guarda|anota|recuerda|
+        toma|cuenta|explica|trae`) + pronombre (`me|te|se|le|les|lo|la|los|
+        las|nos` y dobles `(se|me|te|nos)(lo|la|los|las)`); (b) regla de
+        infinitivo `\w{3,}(ar|er|ir)+PRON` y gerundio `\w+(ando|endo)+PRON`
+        (`abrirme`→`abrir me`, `diciéndole`→`diciendo le`). `abrime`→`abre me`.
+      - Voseo irregular → tuteo: `podes→puedes, tenes→tienes, queres→quieres,
+        sentis→sientes, venis→vienes, decis→dices, vivis→vives` (los regulares
+        `opinás→opinas`, `comés→comes` ya los arregla `_sin_tildes`).
+      - **Verbo rector antes de los bloques por palabra clave**: el bloque
+        CLIMA no debe disparar si "clima"/"tiempo" va regido por verbo de
+        opinión (`opinas/piensas/crees/hablas ... de(l) clima`) → es charla.
+      - Objetivo: A04 `abrime chrome`→`open_app`; B02 `qué opinás del clima`
+        →chat (no `weather`); E04 `oculta … del escritorio`→plan+/confirmar;
+        E05 `mándale un correo … diciéndole que…`→plan+/confirmar. Sin regex
+        nuevas específicas de esas 4 frases.
+      - Pruebas: unit de `_normalizar_morfologia` (docenas de pares) ·
+        `test_parser_coverage.py` sin regresión · quitar los xfail que
+        correspondan · suite completa · banco (grupo A ≥ 19/20).
+- [ ] **C2 — Puerta de conversación** (causa raíz 1). Decidir "¿esto es
+      conversación?" ANTES del retriever. Barata/determinista; si necesita
+      modelo, diminuto y <300 ms. Medir y reportar el solapamiento después.
+      Objetivo: B01, B06, B09, B10 → chat. Calibrar con B01/B04/B05/B06/B07/
+      B08/B09/B10 en chat y C01–C05/C07–C10 llegando a herramienta.
+- [ ] **C3 — Puerta de herramientas**: cuando sí hacen falta, seleccionar las
+      5 más relevantes del catálogo (`catalog.agent_contracts()`), no las 46.
+      Prefill 17,6 s con esquemas vs 2,1 s sin ellos.
+- [ ] **C4 — Caché de prefijo**: orden `[system estable][esquemas][memoria]
+      [historial][mensaje]`. Nada variable en el prefijo (ni timestamps, ni
+      ids, ni estado del sistema). Verificar empíricamente que el 2.º mensaje
+      de una sesión tiene prefill mucho menor; si no, encontrar qué lo invalida.
+- [ ] **C5 — `num_ctx`** ajustado a lo que se ocupa de verdad · `keep_alive`
+      explícito · un solo modelo residente.
+- [ ] **C6 — Frases de parser para las 5 herramientas solo-agente**
+      (`controlar_musica`, `controlar_volumen`, `energia_del_equipo`,
+      `organizar_ventanas`, `recordar`): hoy cuestan ~40 s cada una. Añadir
+      `parser_intents` + gates. Ojo: `volume_*`, `media_*`, `lock_pc`… ya
+      tienen intents finos; falta el genérico y `recordar`.
+- Aceptar FASE C cuando: conversacional ≤3 s al primer token, parser ≤200 ms,
+  herramientas ≤15 s, con tabla antes/después y banco sin regresión en grupo A.
 
 ## FASE D — VERIFY, auditoría y salida estructurada
 
