@@ -245,17 +245,44 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
            El recuerdo sigue llegando, solo que pegado al último mensaje.
            La memoria persistida nunca lleva el bloque de recuerdo. La
            memoria manual (`/memoria usar`) se queda en el system, intacta.
-        2. e2e con Ollama vivo (3 turnos reales, prompt creciente,
-           `prompt_eval_duration` crudo): turno 1 (433 tok) 25,6 s de
-           prefill; turno 2 (573 tok) 34,8 s — **sin beneficio**, más lento
-           incluso con menos tokens nuevos; turno 3 (712 tok) **1,9 s** —
-           la mayoría de los ~712 tokens salió de caché, con solo ~139
-           nuevos. La caché de Ollama **sí existe y sí dispara** en este
-           despliegue; el patrón turno-a-turno es ruidoso en esta máquina de
-           2 núcleos compartida (el turno 2, más lento que el 1 pese a menos
-           tokens nuevos, es la misma varianza ya vista en C1/C2/C3 de esta
-           sesión), pero el salto del turno 3 es demasiado grande para ser
-           ruido — es caché funcionando.
+        2. e2e con Ollama vivo. **Corrección sobre el reporte anterior**: la
+           primera medición (3 turnos) traía un turno 2 anómalo (34,8 s, más
+           lento que el turno 1 con menos tokens nuevos) que se archivó como
+           "ruido de máquina" sin investigar. Investigado a fondo (ver
+           `## 13.` abajo): **no era ruido, era un defecto del propio script
+           de medición** — construía un `Jarvis()` real solo para reusar
+           `SYSTEM_PROMPT`, y `Jarvis.__init__` dispara en un hilo aparte un
+           *warm-up* (`POST /api/generate` vacío) que compitió con las
+           llamadas de la prueba por el único slot de `llama-server`
+           (`-np 1`), forzando **dos recargas completas del modelo** entre el
+           turno 1 y el turno 2 (confirmado en el log de `ollama.service`:
+           `"loading model via llama-server"` ×2, más un `POST /api/generate`
+           de 58,7 s intercalado). Cada recarga vacía la caché — de ahí el
+           `cached n_tokens = 0` del turno 2 pese a ser, en apariencia, la
+           continuación de la misma conversación.
+           Repetido limpio (sin instanciar `Jarvis()`; solo se importa el
+           módulo para leer `SYSTEM_PROMPT`), **6 turnos**, con el HUD
+           (`jarvis.service`) parado y el log de Ollama confirmando una única
+           carga de modelo en toda la corrida:
+
+           | turno | prompt tok. | nuevos | cache (servidor) | prefill | decode |
+           |---|---|---|---|---|---|
+           | 1 | 433 | 433 | 0 (frío) | 25,5 s | 20,2 s |
+           | 2 | 565 | 132 | 459/565 | 6,9 s | 16,9 s |
+           | 3 | 672 | 107 | 653/672 | 1,8 s | 18,3 s |
+           | 4 | 791 | 119 | 766/791 | 2,6 s | 14,0 s |
+           | 5 | 877 | 86 | 857/877 | 2,2 s | 15,2 s |
+           | 6 | 974 | 97 | 948/974 | 3,2 s | 28,8 s |
+
+           `cache (servidor)` es el `cached n_tokens` que el propio
+           `llama-server` escribe en su log por cada tarea — no una
+           inferencia mía por tiempo, el dato crudo del servidor. Desde el
+           turno 2 el prefill se mantiene en 1,8–6,9 s pese a que el prompt
+           casi se duplica (433→974 tokens): la caché de Ollama **sí existe,
+           sí dispara y se sostiene turno tras turno** cuando nada compite
+           por el slot. La lección para futuros scripts de medición queda
+           anotada en `BANCO_PRUEBAS_BASELINE.md`: no instanciar `Jarvis()`
+           si solo se necesita una constante — arrastra su warm-up en hilo.
       - **Límite reconocido, no escondido:** si el recuerdo automático SÍ
         dispara en un turno, ese turno concreto no se vuelve a mandar tal
         cual (no se persiste con el bloque de recuerdo pegado), así que el

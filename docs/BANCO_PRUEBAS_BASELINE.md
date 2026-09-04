@@ -389,3 +389,83 @@ morfológica antes de aplicar los patrones**:
 parser (`open_app` / `hide_files`+plan / `send_email`+plan); B02 deja de
 disparar `weather` y va a chat. Y **no debe haber regresión** en el grupo A
 (A01–A20 siguen 19/20+) ni en E01–E03/E06–E10.
+
+---
+
+## 13. INVESTIGACIÓN — la anomalía del turno 2 en la caché de prefijo (FASE C · C4)
+
+La primera medición de C4 (3 turnos) dio: turno 1 (433 tok) 25,6 s de
+prefill; turno 2 (573 tok) **34,8 s** — más lento que el turno 1 con menos
+tokens nuevos; turno 3 (712 tok) 1,9 s. El salto del turno 3 prueba que la
+caché existe; el turno 2 no cuadraba y no se cerró como "ruido de máquina"
+sin mirar — se investigó con el log real de `ollama.service`
+(`journalctl -u ollama`, que en este equipo imprime `cached n_tokens` por
+cada tarea que procesa `llama-server`: el dato de verdad, no una inferencia
+por tiempo).
+
+**Hipótesis descartadas en orden:**
+
+1. **¿`keep_alive` descargó el modelo por inactividad?** No por timeout: las
+   tres llamadas ocurrieron en <2 minutos, muy por debajo de los 30 min
+   configurados. Pero el log mostró recargas igual (ver #2) — no por
+   `keep_alive` cumplido, sino forzadas por otra causa.
+2. **¿Otro proceso ocupó el modelo entre medias?** **Sí, y se identificó
+   exactamente cuál.** El script de medición construía un `Jarvis()` real
+   solo para reusar la constante `SYSTEM_PROMPT`. Pero `Jarvis.__init__` →
+   `_ensure_model()` → `_warmup_model()` lanza en un **hilo aparte** un
+   `POST /api/generate` (prompt vacío, `num_predict=1`) para precargar el
+   modelo al arrancar JARVIS de verdad — diseño correcto para su propósito
+   original (que el primer mensaje del usuario no pague la carga en frío),
+   pero mi script NO era "arrancar JARVIS": era un benchmark que además
+   mandaba sus propias llamadas por `httpx` directo. Las dos vías
+   compitieron por el único slot de `llama-server` (`-np 1`). El log lo
+   muestra sin ambigüedad entre el fin del turno 1 (11:49:37) y el turno 2
+   (11:49:48):
+   ```
+   11:49:37  POST /api/chat  200  52.99s          <- fin turno 1
+   11:49:37  "loading model via llama-server" ... "llm server not responding"
+   11:49:38  load_tensors: loading model tensors...
+   11:49:42  POST /api/generate  200  58.7s        <- el warm-up de Jarvis(), NO mi turno 2
+   11:49:43  "loading model via llama-server" ... "llm server not responding"  <- OTRA recarga
+   11:49:44  load_tensors: loading model tensors...
+   11:49:48  task 0 | new prompt ... task.n_tokens=573 | cached n_tokens=0    <- mi turno 2, ya sin caché
+   ```
+   Dos recargas completas del modelo entre mi turno 1 y mi turno 2, cada una
+   vaciando la caché — de ahí el `cached n_tokens = 0` pese a ser,
+   aparentemente, la continuación de la misma conversación. No fue ruido de
+   CPU compartida: fue un defecto de metodología (mi script, no el código de
+   producción) que reprodujo justo la contención que un despliegue real con
+   dos clientes concurrentes tendría.
+3. **¿El turno 2 traía historial reescrito o un campo variable colado?** No
+   aplica a este script: construía `messages` a mano con listas de Python
+   (nada de `Jarvis.chat()`, nada de `auto_recall`, nada de `self.history`),
+   así que no había superficie para ese tipo de bug en esta medición
+   concreta. Descartado por diseño del propio script, no por inspección.
+
+**Repetido limpio:** mismo experimento, pero importando solo el módulo
+(`from jarvis_local.jarvis import SYSTEM_PROMPT`, sin instanciar `Jarvis()`),
+con `jarvis.service` (el HUD, que sondea `/api/tags` cada 2 s — inocuo para
+el slot del modelo pero se paró por higiene) detenido, y **6 turnos** en vez
+de 3. El log confirmó una única carga de modelo en toda la corrida:
+
+| turno | prompt tok. | nuevos | `cached n_tokens` (servidor) | prefill | decode |
+|---|---|---|---|---|---|
+| 1 | 433 | 433 | 0 (frío) | 25,5 s | 20,2 s |
+| 2 | 565 | 132 | 459/565 | 6,9 s | 16,9 s |
+| 3 | 672 | 107 | 653/672 | 1,8 s | 18,3 s |
+| 4 | 791 | 119 | 766/791 | 2,6 s | 14,0 s |
+| 5 | 877 | 86 | 857/877 | 2,2 s | 15,2 s |
+| 6 | 974 | 97 | 948/974 | 3,2 s | 28,8 s |
+
+Con 6 puntos la tendencia es clara (con 3 no se podía distinguir de un
+accidente, como se pidió verificar): tras el turno frío, el prefill se
+sostiene en 1,8–6,9 s pese a que el prompt casi se duplica (433→974 tokens).
+La caché de Ollama funciona de forma consistente turno a turno cuando nada
+más compite por el slot.
+
+**Nota de metodología para scripts futuros:** no instanciar `Jarvis()` en un
+benchmark si solo hace falta una constante o una función — arrastra el
+warm-up en hilo de `_ensure_model()` y contamina la medición exactamente como
+pasó aquí. Para medir la cascada real (con `Jarvis.chat()`), dejar pasar el
+warm-up antes de cronometrar, o llamar `j.chat("hola")` y esperar a que
+termine antes del primer turno medido.
