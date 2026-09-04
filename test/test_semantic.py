@@ -20,6 +20,7 @@ from jarvis_local.storage.semantic import (
     EMBED_DIM,
     SemanticIndex,
     cosine_similarity,
+    embed,
     embeddings_available,
     keyword_scores,
 )
@@ -47,6 +48,33 @@ def test_cosine_similarity():
 
 def test_cosine_matriz_vacia():
     assert cosine_similarity(np.array([1.0]), np.zeros((0, 1))).size == 0
+
+
+# ── PLAN_EJECUCION FASE C · C5: keep_alive explícito también para bge-m3 ──────
+def test_embed_manda_keep_alive_explicito(monkeypatch):
+    """Sin esto, Ollama usaba su default (5 min) para el modelo de embeddings
+    y bge-m3 se descargaba entre llamadas espaciadas -cada recuerdo automático,
+    cada selección de herramientas del retriever-, pagando una recarga que
+    chat()/chat_with_tools() ya evitan desde antes."""
+    import jarvis_local.storage.semantic as S
+
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"embeddings": [[0.1] * EMBED_DIM]}
+
+    def _fake_post(url, json=None, timeout=None):
+        captured["payload"] = json
+        return _Resp()
+
+    monkeypatch.setattr(S.requests, "post", _fake_post)
+    embed(["hola"])
+
+    assert captured["payload"].get("keep_alive"), "embed() no manda keep_alive"
 
 
 def test_keyword_scores_respaldo():

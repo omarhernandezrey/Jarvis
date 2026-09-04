@@ -294,8 +294,53 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
         ensuciar el historial con bloques de recuerdo viejos.
       - `test/test_cache_prefijo.py` (nuevo, 6 tests) · suite completa sin
         FAILED/ERROR · `ruff` limpio.
-- [ ] **C5 — `num_ctx`** ajustado a lo que se ocupa de verdad · `keep_alive`
-      explícito · un solo modelo residente.
+- [x] **C5 — `num_ctx` / `keep_alive` / un solo modelo residente**.
+      - **`num_ctx` (chat): 2048→4096, con evidencia, no a ojo.** Medido en
+        C4 (`BANCO_PRUEBAS_BASELINE §13`): cada intercambio ronda ~110
+        tokens; con `max_history=20` (40 mensajes) una sesión llena se acerca
+        a ~2500 tokens de system+historial — por encima de 2048. Al pasar el
+        límite, `context-shift` empieza a descartar los turnos más viejos a
+        mitad de sesión, **e invalida el prefijo cacheado que C4 acaba de
+        arreglar** (el corte de context-shift cambia la base de comparación
+        del prefijo). 4096 cubre una sesión de 20 turnos con margen para
+        memoria manual + recuerdo automático.
+      - **`agent_num_ctx`: se deja en 2048.** Medido en C3: el agente usa
+        historial acotado (`history[-6:]`) y 3-4 esquemas del top-K, prompts
+        de 800-1100 tokens — le sobra margen dentro de 2048; subirlo no
+        arregla nada que esté roto.
+      - **`keep_alive` explícito: ya estaba en `chat()`/`chat_with_tools()`
+        (histórico); faltaba en `storage/semantic.py::embed()`** — bge-m3
+        usaba el default de Ollama (5 min) y se descargaba entre llamadas
+        espaciadas del retriever/recuerdo automático, pagando una recarga
+        que el resto de rutas ya evitaban. Añadido, mismo valor (`30m`).
+      - **Un solo modelo residente**: ya lo estaba — `agent_model == model ==
+        llama3.2:3b` desde una decisión anterior (`docs/AUDITORIA_2026-09.md
+        §7`). Verificado con un test que lo fija, para que no se rompa sin
+        querer si alguien separa los modelos otra vez.
+      - **Medido de nuevo tras aplicarlo** (mismo protocolo limpio del §13:
+        sin instanciar `Jarvis()`, `jarvis.service` parado, log de Ollama
+        confirmando una única carga y `n_ctx_slot = 4096`), 6 turnos:
+
+        | turno | prompt tok. | nuevos | cache (servidor) | prefill |
+        |---|---|---|---|---|
+        | 1 | 433 | 433 | 0 (frío) | 25,3 s |
+        | 2 | 554 | 121 | 534/554 | 1,6 s |
+        | 3 | 693 | 139 | 673/693 | 1,8 s |
+        | 4 | 838 | 145 | 812/838 | 2,8 s |
+        | 5 | 972 | 134 | 952/972 | 2,4 s |
+        | 6 | 1107 | 135 | 1081/1107 | 3,5 s |
+
+        Sin regresión frente al `num_ctx=2048` de C4 (1,6–3,5 s vs. 1,8–6,9 s
+        — igual o mejor, dentro del ruido esperable) y sin la anomalía del
+        turno 2: con la contaminación identificada y evitada, la caché es
+        consistente desde el segundo turno en ambas configuraciones.
+      - `test/test_config.py` (+4 tests: `num_ctx` cubre la sesión completa
+        con la fórmula medida, `agent_num_ctx` cubre el uso medido con
+        margen, `keep_alive` seteado, un solo modelo) ·
+        `test/test_semantic.py` (+1 test: `embed()` manda `keep_alive`) ·
+        suite completa sin FAILED/ERROR · `ruff` limpio · grupo A del banco
+        intacto (20/20, sin cambios de enrutado — este punto es config e
+        infraestructura, no toca parser ni agente).
 - [ ] **C6 — Frases de parser para las 5 herramientas solo-agente**
       (`controlar_musica`, `controlar_volumen`, `energia_del_equipo`,
       `organizar_ventanas`, `recordar`): hoy cuestan ~40 s cada una. Añadir
