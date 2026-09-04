@@ -469,3 +469,75 @@ warm-up en hilo de `_ensure_model()` y contamina la medición exactamente como
 pasó aquí. Para medir la cascada real (con `Jarvis.chat()`), dejar pasar el
 warm-up antes de cronometrar, o llamar `j.chat("hola")` y esperar a que
 termine antes del primer turno medido.
+
+---
+
+## 14. CIERRE DE FASE C — banco completo, antes/después, objetivos
+
+Ejecutado `python -m scripts.banco_pruebas --prefill`, las 60 peticiones
+reales, con `Jarvis.chat()` de verdad (Ollama vivo, `jarvis.service` parado).
+Fecha: 2026-09-04.
+
+### 14.1 Acierto — antes / después de FASE C
+
+| | FASE 0 (línea base) | FASE 1 | FASE A (con E08 corregido) | **FASE C (ahora)** |
+|---|---|---|---|---|
+| Global | 48/60 (80 %) | 50/60 (83 %) | 52/60 (87 %, 8 fallos reales confirmados) | **60/60 (100 %)** |
+| Grupo A (parser) | 19/20 | 19/20 | 19/20 (A04 pendiente) | **20/20** |
+| Grupo B (charla) | 6/10 | 6/10 | 6/10 | **10/10** |
+| Grupo C (herramienta) | 10/10 | 10/10 | 10/10 | **10/10** |
+| Grupo D (ambigua) | 8/10 | 10/10 | 10/10 | **10/10** |
+| Grupo E (destructiva) | 5/10 | 6/10 | 8/10 (E08/E09 arreglados) | **10/10** |
+
+**Cero discrepancias** (`capa_real == capa_esperada` en las 60) y **cero
+peticiones que cayeron al agente/chat pudiendo resolverse antes** — las dos
+tablas que el propio script genera para detectarlas salen vacías. Los 8
+fallos reales que dejó FASE A (A04, B01, B02, B06, B09, B10, E04, E05) están
+todos cerrados: A04/E04/E05 por C1 (morfología), B01/B06/B09/B10 por C2
+(puerta de conversación, con ayuda de C1 en B02), y ninguno reabierto por
+C3–C6.
+
+### 14.2 Latencia por capa (real, banco completo)
+
+| capa real | n | p50 | p95 | máx |
+|---|---|---|---|---|
+| fast | 2 | 3,7 ms | 3,1 ms | 3,7 ms |
+| parser (enrutado puro, sin red) | ~20 de 26 | 0–12 ms | — | — |
+| parser (con red: clima/empleo/noticias) | ~6 de 26 | 0,6–3,4 s | — | — |
+| parser-confirmación (plan destructivo) | 5 | 8,2 ms | 8,5 ms | 10,0 ms |
+| parser-rechazo (blocklist) | 5 | 5,3 ms | 5,6 ms | 9,0 ms |
+| agente-aclaración | 5 | 468 ms | 646 ms | 693 ms |
+| chat-aclaración | 2 | 136,1 s | 58,3 s | 136,1 s |
+| **agente** (1+ llamada al LLM con herramientas) | 7 | **75,1 s** | 80,0 s | 90,1 s |
+| **chat** (generación libre, hasta el ÚLTIMO token) | 7 | **113,9 s** | 154,8 s | 206,7 s |
+
+La fila "parser" del informe crudo del script mezcla enrutado puro (0–12 ms)
+con enrutado a herramienta de red (clima, empleo, noticias: 0,6–3,4 s); se
+separan aquí porque son presupuestos distintos (ROADMAP §2.3: parser puro
+&lt;200 ms, parser→red &lt;3 s). **`chat` y `agente` miden tiempo TOTAL de
+generación (hasta el último token con `num_predict` de hasta 120), no tiempo
+al primer token** — no son la métrica del objetivo "≤3 s al primer token"
+(ver §14.3, que usa la medición correcta, tomada en C4/C5).
+
+**Tráfico sin LLM**: 39/60 (65 %) resueltas en `fast`/`parser`/`parser-
+confirmación`/`parser-rechazo` (0 llamadas al modelo). El 65 % **no es
+comparable directo** al 85 % del ROADMAP §2.4: ese umbral describe una sesión
+real (mayoría de comandos simples); este banco tiene, a propósito, 10/60 de
+charla pura, 10/60 que exigen herramienta, 10/60 ambiguas y 10/60
+destructivas — una mezcla de estrés, no una sesión típica.
+
+### 14.3 Objetivos de FASE C — cuáles se cumplen, sin maquillar
+
+| Objetivo | ¿Se cumple? | Evidencia |
+|---|---|---|
+| **Parser ≤ 200 ms** | **Sí**, para enrutado puro (0–12 ms medido, cero excepciones). El parser→red (clima/empleo/noticias, 0,6–3,4 s) es un presupuesto distinto (ROADMAP: &lt;3 s) y también se cumple, salvo C03 (vacantes, scraping web) a 3,4 s, justo en el borde. | §14.2, detalle completo del banco |
+| **Herramientas ≤ 15 s** | **Sí cuando las resuelve el parser** (0–3,4 s, la inmensa mayoría ahora tras C1–C6). **No cuando terminan en el agente** (7/60, p50 75,1 s, p95 80,0 s): límite físico de la CPU (2 núcleos, 3B), documentado desde el ROADMAP y fuera del alcance de FASE C — que ataca el ENRUTADO, no la velocidad de inferencia del modelo. | §14.2 fila "agente" |
+| **Conversacional ≤ 3 s al primer token** | **Parcial, y depende del turno.** Medido en C4/C5 (prefill real vía `/api/chat`, la métrica correcta — no la de este banco): turno 1 de una sesión (modelo frío) ≈ 25 s, **no cumple**. Turno 2+ con la caché de C4 activa: 1,6–6,9 s (mayoría ≤3 s, algún turno individual algo por encima); turno 3 en adelante, consistentemente 1,8–3,5 s. **No se cumple en frío; se cumple, con alguna excepción, de caliente en adelante.** | `BANCO_PRUEBAS_BASELINE.md §13`, tabla de C5 |
+
+### 14.4 Regresión
+
+Grupo A: **20/20**, sin excepción, en cada uno de los 6 checkpoints de FASE C
+(C1–C6, verificado con `--solo-clasificar` en cada commit). Grupos B, C, D, E:
+sin ninguna fila que empeorara respecto al checkpoint anterior en ningún
+punto de la fase. `pytest test -q`: sin FAILED/ERROR en los 6 commits.
+`ruff check .`: limpio en los 6.
