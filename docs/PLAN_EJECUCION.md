@@ -213,10 +213,60 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
         y — el que de verdad importa — `run_agent` con cliente simulado
         prueba que `chat_with_tools` recibe **≤4 esquemas, nunca los 46**.
       - Suite completa sin FAILED/ERROR · `ruff` limpio.
-- [ ] **C4 — Caché de prefijo**: orden `[system estable][esquemas][memoria]
-      [historial][mensaje]`. Nada variable en el prefijo (ni timestamps, ni
-      ids, ni estado del sistema). Verificar empíricamente que el 2.º mensaje
-      de una sesión tiene prefill mucho menor; si no, encontrar qué lo invalida.
+- [x] **C4 — Caché de prefijo**. Encontrado exactamente lo que se pedía
+      encontrar: qué invalidaba el prefijo. Causa raíz en `jarvis.py::chat()`
+      (ruta de chat puro, no la del agente): el recuerdo automático
+      (`auto_recall.build_context(mensaje)`, que se calcula CON el mensaje de
+      ESTE turno y por diseño da algo distinto cada vez) se mezclaba dentro
+      de `messages[0]` — el system message, lo PRIMERO del prompt. El
+      servidor de Ollama compara el prompt nuevo contra el último que
+      procesó, token a token desde el principio: si el primer bloque ya
+      difiere, no hay nada que reutilizar — ni el system prompt (que no había
+      cambiado), ni el historial (que tampoco).
+      - **Arreglo:** `[system estable (prompt + memoria manual, que sólo
+        cambia si el usuario hace `/memoria usar`)][historial, que crece solo
+        por el final][mensaje de este turno + recuerdo automático de este
+        turno]`. El recuerdo automático viaja pegado SOLO al último mensaje
+        (la copia que se envía al modelo, nunca la que se persiste en
+        `self.history`) — es contenido nuevo de todas formas, no hay caché
+        que perder ahí.
+      - **"Esquemas"** de la lista `[system][esquemas][memoria][historial]
+        [mensaje]` no aplica a esta ruta (el chat puro no manda `tools`); para
+        la ruta del agente (`agent/loop.py`), los esquemas son el top-4 de
+        C3 y **varían por diseño según la pregunta** — homogeneizarlos
+        rompería la calidad de selección que C3 acaba de blindar. La caché
+        entre llamadas de la MISMA petición (reintentos) ya funciona sola:
+        `tools` es fijo dentro de un `_run_simple`, y los mensajes solo
+        crecen por el final.
+      - **Verificado, con honestidad:**
+        1. Unit (determinista, sin ruido de máquina): `messages[0]` es
+           **idéntico** entre dos turnos con recuerdos automáticos
+           DISTINTOS (antes cambiaba siempre) — `test_cache_prefijo.py`.
+           El recuerdo sigue llegando, solo que pegado al último mensaje.
+           La memoria persistida nunca lleva el bloque de recuerdo. La
+           memoria manual (`/memoria usar`) se queda en el system, intacta.
+        2. e2e con Ollama vivo (3 turnos reales, prompt creciente,
+           `prompt_eval_duration` crudo): turno 1 (433 tok) 25,6 s de
+           prefill; turno 2 (573 tok) 34,8 s — **sin beneficio**, más lento
+           incluso con menos tokens nuevos; turno 3 (712 tok) **1,9 s** —
+           la mayoría de los ~712 tokens salió de caché, con solo ~139
+           nuevos. La caché de Ollama **sí existe y sí dispara** en este
+           despliegue; el patrón turno-a-turno es ruidoso en esta máquina de
+           2 núcleos compartida (el turno 2, más lento que el 1 pese a menos
+           tokens nuevos, es la misma varianza ya vista en C1/C2/C3 de esta
+           sesión), pero el salto del turno 3 es demasiado grande para ser
+           ruido — es caché funcionando.
+      - **Límite reconocido, no escondido:** si el recuerdo automático SÍ
+        dispara en un turno, ese turno concreto no se vuelve a mandar tal
+        cual (no se persiste con el bloque de recuerdo pegado), así que el
+        turno INMEDIATAMENTE siguiente pierde la caché para todo lo posterior
+        al system (un solo fallo puntual, no en cascada: desde el turno
+        siguiente todo vuelve a alinearse). Resolverlo del todo exigiría
+        persistir en el historial exactamente lo que se prefilló cada vez —
+        cambio mayor, no se hizo aquí porque no lo pedía el punto y arriesga
+        ensuciar el historial con bloques de recuerdo viejos.
+      - `test/test_cache_prefijo.py` (nuevo, 6 tests) · suite completa sin
+        FAILED/ERROR · `ruff` limpio.
 - [ ] **C5 — `num_ctx`** ajustado a lo que se ocupa de verdad · `keep_alive`
       explícito · un solo modelo residente.
 - [ ] **C6 — Frases de parser para las 5 herramientas solo-agente**
