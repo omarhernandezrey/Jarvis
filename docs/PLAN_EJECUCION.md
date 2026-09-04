@@ -341,13 +341,53 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
         suite completa sin FAILED/ERROR · `ruff` limpio · grupo A del banco
         intacto (20/20, sin cambios de enrutado — este punto es config e
         infraestructura, no toca parser ni agente).
-- [ ] **C6 — Frases de parser para las 5 herramientas solo-agente**
-      (`controlar_musica`, `controlar_volumen`, `energia_del_equipo`,
-      `organizar_ventanas`, `recordar`): hoy cuestan ~40 s cada una. Añadir
-      `parser_intents` + gates. Ojo: `volume_*`, `media_*`, `lock_pc`… ya
-      tienen intents finos; falta el genérico y `recordar`.
-- Aceptar FASE C cuando: conversacional ≤3 s al primer token, parser ≤200 ms,
-  herramientas ≤15 s, con tabla antes/después y banco sin regresión en grupo A.
+- [x] **C6 — Frases de parser para las 5 herramientas solo-agente**. Hallazgo
+      inicial: 4 de las 5 (`controlar_volumen`, `controlar_musica`,
+      `energia_del_equipo`, `organizar_ventanas`) YA tenían intents FINOS de
+      parser cubriendo su capacidad (`volume_up`, `media_play_pause`,
+      `lock_pc`, `minimize_all`…) — el hueco real no era de intents
+      faltantes, era de FRASEO: el voseo imperativo colombiano no llegaba a
+      esos gates. `recordar` sí estaba en cero: sin ningún gate.
+      - **Aprovechado C1 tal como se pidió**: los verbos regulares en -ar/-er
+        con voseo imperativo (apagá, suspendé, bloqueá, minimizá, maximizá…)
+        YA se normalizaban gratis — `_sin_tildes` por sí sola convierte
+        "apagá"→"apaga", que es la forma tuteo exacta. Solo hizo falta un
+        caso nuevo, -ir con cambio de raíz ("subí"+"me"="subime", igual que
+        "abrí"+"me"="abrime" de C1): se añadió "subi"→"sube" al mapa de C1
+        (`_RAIZ_BASE`), no una regex nueva por frase.
+      - **`recordar`**: nuevo gate `_parse_recordar` (recuerda/recuérdame/
+        acuérdate/acordate/no olvides/ten en cuenta/ten cuenta + "que
+        &lt;dato&gt;"), corre justo después de `_parse_reminder` en la cascada
+        (si hay hora, ya es recordatorio antes de llegar aquí). Contrato del
+        catálogo actualizado: `parser_intents=("recordar",)`.
+      - **Bug encontrado y arreglado de paso**: "pon pausa" cae en el
+        catch-all de Spotify y reproducía una canción llamada "pausa" en vez
+        de pausar la música — `pon` está excluido de la lista de C1
+        (colisiona con "ponme al día"), así que el hueco no lo tapaba la
+        normalización. Se agregó `pon(?:e|le|me)?\s+(?:en\s+)?pausa` al gate
+        de pausa, antes de que fase4 vea la frase.
+      - **Cuidado #1 (Wayland) — bug real encontrado, no solo verificado**:
+        `organizar_ventanas` en Linux SÍ devolvía un mensaje (no fallaba en
+        silencio), pero `_execute_tool_write` prioriza `plan.error` sobre
+        `plan.result`, así que el usuario veía el crudo `"Error: no soportado
+        en Wayland"` en vez de la explicación completa ya escrita
+        (`_WAYLAND_UNSUPPORTED`). Arreglado en `desktop_actions._no_soportado`
+        (ya no rellena `.error` para esta limitación conocida — no es una
+        excepción inesperada que necesite ese diagnóstico crudo).
+      - **Cuidado #2 (destructivo) — verificado explícitamente, no solo
+        asumido**: test e2e con `subprocess` mockeado que confirma que
+        "apagá el equipo"/"reiniciá el equipo" (voseo) siguen invocando
+        `shutdown` con la bandera de retraso (`/t`, cuenta regresiva
+        cancelable) — nunca un apagado inmediato. La ruta rápida no se salta
+        la ventana de confirmación de `tools/power.py`.
+      - `test/test_parser_agente_c6.py` (nuevo, 38 tests) · `test/test_
+        reminders.py` (+1 caso actualizado) · `test/test_catalog.py`
+        (`slow_path_only()` ahora 4, no 5) · suite completa sin FAILED/ERROR ·
+        `ruff` limpio · grupo A intacto (20/20) · banco `--solo-clasificar`
+        sin cambios en B/C/D/E.
+- **FASE C — CIERRE.** Ver evaluación completa (banco íntegro, tabla
+  antes/después, objetivos cumplidos/no cumplidos, sin maquillar) en
+  `docs/BANCO_PRUEBAS_BASELINE.md §14`.
 
 ## FASE D — VERIFY, auditoría y salida estructurada
 

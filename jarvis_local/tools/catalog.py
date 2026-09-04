@@ -1079,7 +1079,13 @@ CONTRACTS: list[ToolContract] = [
                  _obj({"text": _str("El dato a recordar")}),
                  _remember, RiskLevel.CREATE,
                  verify="El dato aparece en el store de memoria (MemoryStore).",
-                 revert="Borrar la entrada del store de memoria."),
+                 revert="Borrar la entrada del store de memoria.",
+                 # FASE C · C6: antes era la única de las 5 herramientas
+                 # solo-agente sin NINGÚN intent de parser (a diferencia de
+                 # volumen/música/energía/ventanas, que ya llegaban por sus
+                 # intents finos). "recuerda/recuérdame/acuérdate/acordate/
+                 # no olvides/ten en cuenta que <dato>" -> _parse_recordar().
+                 parser_intents=("recordar",)),
 ]
 
 # Validación al importar: un contrato a medias rompe el arranque.

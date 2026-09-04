@@ -51,7 +51,9 @@ def _sin_tildes(text: str) -> str:
 #     "búscame trabajo") ya absorben el clítico y capturan "me …" como objeto
 #     si se parte. Esos fraseos, sin partir, caen a chat como antes (sin
 #     regresión), y no eran objetivo de C1.
-_VERBOS_MANDO = ("abre", "abri", "cierra", "manda", "envia")
+# FASE C · C6 añade "subi" (voseo imperativo de "subir": "subime el
+# volumen"→"sube me el volumen", que el gate de volumen ya reconoce).
+_VERBOS_MANDO = ("abre", "abri", "cierra", "manda", "envia", "subi")
 _INFINITIVOS_MANDO = ("abrir", "cerrar", "mandar", "enviar")
 
 # Pronombres enclíticos: combinados primero para que el motor los prefiera.
@@ -60,8 +62,12 @@ _ENCLIT = (r"(?:selo|sela|selos|selas|"
            r"noslo|nosla|noslos|noslas|"
            r"se|me|te|nos|os|lo|la|los|las|le|les)")
 
-# Imperativo voseo raro que hay que mapear a la forma base ("abrí"+me="abrime").
-_RAIZ_BASE = {"abri": "abre"}
+# Imperativo voseo raro que hay que mapear a la forma base ("abrí"+me="abrime",
+# "subí"+me="subime"): la desinencia "-í" de los verbos en -ir no coincide con
+# el tuteo ("abre"/"sube") ni siquiera quitando la tilde, a diferencia de los
+# verbos en -ar/-er (ver _VOSEO más abajo, donde sí coincide y no hace falta
+# mapa).
+_RAIZ_BASE = {"abri": "abre", "subi": "sube"}
 
 # Voseo colombiano irregular → tuteo. Los regulares ("opinás"→"opinas",
 # "comés"→"comes") ya los deja bien `_sin_tildes`; solo los que cambian el
@@ -394,8 +400,9 @@ def _parse_reminder(m: str) -> IntentResult | None:
 
     if minutos is None and at is None:
         # "recuerdame que soy alergico" (sin tiempo) es memoria, no alarma:
-        # que lo resuelva el agente. Pero "ponme una alarma" sin tiempo se
-        # pregunta, porque la intencion es inequivoca.
+        # la resuelve _parse_recordar() a continuacion en la cascada (FASE C
+        # · C6). Pero "ponme una alarma" sin tiempo se pregunta, porque la
+        # intencion es inequivoca.
         if re.search(r'\b(?:alarma|temporizador)\b', low):
             return IntentResult(
                 kind="ambiguous",
@@ -419,6 +426,32 @@ def _parse_reminder(m: str) -> IntentResult | None:
         args["at"] = at
     return IntentResult(kind="tool_execute", tool="set_reminder",
                         arguments=args, reason="Crear recordatorio con alarma")
+
+
+# FASE C · C6 — "recordar" no tenia NINGUNA cobertura de parser (a diferencia
+# de volumen/musica/energia/ventanas, que ya llegaban por sus intents finos):
+# toda frase de memoria caia al agente, ~40 s, y a veces elegia mal (el banco
+# vio "recordar" activarse sobre una PREGUNTA, guardando basura). Corre
+# DESPUES de _parse_reminder: si habia hora o minutos, ya se resolvio como
+# recordatorio antes de llegar aqui.
+_TRIGGER_RECORDAR = re.compile(
+    r'\b(?:recuerda(?:me)?|acuerdate|acordate|no\s+olvides|'
+    r'ten(?:\s+en\s+cuenta|\s+cuenta)?|graba(?:te)?\s+esto)\b\s+(?:de\s+)?que\s+(.+)',
+    re.IGNORECASE)
+
+
+def _parse_recordar(m: str) -> IntentResult | None:
+    """Memoria permanente: 'recuerda/recuerdame/acuerdate/acordate/no
+    olvides/ten en cuenta que <dato>' -> guarda el dato, no crea una alarma."""
+    m_rec = _TRIGGER_RECORDAR.search(m)
+    if not m_rec:
+        return None
+    dato = m_rec.group(1).strip().rstrip('.!?')
+    if not dato:
+        return None
+    return IntentResult(kind="tool_execute", tool="recordar",
+                        arguments={"text": dato},
+                        reason="Guardar dato en memoria permanente")
 
 
 def _parse_media(low: str) -> IntentResult | None:
@@ -457,8 +490,14 @@ def _parse_media(low: str) -> IntentResult | None:
                             reason="Silenciar sonido")
 
     # --- PAUSA / REANUDAR ---
+    # "pon pausa"/"pone pausa" (voseo "poné" sin tilde) tiene que resolverse
+    # AQUI, antes de fase4: si no, "pon pausa" caia en el catch-all de
+    # spotify_play("pausa") -- "pon" fuera de la lista de _VERBOS_MANDO (choca
+    # con "ponme al dia"), asi que este gate lo cubre directo, sin depender de
+    # la normalizacion de C1.
     if re.search(r'\b(?:pausa(?:r)?|deten|para)\b.*\b(?:musica|cancion|reproduccion|video)\b', low) \
             or re.search(r'\b(?:reanuda|continua)\b.*\b(?:musica|cancion|reproduccion|video)\b', low) \
+            or re.search(r'\bpon(?:e|le|me)?\s+(?:en\s+)?pausa\b', low) \
             or re.fullmatch(r'\s*pausa[.!]?\s*', low):
         return IntentResult(kind="tool_execute", tool="media_play_pause",
                             reason="Pausar o reanudar la reproduccion")
@@ -971,6 +1010,11 @@ def parse_intent(message: str) -> IntentResult:
     recordatorio = _parse_reminder(m)
     if recordatorio is not None:
         return recordatorio
+
+    # --- MEMORIA PERMANENTE (FASE C · C6) ---
+    recordar = _parse_recordar(m)
+    if recordar is not None:
+        return recordar
 
     # --- VOLUMEN Y MULTIMEDIA (antes de fase4: "quita el silencio"
     #     caeria en el patron de BORRAR) ---

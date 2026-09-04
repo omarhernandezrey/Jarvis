@@ -164,11 +164,25 @@ def test_jarvis_usa_el_catalogo():
 # ---------- 6. informe camino lento ----------
 
 def test_informe_camino_lento_exacto():
-    """Herramientas que el LLM ve pero que NINGUNA regla del parser alcanza."""
+    """Herramientas que el LLM ve pero que NINGUNA regla del parser alcanza.
+
+    FASE C · C6 sacó "recordar" de esta lista: antes era la única de las 5
+    sin NINGÚN intent de parser (las otras 4 ya llegaban por sus intents
+    finos — volume_up, media_play_pause, lock_pc, minimize_all...). Esas 4
+    se quedan aquí a propósito: el contrato GENÉRICO que ve el LLM
+    (controlar_volumen, controlar_musica, energia_del_equipo,
+    organizar_ventanas) no tiene un intent propio, pero su CAPACIDAD sí es
+    alcanzable por el parser a través del hermano fino — ver
+    docs/PLAN_EJECUCION.md § FASE C · C6."""
     assert catalog.slow_path_only() == [
         "controlar_musica", "controlar_volumen", "energia_del_equipo",
-        "organizar_ventanas", "recordar",
+        "organizar_ventanas",
     ]
+
+
+def test_recordar_ya_no_es_solo_agente():
+    assert "recordar" not in catalog.slow_path_only()
+    assert catalog.by_name("recordar").parser_intents == ("recordar",)
 
 
 def test_informe_parser_only_no_vacio():
