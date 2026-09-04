@@ -140,11 +140,47 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
         al agente es trabajo de la puerta de conversación (C2).
       - `test/test_parser_morfologia.py` (nuevo) · suite completa sin
         FAILED/ERROR · `ruff` limpio.
-- [ ] **C2 — Puerta de conversación** (causa raíz 1). Decidir "¿esto es
-      conversación?" ANTES del retriever. Barata/determinista; si necesita
-      modelo, diminuto y <300 ms. Medir y reportar el solapamiento después.
-      Objetivo: B01, B06, B09, B10 → chat. Calibrar con B01/B04/B05/B06/B07/
-      B08/B09/B10 en chat y C01–C05/C07–C10 llegando a herramienta.
+- [x] **C2 — Puerta de conversación** (causa raíz 1, `BANCO §12`). Hecho:
+      - `_es_conversacion_directa(mensaje)` en `agent/loop.py`, se ejecuta en
+        `_run_simple` **antes** de `confidence()`/`select_tools()` (ni
+        siquiera se calcula el embedding de confianza del retriever). Es
+        regex, **determinista, 0 ms** — se descartó el enfoque por umbral de
+        similitud: NO se pudo separar con un solo escalar (ver abajo), y
+        también se descartó un clasificador por embeddings (nearest-centroid
+        con 18-30 frases ejemplo, probado aparte) porque cada llamada cuesta
+        0,46–0,66 s — por encima del presupuesto de 300 ms que pide el plan
+        para la opción "modelo".
+      - Reconoce la FORMA de la charla dirigida a JARVIS (piropo, pregunta
+        sobre sí mismo/sus preferencias, hipotético "si fueras humano", pedir
+        una sugerencia u opinión sin tema factual, "cuéntame un dato curioso"
+        — sin tocar "cuéntame un chiste", que sigue siendo herramienta), no
+        el tema — por eso no colisiona con el grupo C.
+      - **Solapamiento medido (confirma la causa raíz, sin cambiar el
+        retriever):** `confidence()` de charla sigue en 0,40–0,54 y de
+        herramienta legítima en 0,46–0,66 — el solapamiento de 0,46 a 0,54
+        **no se tocó ni se necesitaba tocar**: el gate corta ANTES, así que
+        para las frases que cubre el solapamiento deja de importar. Para las
+        que NO cubre (B04, B07 — declaración personal del usuario, "explícame
+        X") el solapamiento sigue intacto y sin resolver: no estaban en el
+        objetivo de C2.
+      - **Objetivo cumplido:** B01, B06, B09, B10 → conversación directa.
+        **Bonus, sin pedirlo:** B02 (opinión sobre el clima, reforzando C1),
+        B05 (hipotético), B08 (pedir sugerencia).
+      - **Cero falsos positivos**: probado contra las 60 frases del banco —
+        el gate sólo dispara en las 7 cuya `capa_esperada` es `chat`
+        (`test_cero_falsos_positivos_en_el_banco`).
+      - **e2e con Ollama** (las 4 obligatorias): las 4 pasan de `kind=tool`
+        (agente eligiendo mal: WolframAlpha fallando en B06/B10, `recordar`
+        escribiendo basura en memoria en B09, 37–246 s con resultado
+        incorrecto) a `kind=llm` con respuesta conversacional correcta y sin
+        efectos secundarios. Latencia observada ahora: 37–48 s — **se evitó
+        el sobrecosto del agente/retriever, pero NO se llega al objetivo
+        ≤3 s**: eso depende de la velocidad de generación del chat en sí
+        (caché de prefijo/`num_ctx`/`keep_alive`), que es C4 y C5, no C2.
+        Anotado como pendiente, no como fallo de este punto.
+      - `test/test_conversacion_directa.py` (nuevo, 21 tests, incluye mocks
+        que prueban que `confidence()`/`select_tools()` NO se llaman) · suite
+        completa sin FAILED/ERROR · `ruff` limpio.
 - [ ] **C3 — Puerta de herramientas**: cuando sí hacen falta, seleccionar las
       5 más relevantes del catálogo (`catalog.agent_contracts()`), no las 46.
       Prefill 17,6 s con esquemas vs 2,1 s sin ellos.

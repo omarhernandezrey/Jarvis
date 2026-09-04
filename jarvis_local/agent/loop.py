@@ -126,6 +126,48 @@ def _es_orden_vaga(message: str) -> bool:
     return bool(_VAGO.match(m) or _SIN_OBJETO.search(m))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAN_EJECUCION FASE C · C2 — puerta de conversación (causa raíz 1 del banco)
+#
+# Medido (BANCO_PRUEBAS_BASELINE §12): la confianza del retriever para charla
+# ("vos sí sos bacano", "cuál es tu color favorito") va de 0,40 a 0,54; para
+# una petición legítima de herramienta ("necesito sombrilla en Cali",
+# "vacantes de electricista"), de 0,46 a 0,66. Los rangos SE SOLAPAN de 0,46 a
+# 0,54: ningún umbral de un solo escalar los separa (subir el umbral mata
+# peticiones reales; bajarlo deja pasar charla). No es un problema de
+# calibración, es un problema de forma de la señal.
+#
+# En vez de un umbral de similitud, se reconoce la FORMA de la charla dirigida
+# a JARVIS (pregunta sobre sí mismo, piropo, hipotético, pedir una sugerencia
+# u opinión sin tema factual) — no el tema. Determinista, 0 ms: se decide
+# ANTES de tocar el retriever, así una charla nunca paga ni el embedding de
+# selección de herramientas ni, mucho menos, una llamada al LLM.
+_CHARLA_DIRIGIDA_A_JARVIS = re.compile(
+    r'\b(?:sos|eres)\s+(?:bacano|bacana|genial|el\s+mejor|la\s+mejor|un\s+crack|'
+    r'una\s+verraquera|verraco|verraca)\b'                                  # piropo
+    r'|\bcual\s+es\s+tu\b[^.?!]{0,25}\bfavorit[oa]s?\b'                     # "tu X favorito/a"
+    r'|\bcomo\s+te\s+(?:sientes|sentis|va|encuentras|estas)\b'              # "cómo te sientes/sentís"
+    r'|\bque\s+tal\s+(?:estas|te\s+va|andas)\b'
+    r'|\bsi\s+fueras\s+(?:humano|persona|de\s+carne\s+y\s+hueso)\b'         # hipotético
+    r'|\b(?:cuentame|dime|dame)\s+(?:un\s+|una\s+)?(?:dato|cosa)\s+'
+    r'(?:curios[oa]|interesante|random|rar[oa])\b'                          # "dato curioso" (no "chiste": ese sí es tool)
+    r'|\bque\s+se\s+te\s+ocurre\b|\bque\s+me\s+recomiendas\s+para\b'        # pedir sugerencia
+    r'|\b(?:opin\w+|piens\w+|cre[eé]s?)\b.{0,30}\b(?:de\s+el|del|sobre)\s+'
+    r'(?:este\s+|el\s+|ese\s+)?(?:clima|tiempo|calor|frio)\b',              # opinión sobre el clima
+    re.IGNORECASE)
+
+
+def _es_conversacion_directa(message: str) -> bool:
+    """Charla dirigida a JARVIS (piropo, pregunta sobre sí mismo, hipotético,
+    pedir sugerencia/dato sin tema factual) que no necesita ni el catálogo ni
+    el retriever: va derecho a generación de chat."""
+    from jarvis_local.intent.parser import _sin_tildes
+    m = _sin_tildes(message.strip())
+    if not m or len(m.split()) > 20:
+        return False
+    return bool(_CHARLA_DIRIGIDA_A_JARVIS.search(m))
+
+
 @dataclass
 class AgentResult:
     text: str
@@ -303,6 +345,14 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     # el turno anterior pegado ("clima en Cali" + "y en Bogota?"), que si tiene
     # el contenido semantico. El LLM sigue recibiendo el mensaje original.
     consulta = _consulta_de_recuperacion(user_message, history)
+
+    # PLAN_EJECUCION FASE C · C2 — puerta de conversación: se decide ANTES de
+    # tocar el retriever (ni siquiera se calcula su `confidence`, que también
+    # es un embedding). Charla dirigida a JARVIS -> generación de chat directa.
+    if _es_conversacion_directa(user_message):
+        log_decision(user_message, 0.0, [], [], "conversacion_directa")
+        return AgentResult(text="", confidence=0.0)
+
     conf = confidence(consulta)
 
     # Orden sin objeto ("hazlo", "buscalo", "mandalo pues"): preguntar, nunca
