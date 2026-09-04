@@ -181,9 +181,38 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
       - `test/test_conversacion_directa.py` (nuevo, 21 tests, incluye mocks
         que prueban que `confidence()`/`select_tools()` NO se llaman) · suite
         completa sin FAILED/ERROR · `ruff` limpio.
-- [ ] **C3 — Puerta de herramientas**: cuando sí hacen falta, seleccionar las
-      5 más relevantes del catálogo (`catalog.agent_contracts()`), no las 46.
-      Prefill 17,6 s con esquemas vs 2,1 s sin ellos.
+- [x] **C3 — Puerta de herramientas**. Hallazgo: el mecanismo **ya existía**
+      (`agent/retriever.py`, `TOP_K = 4`, de antes de esta fase) y ya estaba
+      enganchado a la ruta real (`run_agent` → `select_tools()` →
+      `client.chat_with_tools(messages, tools)` con esos ≤4 esquemas, nunca
+      `registry.all_schemas()`). C3 fue **verificarlo contra el catálogo único
+      de FASE B y blindarlo**, no reconstruirlo:
+      - `TOP_K = 4`, no 5: se deja así — es un número ya calibrado con
+        evidencia real en el propio código (`retriever.py`: con 6 seguía
+        habiendo ruido en el catálogo ofrecido; con 4, recall suficiente y
+        el modelo decide mejor). Lo pedido era "las top-N del catálogo, no
+        las 46" — eso ya se cumplía; se prefiere la calibración documentada
+        a mover el número sin evidencia nueva. Se puede subir a 5 si se pide
+        explícitamente.
+      - **Verificado, no dado por hecho:** `catalog.agent_contracts()` (46) ↔
+        `retriever._EJEMPLOS` — cobertura exacta 46/46, cero huecos, cero
+        huérfanos. El índice del retriever (`_nombres`, tras
+        `_construir_indice()`) coincide con el catálogo único, nombre a
+        nombre.
+      - **Medido de nuevo, con Ollama vivo** (`scripts.banco_pruebas.
+        desglose_prefill()`): 8 frases reales, `n_esquemas` 3–4 (nunca 46);
+        la única con 0 esquemas (recall roto de C06, ya fichado en `BANCO §4`)
+        hace prefill en 2,2 s frente a 10,9–57,1 s con 3–4 esquemas — el
+        patrón "menos esquemas = mucho menos prefill" se sostiene. (La media
+        absoluta hoy, ~23 s, es más alta que los 17,6 s de la línea base;
+        variación de máquina/carga entre sesiones, no una regresión de C3 —
+        ninguna herramienta de C3 toca el tamaño del prompt más allá del
+        recorte top-K que ya existía.)
+      - `test/test_puerta_herramientas.py` (nuevo, 10 tests): cobertura
+        catálogo↔ejemplos (sin Ollama), `select_tools()` nunca supera `TOP_K`,
+        y — el que de verdad importa — `run_agent` con cliente simulado
+        prueba que `chat_with_tools` recibe **≤4 esquemas, nunca los 46**.
+      - Suite completa sin FAILED/ERROR · `ruff` limpio.
 - [ ] **C4 — Caché de prefijo**: orden `[system estable][esquemas][memoria]
       [historial][mensaje]`. Nada variable en el prefijo (ni timestamps, ni
       ids, ni estado del sistema). Verificar empíricamente que el 2.º mensaje
