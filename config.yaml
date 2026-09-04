@@ -52,7 +52,18 @@ ollama:
   # Fallback del router SOLO ante fallo tecnico del modelo (no ante fallo de
   # una herramienta). Vacio o ausente = sin fallback. Requiere tenerlo pulled.
   router_fallback: qwen2.5:3b
-  num_ctx: 2048
+  # PLAN_EJECUCION FASE C · C5 — 2048 se quedaba corto para lo que el chat
+  # ocupa de verdad: medido en sesión real, cada intercambio (usuario +
+  # respuesta) ronda ~100-110 tokens; con max_history=20 (jarvis.max_history,
+  # 40 mensajes) una conversación llena se acerca a ~2500 tokens de system +
+  # historial, por encima del límite -> context-shift habría empezado a
+  # descartar los turnos más viejos a mitad de sesión, e invalidado de paso
+  # el prefijo cacheado de C4. 4096 cubre una sesión de 20 turnos con margen
+  # para memoria manual + recuerdo automático. agent_num_ctx se queda en
+  # 2048: el agente usa historial acotado (history[-6:]) y 3-4 esquemas del
+  # top-K de C3; medido en C3, sus prompts rondan 800-1100 tokens, con
+  # margen de sobra dentro de 2048.
+  num_ctx: 4096
   num_predict: 120
   timeout: 600
 safety:

@@ -74,10 +74,13 @@ def test_intent_alarma_sin_tiempo_pregunta():
     assert r.kind == "ambiguous"
 
 
-def test_intent_recuerdame_sin_tiempo_va_al_agente():
-    # sin tiempo es memoria permanente (herramienta 'recordar'), no alarma
+def test_intent_recuerdame_sin_tiempo_es_memoria_no_alarma():
+    # sin tiempo es memoria permanente (herramienta 'recordar'), no alarma.
+    # FASE C · C6: antes caia al agente (~40 s); ahora lo resuelve el parser.
     r = parse_intent("recuerdame que soy alergico al mani")
     assert r.tool != "set_reminder"
+    assert r.kind == "tool_execute" and r.tool == "recordar"
+    assert r.arguments["text"] == "soy alergico al mani"
 
 
 def test_intent_listar_recordatorios():

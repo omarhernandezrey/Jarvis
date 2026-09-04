@@ -24,8 +24,8 @@
 | Fase | Descripción | Estado |
 |------|-------------|--------|
 | A | Deuda abierta: push + análisis de los fallos del banco, arreglar los de seguridad | ✅ 2026-09-03 (commit `<pendiente>`) |
-| B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (rama `feat/catalogo-unico-herramientas`) |
-| C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ⬜ pendiente |
+| B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (merge `b82760c`) |
+| C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `<pendiente>`) |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ⬜ pendiente |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ⬜ pendiente |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ⬜ pendiente |
@@ -98,23 +98,296 @@ enrutado) · e2e con Ollama: `abre la calculadora`→`open_app`, `pon bohemian
 rhapsody`→`spotify_play`, `qué clima…`→`weather`, `borra el archivo…`→plan +
 `/confirmar`.
 
-## FASE C — Latencia y enrutado
+## FASE C — Latencia y enrutado  ✅ COMPLETADA
 
-Datos: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a 2,1 s.
-La entrada es el problema, no la generación.
-1. Ampliar cobertura del parser con las peticiones que el banco vio caer al
-   agente pudiendo resolverse antes ("abrime chrome" y compañía).
-2. Puerta de herramientas: clasificador barato (<300 ms) decide si hacen falta
-   herramientas. Si no → generación directa en streaming. Si sí → 5 más
-   relevantes, no 46.
-3. Arreglar el enrutado de charla que acaba en el agente o WolframAlpha.
-4. Caché de prefijo: `[system estable][esquemas][memoria][historial][mensaje]`.
-   Nada variable en el prefijo. Verificar que el 2.º mensaje de una sesión
-   tiene prefill mucho menor; si no baja, encontrar qué lo invalida.
-5. `num_ctx` a lo que se ocupa de verdad. `keep_alive` explícito, un modelo
-   residente.
-- Aceptar cuando: conversacional ≤3 s al primer token, parser ≤200 ms,
-  herramientas ≤15 s, con tabla antes/después.
+**Un commit por punto. Ninguna de las 19 del grupo A del banco puede empeorar.**
+Al cerrar: banco completo + tabla antes/después con p50/p95 por capa. Objetivos:
+conversacional ≤3 s al primer token · parser ≤200 ms · herramientas ≤15 s.
+
+Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
+2,1 s. La entrada es el problema, no la generación.
+
+### Estado
+- [x] **Higiene previa**: FASE B mergeada a `main` (`b82760c`) + `main` y
+      `feature/*` subidos. CI de Windows sigue en rojo (pre-existe a FASE B,
+      15+ merges; el desarrollo Windows se pospone — solo interesa Linux).
+- [x] **C1 — Normalización morfológica** (causa raíz 2, `BANCO §12`). Hecho:
+      - `_normalizar_morfologia(texto)` en `intent/parser.py`, aplicada en
+        `parse_intent` tras `_sin_tildes`. Separa enclíticos de una lista corta
+        y segura de VERBOS DE MANDO (`abre|abri|cierra|manda|envia` + su
+        infinitivo) + pronombres simples y dobles; y normaliza el voseo
+        irregular (`podés→puedes`, `sentís→sientes`, `tenés→tienes`, …).
+      - **Verbo con clítico y nada más NO se parte** (`_SOLO_MULETILLA`):
+        "hazlo", "búscalo ya", "mándalo pues" siguen siendo orden vaga → chat.
+      - **Verbos excluidos a propósito** del split: `pon` ("ponme al día" =
+        briefing), `haz`/`da`/`di` (chocan con la aclaración), `recuerda`
+        (recordatorio), `lee`/`busca`/`muestra`/… (sus gates ya absorben el
+        clítico; partir capturaba "me …" como objeto). Esos fraseos caen a
+        chat como antes, sin regresión.
+      - Contracción `del`: NO se expande global (rompía "estado del sistema",
+        "5 al cubo"). El gate de ocultar acepta `del?` en su patrón.
+      - Verbo rector: guardia en el bloque CLIMA — "qué opinás **del** clima",
+        "el clima **loco** que ha hecho" → charla, no `weather`.
+      - Cuerpo de correo coloquial: "…**diciéndole que** renuncio" → `send_email`
+        plan + `/confirmar` (asunto derivado). No se envía sin confirmar.
+      - **Resultado (banco `--solo-clasificar`, enrutado):** A04
+        `cascada→parser` · B02 `parser(weather)→cascada` · E04
+        `cascada→parser-confirmacion` · E05 `cascada→parser-confirmacion`.
+        Grupo A sin cambios salvo A04 (ahora sí lo coge el parser). D-group,
+        E01–E03/E06–E10 idénticos.
+      - **Pendiente para C2:** B02 e2e todavía cae al agente, que elige `clima`
+        (99 s). El parser ya NO da el falso `weather`; que la charla no llegue
+        al agente es trabajo de la puerta de conversación (C2).
+      - `test/test_parser_morfologia.py` (nuevo) · suite completa sin
+        FAILED/ERROR · `ruff` limpio.
+- [x] **C2 — Puerta de conversación** (causa raíz 1, `BANCO §12`). Hecho:
+      - `_es_conversacion_directa(mensaje)` en `agent/loop.py`, se ejecuta en
+        `_run_simple` **antes** de `confidence()`/`select_tools()` (ni
+        siquiera se calcula el embedding de confianza del retriever). Es
+        regex, **determinista, 0 ms** — se descartó el enfoque por umbral de
+        similitud: NO se pudo separar con un solo escalar (ver abajo), y
+        también se descartó un clasificador por embeddings (nearest-centroid
+        con 18-30 frases ejemplo, probado aparte) porque cada llamada cuesta
+        0,46–0,66 s — por encima del presupuesto de 300 ms que pide el plan
+        para la opción "modelo".
+      - Reconoce la FORMA de la charla dirigida a JARVIS (piropo, pregunta
+        sobre sí mismo/sus preferencias, hipotético "si fueras humano", pedir
+        una sugerencia u opinión sin tema factual, "cuéntame un dato curioso"
+        — sin tocar "cuéntame un chiste", que sigue siendo herramienta), no
+        el tema — por eso no colisiona con el grupo C.
+      - **Solapamiento medido (confirma la causa raíz, sin cambiar el
+        retriever):** `confidence()` de charla sigue en 0,40–0,54 y de
+        herramienta legítima en 0,46–0,66 — el solapamiento de 0,46 a 0,54
+        **no se tocó ni se necesitaba tocar**: el gate corta ANTES, así que
+        para las frases que cubre el solapamiento deja de importar. Para las
+        que NO cubre (B04, B07 — declaración personal del usuario, "explícame
+        X") el solapamiento sigue intacto y sin resolver: no estaban en el
+        objetivo de C2.
+      - **Objetivo cumplido:** B01, B06, B09, B10 → conversación directa.
+        **Bonus, sin pedirlo:** B02 (opinión sobre el clima, reforzando C1),
+        B05 (hipotético), B08 (pedir sugerencia).
+      - **Cero falsos positivos**: probado contra las 60 frases del banco —
+        el gate sólo dispara en las 7 cuya `capa_esperada` es `chat`
+        (`test_cero_falsos_positivos_en_el_banco`).
+      - **e2e con Ollama** (las 4 obligatorias): las 4 pasan de `kind=tool`
+        (agente eligiendo mal: WolframAlpha fallando en B06/B10, `recordar`
+        escribiendo basura en memoria en B09, 37–246 s con resultado
+        incorrecto) a `kind=llm` con respuesta conversacional correcta y sin
+        efectos secundarios. Latencia observada ahora: 37–48 s — **se evitó
+        el sobrecosto del agente/retriever, pero NO se llega al objetivo
+        ≤3 s**: eso depende de la velocidad de generación del chat en sí
+        (caché de prefijo/`num_ctx`/`keep_alive`), que es C4 y C5, no C2.
+        Anotado como pendiente, no como fallo de este punto.
+      - `test/test_conversacion_directa.py` (nuevo, 21 tests, incluye mocks
+        que prueban que `confidence()`/`select_tools()` NO se llaman) · suite
+        completa sin FAILED/ERROR · `ruff` limpio.
+- [x] **C3 — Puerta de herramientas**. Hallazgo: el mecanismo **ya existía**
+      (`agent/retriever.py`, `TOP_K = 4`, de antes de esta fase) y ya estaba
+      enganchado a la ruta real (`run_agent` → `select_tools()` →
+      `client.chat_with_tools(messages, tools)` con esos ≤4 esquemas, nunca
+      `registry.all_schemas()`). C3 fue **verificarlo contra el catálogo único
+      de FASE B y blindarlo**, no reconstruirlo:
+      - `TOP_K = 4`, no 5: se deja así — es un número ya calibrado con
+        evidencia real en el propio código (`retriever.py`: con 6 seguía
+        habiendo ruido en el catálogo ofrecido; con 4, recall suficiente y
+        el modelo decide mejor). Lo pedido era "las top-N del catálogo, no
+        las 46" — eso ya se cumplía; se prefiere la calibración documentada
+        a mover el número sin evidencia nueva. Se puede subir a 5 si se pide
+        explícitamente.
+      - **Verificado, no dado por hecho:** `catalog.agent_contracts()` (46) ↔
+        `retriever._EJEMPLOS` — cobertura exacta 46/46, cero huecos, cero
+        huérfanos. El índice del retriever (`_nombres`, tras
+        `_construir_indice()`) coincide con el catálogo único, nombre a
+        nombre.
+      - **Medido de nuevo, con Ollama vivo** (`scripts.banco_pruebas.
+        desglose_prefill()`): 8 frases reales, `n_esquemas` 3–4 (nunca 46);
+        la única con 0 esquemas (recall roto de C06, ya fichado en `BANCO §4`)
+        hace prefill en 2,2 s frente a 10,9–57,1 s con 3–4 esquemas — el
+        patrón "menos esquemas = mucho menos prefill" se sostiene. (La media
+        absoluta hoy, ~23 s, es más alta que los 17,6 s de la línea base;
+        variación de máquina/carga entre sesiones, no una regresión de C3 —
+        ninguna herramienta de C3 toca el tamaño del prompt más allá del
+        recorte top-K que ya existía.)
+      - `test/test_puerta_herramientas.py` (nuevo, 10 tests): cobertura
+        catálogo↔ejemplos (sin Ollama), `select_tools()` nunca supera `TOP_K`,
+        y — el que de verdad importa — `run_agent` con cliente simulado
+        prueba que `chat_with_tools` recibe **≤4 esquemas, nunca los 46**.
+      - Suite completa sin FAILED/ERROR · `ruff` limpio.
+- [x] **C4 — Caché de prefijo**. Encontrado exactamente lo que se pedía
+      encontrar: qué invalidaba el prefijo. Causa raíz en `jarvis.py::chat()`
+      (ruta de chat puro, no la del agente): el recuerdo automático
+      (`auto_recall.build_context(mensaje)`, que se calcula CON el mensaje de
+      ESTE turno y por diseño da algo distinto cada vez) se mezclaba dentro
+      de `messages[0]` — el system message, lo PRIMERO del prompt. El
+      servidor de Ollama compara el prompt nuevo contra el último que
+      procesó, token a token desde el principio: si el primer bloque ya
+      difiere, no hay nada que reutilizar — ni el system prompt (que no había
+      cambiado), ni el historial (que tampoco).
+      - **Arreglo:** `[system estable (prompt + memoria manual, que sólo
+        cambia si el usuario hace `/memoria usar`)][historial, que crece solo
+        por el final][mensaje de este turno + recuerdo automático de este
+        turno]`. El recuerdo automático viaja pegado SOLO al último mensaje
+        (la copia que se envía al modelo, nunca la que se persiste en
+        `self.history`) — es contenido nuevo de todas formas, no hay caché
+        que perder ahí.
+      - **"Esquemas"** de la lista `[system][esquemas][memoria][historial]
+        [mensaje]` no aplica a esta ruta (el chat puro no manda `tools`); para
+        la ruta del agente (`agent/loop.py`), los esquemas son el top-4 de
+        C3 y **varían por diseño según la pregunta** — homogeneizarlos
+        rompería la calidad de selección que C3 acaba de blindar. La caché
+        entre llamadas de la MISMA petición (reintentos) ya funciona sola:
+        `tools` es fijo dentro de un `_run_simple`, y los mensajes solo
+        crecen por el final.
+      - **Verificado, con honestidad:**
+        1. Unit (determinista, sin ruido de máquina): `messages[0]` es
+           **idéntico** entre dos turnos con recuerdos automáticos
+           DISTINTOS (antes cambiaba siempre) — `test_cache_prefijo.py`.
+           El recuerdo sigue llegando, solo que pegado al último mensaje.
+           La memoria persistida nunca lleva el bloque de recuerdo. La
+           memoria manual (`/memoria usar`) se queda en el system, intacta.
+        2. e2e con Ollama vivo. **Corrección sobre el reporte anterior**: la
+           primera medición (3 turnos) traía un turno 2 anómalo (34,8 s, más
+           lento que el turno 1 con menos tokens nuevos) que se archivó como
+           "ruido de máquina" sin investigar. Investigado a fondo (ver
+           `## 13.` abajo): **no era ruido, era un defecto del propio script
+           de medición** — construía un `Jarvis()` real solo para reusar
+           `SYSTEM_PROMPT`, y `Jarvis.__init__` dispara en un hilo aparte un
+           *warm-up* (`POST /api/generate` vacío) que compitió con las
+           llamadas de la prueba por el único slot de `llama-server`
+           (`-np 1`), forzando **dos recargas completas del modelo** entre el
+           turno 1 y el turno 2 (confirmado en el log de `ollama.service`:
+           `"loading model via llama-server"` ×2, más un `POST /api/generate`
+           de 58,7 s intercalado). Cada recarga vacía la caché — de ahí el
+           `cached n_tokens = 0` del turno 2 pese a ser, en apariencia, la
+           continuación de la misma conversación.
+           Repetido limpio (sin instanciar `Jarvis()`; solo se importa el
+           módulo para leer `SYSTEM_PROMPT`), **6 turnos**, con el HUD
+           (`jarvis.service`) parado y el log de Ollama confirmando una única
+           carga de modelo en toda la corrida:
+
+           | turno | prompt tok. | nuevos | cache (servidor) | prefill | decode |
+           |---|---|---|---|---|---|
+           | 1 | 433 | 433 | 0 (frío) | 25,5 s | 20,2 s |
+           | 2 | 565 | 132 | 459/565 | 6,9 s | 16,9 s |
+           | 3 | 672 | 107 | 653/672 | 1,8 s | 18,3 s |
+           | 4 | 791 | 119 | 766/791 | 2,6 s | 14,0 s |
+           | 5 | 877 | 86 | 857/877 | 2,2 s | 15,2 s |
+           | 6 | 974 | 97 | 948/974 | 3,2 s | 28,8 s |
+
+           `cache (servidor)` es el `cached n_tokens` que el propio
+           `llama-server` escribe en su log por cada tarea — no una
+           inferencia mía por tiempo, el dato crudo del servidor. Desde el
+           turno 2 el prefill se mantiene en 1,8–6,9 s pese a que el prompt
+           casi se duplica (433→974 tokens): la caché de Ollama **sí existe,
+           sí dispara y se sostiene turno tras turno** cuando nada compite
+           por el slot. La lección para futuros scripts de medición queda
+           anotada en `BANCO_PRUEBAS_BASELINE.md`: no instanciar `Jarvis()`
+           si solo se necesita una constante — arrastra su warm-up en hilo.
+      - **Límite reconocido, no escondido:** si el recuerdo automático SÍ
+        dispara en un turno, ese turno concreto no se vuelve a mandar tal
+        cual (no se persiste con el bloque de recuerdo pegado), así que el
+        turno INMEDIATAMENTE siguiente pierde la caché para todo lo posterior
+        al system (un solo fallo puntual, no en cascada: desde el turno
+        siguiente todo vuelve a alinearse). Resolverlo del todo exigiría
+        persistir en el historial exactamente lo que se prefilló cada vez —
+        cambio mayor, no se hizo aquí porque no lo pedía el punto y arriesga
+        ensuciar el historial con bloques de recuerdo viejos.
+      - `test/test_cache_prefijo.py` (nuevo, 6 tests) · suite completa sin
+        FAILED/ERROR · `ruff` limpio.
+- [x] **C5 — `num_ctx` / `keep_alive` / un solo modelo residente**.
+      - **`num_ctx` (chat): 2048→4096, con evidencia, no a ojo.** Medido en
+        C4 (`BANCO_PRUEBAS_BASELINE §13`): cada intercambio ronda ~110
+        tokens; con `max_history=20` (40 mensajes) una sesión llena se acerca
+        a ~2500 tokens de system+historial — por encima de 2048. Al pasar el
+        límite, `context-shift` empieza a descartar los turnos más viejos a
+        mitad de sesión, **e invalida el prefijo cacheado que C4 acaba de
+        arreglar** (el corte de context-shift cambia la base de comparación
+        del prefijo). 4096 cubre una sesión de 20 turnos con margen para
+        memoria manual + recuerdo automático.
+      - **`agent_num_ctx`: se deja en 2048.** Medido en C3: el agente usa
+        historial acotado (`history[-6:]`) y 3-4 esquemas del top-K, prompts
+        de 800-1100 tokens — le sobra margen dentro de 2048; subirlo no
+        arregla nada que esté roto.
+      - **`keep_alive` explícito: ya estaba en `chat()`/`chat_with_tools()`
+        (histórico); faltaba en `storage/semantic.py::embed()`** — bge-m3
+        usaba el default de Ollama (5 min) y se descargaba entre llamadas
+        espaciadas del retriever/recuerdo automático, pagando una recarga
+        que el resto de rutas ya evitaban. Añadido, mismo valor (`30m`).
+      - **Un solo modelo residente**: ya lo estaba — `agent_model == model ==
+        llama3.2:3b` desde una decisión anterior (`docs/AUDITORIA_2026-09.md
+        §7`). Verificado con un test que lo fija, para que no se rompa sin
+        querer si alguien separa los modelos otra vez.
+      - **Medido de nuevo tras aplicarlo** (mismo protocolo limpio del §13:
+        sin instanciar `Jarvis()`, `jarvis.service` parado, log de Ollama
+        confirmando una única carga y `n_ctx_slot = 4096`), 6 turnos:
+
+        | turno | prompt tok. | nuevos | cache (servidor) | prefill |
+        |---|---|---|---|---|
+        | 1 | 433 | 433 | 0 (frío) | 25,3 s |
+        | 2 | 554 | 121 | 534/554 | 1,6 s |
+        | 3 | 693 | 139 | 673/693 | 1,8 s |
+        | 4 | 838 | 145 | 812/838 | 2,8 s |
+        | 5 | 972 | 134 | 952/972 | 2,4 s |
+        | 6 | 1107 | 135 | 1081/1107 | 3,5 s |
+
+        Sin regresión frente al `num_ctx=2048` de C4 (1,6–3,5 s vs. 1,8–6,9 s
+        — igual o mejor, dentro del ruido esperable) y sin la anomalía del
+        turno 2: con la contaminación identificada y evitada, la caché es
+        consistente desde el segundo turno en ambas configuraciones.
+      - `test/test_config.py` (+4 tests: `num_ctx` cubre la sesión completa
+        con la fórmula medida, `agent_num_ctx` cubre el uso medido con
+        margen, `keep_alive` seteado, un solo modelo) ·
+        `test/test_semantic.py` (+1 test: `embed()` manda `keep_alive`) ·
+        suite completa sin FAILED/ERROR · `ruff` limpio · grupo A del banco
+        intacto (20/20, sin cambios de enrutado — este punto es config e
+        infraestructura, no toca parser ni agente).
+- [x] **C6 — Frases de parser para las 5 herramientas solo-agente**. Hallazgo
+      inicial: 4 de las 5 (`controlar_volumen`, `controlar_musica`,
+      `energia_del_equipo`, `organizar_ventanas`) YA tenían intents FINOS de
+      parser cubriendo su capacidad (`volume_up`, `media_play_pause`,
+      `lock_pc`, `minimize_all`…) — el hueco real no era de intents
+      faltantes, era de FRASEO: el voseo imperativo colombiano no llegaba a
+      esos gates. `recordar` sí estaba en cero: sin ningún gate.
+      - **Aprovechado C1 tal como se pidió**: los verbos regulares en -ar/-er
+        con voseo imperativo (apagá, suspendé, bloqueá, minimizá, maximizá…)
+        YA se normalizaban gratis — `_sin_tildes` por sí sola convierte
+        "apagá"→"apaga", que es la forma tuteo exacta. Solo hizo falta un
+        caso nuevo, -ir con cambio de raíz ("subí"+"me"="subime", igual que
+        "abrí"+"me"="abrime" de C1): se añadió "subi"→"sube" al mapa de C1
+        (`_RAIZ_BASE`), no una regex nueva por frase.
+      - **`recordar`**: nuevo gate `_parse_recordar` (recuerda/recuérdame/
+        acuérdate/acordate/no olvides/ten en cuenta/ten cuenta + "que
+        &lt;dato&gt;"), corre justo después de `_parse_reminder` en la cascada
+        (si hay hora, ya es recordatorio antes de llegar aquí). Contrato del
+        catálogo actualizado: `parser_intents=("recordar",)`.
+      - **Bug encontrado y arreglado de paso**: "pon pausa" cae en el
+        catch-all de Spotify y reproducía una canción llamada "pausa" en vez
+        de pausar la música — `pon` está excluido de la lista de C1
+        (colisiona con "ponme al día"), así que el hueco no lo tapaba la
+        normalización. Se agregó `pon(?:e|le|me)?\s+(?:en\s+)?pausa` al gate
+        de pausa, antes de que fase4 vea la frase.
+      - **Cuidado #1 (Wayland) — bug real encontrado, no solo verificado**:
+        `organizar_ventanas` en Linux SÍ devolvía un mensaje (no fallaba en
+        silencio), pero `_execute_tool_write` prioriza `plan.error` sobre
+        `plan.result`, así que el usuario veía el crudo `"Error: no soportado
+        en Wayland"` en vez de la explicación completa ya escrita
+        (`_WAYLAND_UNSUPPORTED`). Arreglado en `desktop_actions._no_soportado`
+        (ya no rellena `.error` para esta limitación conocida — no es una
+        excepción inesperada que necesite ese diagnóstico crudo).
+      - **Cuidado #2 (destructivo) — verificado explícitamente, no solo
+        asumido**: test e2e con `subprocess` mockeado que confirma que
+        "apagá el equipo"/"reiniciá el equipo" (voseo) siguen invocando
+        `shutdown` con la bandera de retraso (`/t`, cuenta regresiva
+        cancelable) — nunca un apagado inmediato. La ruta rápida no se salta
+        la ventana de confirmación de `tools/power.py`.
+      - `test/test_parser_agente_c6.py` (nuevo, 38 tests) · `test/test_
+        reminders.py` (+1 caso actualizado) · `test/test_catalog.py`
+        (`slow_path_only()` ahora 4, no 5) · suite completa sin FAILED/ERROR ·
+        `ruff` limpio · grupo A intacto (20/20) · banco `--solo-clasificar`
+        sin cambios en B/C/D/E.
+- **FASE C — CIERRE.** Ver evaluación completa (banco íntegro, tabla
+  antes/después, objetivos cumplidos/no cumplidos, sin maquillar) en
+  `docs/BANCO_PRUEBAS_BASELINE.md §14`.
 
 ## FASE D — VERIFY, auditoría y salida estructurada
 

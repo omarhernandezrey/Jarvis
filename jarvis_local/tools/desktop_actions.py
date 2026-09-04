@@ -58,7 +58,12 @@ def _combo(*vks: int) -> None:
 def _no_soportado(action: str, reason: str) -> ActionPlan:
     plan = ActionPlan(action=action, risk=RiskLevel.EXECUTE, reason=reason)
     plan.status = ActionStatus.ERROR
-    plan.error = "no soportado en Wayland"
+    # PLAN_EJECUCION FASE C · C6: OJO, no rellenar `.error` aquí. La ruta
+    # rápida (jarvis.py::_execute_tool_write) prioriza `.error` sobre
+    # `.result` y muestra el texto crudo ("Error: no soportado en Wayland")
+    # en vez de esta explicación honesta y completa. Esto no es un fallo
+    # inesperado que necesite ese diagnóstico crudo: es una limitación
+    # conocida con su propio mensaje ya redactado para el usuario.
     plan.result = _WAYLAND_UNSUPPORTED
     return plan
 

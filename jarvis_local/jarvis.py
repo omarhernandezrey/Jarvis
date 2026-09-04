@@ -357,20 +357,28 @@ class Jarvis:
             self.history.add_user(safe_input)
             self._persist_message("user", safe_input)
 
+            # PLAN_EJECUCION FASE C · C4 — caché de prefijo: [system estable]
+            # [memoria manual, estable dentro de la sesión][historial, crece
+            # solo por el final][mensaje + memoria automática, lo único que
+            # cambia en cada turno]. El recuerdo automático (auto_recall) se
+            # calcula CON el mensaje de este turno — por diseño es distinto
+            # cada vez — así que NO puede ir en el system message: si fuera
+            # parte de messages[0] (como antes), un recuerdo distinto
+            # invalidaba el prefijo COMPLETO desde el token 0, y con él el
+            # historial entero, aunque no hubiera cambiado ni una palabra de
+            # la conversación. Va pegado solo a la copia que se envía al
+            # modelo (nunca al historial persistido) y solo al ÚLTIMO mensaje,
+            # que de todas formas es contenido nuevo sin caché que perder.
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            partes = [SYSTEM_PROMPT]
-            # Memorias activadas a mano (/memoria usar)
-            ctx = self.memory_context.build_context()
+            ctx = self.memory_context.build_context()  # /memoria usar: estable
             if ctx:
-                partes.append(ctx)
-            # Memorias recuperadas por significado (automatico)
+                messages[0]["content"] = f"{SYSTEM_PROMPT}\n\n{ctx}"
+            messages.extend(self.history.get_messages())
             if self.auto_recall is not None:
                 auto = self.auto_recall.build_context(safe_input)
-                if auto:
-                    partes.append(auto)
-            if len(partes) > 1:
-                messages[0]["content"] = "\n\n".join(partes)
-            messages.extend(self.history.get_messages())
+                if auto and messages[-1]["role"] == "user":
+                    ultimo = messages[-1]
+                    messages[-1] = {**ultimo, "content": f"{auto}\n\n{ultimo['content']}"}
 
             print("\r[JARVIS pensando...]", end="", flush=True)
 

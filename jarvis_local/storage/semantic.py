@@ -50,8 +50,14 @@ def embed(texts: list[str]) -> list[list[float]] | None:
     if not texts:
         return []
     try:
+        # PLAN_EJECUCION FASE C · C5 — keep_alive explícito: sin esto, Ollama
+        # usa su default (5 min) y bge-m3 se descargaba entre llamadas
+        # espaciadas (cada recuerdo automático, cada selección de
+        # herramientas del retriever), pagando una recarga que chat()/
+        # chat_with_tools() ya evitan. Mismo valor que el resto de llamadas.
         r = requests.post(f"{_host()}/api/embed",
-                          json={"model": EMBED_MODEL, "input": texts},
+                          json={"model": EMBED_MODEL, "input": texts,
+                                "keep_alive": get_config()["ollama"].get("keep_alive", "30m")},
                           timeout=_TIMEOUT)
         r.raise_for_status()
         vectores = r.json().get("embeddings", [])
