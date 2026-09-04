@@ -20,6 +20,89 @@ _TILDES = str.maketrans("áéíóúÁÉÍÓÚüÜ", "aeiouAEIOUuU")
 def _sin_tildes(text: str) -> str:
     return text.translate(_TILDES)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NORMALIZACIÓN MORFOLÓGICA (PLAN_EJECUCION FASE C, punto 1)
+#
+# El español pega el pronombre al verbo (enclítico): "ábreme", "mándale",
+# "búscalo", "diciéndole". El voseo colombiano cambia la desinencia: "opinás",
+# "sentís", "podés". Los patrones de este parser se escribieron con las formas
+# base ("abre", "manda"). En vez de meter cada variante a mano en cada patrón
+# (parche sin fin), se normaliza el texto UNA vez, antes de aplicar los patrones.
+#
+# Las contracciones "del"/"al" NO se expanden globalmente: rompen frases que el
+# parser casa literales ("estado del sistema", "5 al cubo", "ponme al dia"). Los
+# pocos gates que lo necesitan ("archivos del escritorio") aceptan `del?` en su
+# propio patrón.
+#
+# Regla clave: un verbo con clítico y NADA más ("hazlo", "ponlo", "búscalo ya")
+# es una ORDEN VAGA — el clítico ES el objeto que falta. Esos NO se parten:
+# deben seguir cayendo en la aclaración del agente.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Verbos de mando (imperativo 2ª pers., tú/vos) + su infinitivo, sin tilde. Es
+# una lista de VERBOS, no de frases. Se mantiene DELIBERADAMENTE corta: solo los
+# verbos cuyo gate toma el objeto justo después del verbo y no absorbe un "me"/
+# "le" suelto. Se EXCLUYEN:
+#   - "pon" ("ponme al dia" = briefing), "haz"/"da"/"di" (chocan con la
+#     aclaración de orden vaga), "recuerda" ("recuérdame" = recordatorio),
+#     "toma"/"cuenta" ("cuéntame un chiste");
+#   - "lee"/"busca"/"muestra"/… : sus gates ("léeme el archivo X",
+#     "búscame trabajo") ya absorben el clítico y capturan "me …" como objeto
+#     si se parte. Esos fraseos, sin partir, caen a chat como antes (sin
+#     regresión), y no eran objetivo de C1.
+_VERBOS_MANDO = ("abre", "abri", "cierra", "manda", "envia")
+_INFINITIVOS_MANDO = ("abrir", "cerrar", "mandar", "enviar")
+
+# Pronombres enclíticos: combinados primero para que el motor los prefiera.
+_ENCLIT = (r"(?:selo|sela|selos|selas|"
+           r"melo|mela|melos|melas|telo|tela|telos|telas|"
+           r"noslo|nosla|noslos|noslas|"
+           r"se|me|te|nos|os|lo|la|los|las|le|les)")
+
+# Imperativo voseo raro que hay que mapear a la forma base ("abrí"+me="abrime").
+_RAIZ_BASE = {"abri": "abre"}
+
+# Voseo colombiano irregular → tuteo. Los regulares ("opinás"→"opinas",
+# "comés"→"comes") ya los deja bien `_sin_tildes`; solo los que cambian el
+# lexema necesitan mapa.
+_VOSEO = {
+    "podes": "puedes", "tenes": "tienes", "queres": "quieres",
+    "sentis": "sientes", "venis": "vienes", "decis": "dices", "vivis": "vives",
+    "preferis": "prefieres", "pensas": "piensas", "entendes": "entiendes",
+}
+
+# Cola que, si es lo único que sigue al "verbo+clítico", lo deja como orden
+# vaga (no se parte): muletillas y deícticos sin referente.
+_SOLO_MULETILLA = re.compile(
+    r"^(?:\s+(?:ya|pues|porfa|porfis|porfavor|por\s+favor|parce|hermano|man|"
+    r"vale|si|de\s+una|entonces|eso|esto|aquello|ese|esa|ahi|alli|pa|pue))*"
+    r"\s*[.!?]*\s*$", re.IGNORECASE)
+
+_RX_ENCLIT_MANDO = re.compile(
+    r"\b(" + "|".join(_VERBOS_MANDO + _INFINITIVOS_MANDO)
+    + r")(" + _ENCLIT + r")\b", re.IGNORECASE)
+
+_RX_VOSEO = re.compile(r"\b(" + "|".join(_VOSEO) + r")\b", re.IGNORECASE)
+
+
+def _split_enclitico(mo: "re.Match") -> str:
+    raiz, clitic = mo.group(1), mo.group(2)
+    # Verbo + clítico y detrás nada con contenido -> orden vaga: no partir.
+    if _SOLO_MULETILLA.match(mo.string[mo.end():]):
+        return mo.group(0)
+    base = _RAIZ_BASE.get(raiz.lower(), raiz)
+    return f"{base} {clitic}"
+
+
+def _normalizar_morfologia(texto: str) -> str:
+    """Lleva el texto a las formas base que esperan los patrones del parser:
+    separa enclíticos de los verbos de mando ('ábreme'→'abre me',
+    'mándale'→'manda le') y normaliza el voseo irregular ('podés'→'puedes')."""
+    t = _RX_ENCLIT_MANDO.sub(_split_enclitico, texto)
+    t = _RX_VOSEO.sub(lambda mo: _VOSEO.get(mo.group(0).lower(), mo.group(0)), t)
+    return t
+
 _APP_ALIASES = {
     "chrome": ["chrome", "google chrome", "navegador", "google"],
     "vscode": ["vscode", "vs code", "visual studio code", "code", "visual studio"],
@@ -468,6 +551,19 @@ def _parse_fase4(m: str) -> IntentResult | None:
     # X", "cómo está/estará el tiempo en X", "va a llover en X", "pronóstico
     # para X". "tiempo" solo dispara acompañado de un verbo meteorológico, para
     # no confundirlo con "no tengo tiempo" / "hace tiempo".
+    #
+    # Verbo rector antes de la palabra clave: "qué opinás DEL clima", "el clima
+    # LOCO que ha hecho" son CONVERSACIÓN sobre el clima, no una consulta. Sin
+    # este guardia, la palabra "clima" disparaba weather aunque el verbo fuera
+    # de opinión (banco B02).
+    if re.search(
+            r'\b(?:opin\w+|piens\w+|cre[eé]s?|te\s+parece|hablemos|charlemos)\b'
+            r'.{0,30}\b(?:de\s+el|del|sobre)\s+(?:este\s+|el\s+|ese\s+)?'
+            r'(?:clima|tiempo|calor|frio)\b'
+            r'|\b(?:el\s+)?(?:clima|tiempo)\s+(?:loco|loca|raro|rara|de\s+locos|'
+            r'esta\s+loc[oa]|ha\s+estado\s+loc[oa])\b',
+            low):
+        return None  # es charla sobre el clima -> agente/chat
     _clima = re.search(
         r'\b(?:clima|temperatura|pronostico'
         r'|(?:que|como)\s+tiempo\s+(?:hace|hara|va\s+a\s+hacer|habra)'
@@ -594,6 +690,24 @@ def _parse_fase4(m: str) -> IntentResult | None:
                            "subject": m_subj.group(1).strip(),
                            "body": m_body.group(1).strip()},
                 reason="Enviar correo requiere confirmacion")
+        # Dictado coloquial sin marcadores "asunto/mensaje": "mándale un correo a
+        # X diciéndole que renuncio", "...que le diga que llego tarde". El cuerpo
+        # es lo que va tras "que"; el asunto se deriva. Sigue siendo un PLAN con
+        # /confirmar: el correo no se envía sin confirmación.
+        # `\s*les?` cubre tanto el enclítico pegado ("diciéndole") como el
+        # separado ("diciendo le", si otra normalización lo partió).
+        m_body2 = re.search(
+            r'\b(?:diciendo(?:\s*les?)?|di(?:\s*le)?|contando(?:\s*les?)?|'
+            r'avisando(?:\s*les?)?|que\s+(?:le\s+)?diga|'
+            r'para\s+(?:decir|avisar)(?:\s*les?)?)\s+(?:que\s+)?(.+)',
+            m, re.IGNORECASE)
+        if m_to and m_body2:
+            cuerpo = m_body2.group(1).strip().rstrip('.!?')
+            asunto = " ".join(cuerpo.split()[:6]).capitalize() or "Sin asunto"
+            return IntentResult(
+                kind="tool_plan", tool="send_email",
+                arguments={"to": m_to.group(1), "subject": asunto, "body": cuerpo},
+                reason="Enviar correo requiere confirmacion")
         return IntentResult(
             kind="ambiguous",
             clarification=('Para enviar un correo diga: "envia un correo a '
@@ -680,17 +794,21 @@ def _parse_fase4(m: str) -> IntentResult | None:
                             reason="Captura de pantalla")
 
     # --- OCULTAR / MOSTRAR ARCHIVOS ---
-    m_hide = re.search(r'oculta(?:r)?\s+(?:todos\s+)?(?:los\s+)?archivos\s+(?:de|en)\s+(.+)',
+    # `del?` cubre la contracción ("archivos del escritorio"); el artículo inicial
+    # ("el escritorio") se quita para que _resolve_path encuentre la carpeta.
+    def _carpeta(txt: str) -> str:
+        return re.sub(r'^(?:el|la|los|las|mi|mis)\s+', '', txt.strip()).strip()
+    m_hide = re.search(r'oculta(?:r)?\s+(?:todos\s+)?(?:los\s+)?archivos\s+(?:del?|en)\s+(.+)',
                        m, re.IGNORECASE)
     if m_hide:
         return IntentResult(kind="tool_plan", tool="hide_files",
-                            arguments={"path": m_hide.group(1).strip(), "hide": True},
+                            arguments={"path": _carpeta(m_hide.group(1)), "hide": True},
                             reason="Ocultar archivos requiere confirmacion")
-    m_show = re.search(r'(?:muestra|mostrar|desoculta(?:r)?|haz\s+visibles)\s+(?:todos\s+)?(?:los\s+)?archivos\s+ocultos\s+(?:de|en)\s+(.+)',
+    m_show = re.search(r'(?:muestra|mostrar|desoculta(?:r)?|haz\s+visibles)\s+(?:todos\s+)?(?:los\s+)?archivos\s+ocultos\s+(?:del?|en)\s+(.+)',
                        m, re.IGNORECASE)
     if m_show:
         return IntentResult(kind="tool_plan", tool="hide_files",
-                            arguments={"path": m_show.group(1).strip(), "hide": False},
+                            arguments={"path": _carpeta(m_show.group(1)), "hide": False},
                             reason="Mostrar archivos requiere confirmacion")
 
     # --- ABRIR SITIO WEB ---
@@ -815,8 +933,10 @@ def parse_intent(message: str) -> IntentResult:
     # sin tildes: los patrones son ASCII y el dictado trae acentos. El texto
     # libre que se capture (ciudad, cuerpo del recordatorio) también sale sin
     # tildes — es un coste asumible frente a que el comando por voz no se
-    # reconozca. La ñ se mantiene.
-    m = _sin_tildes(message.strip())
+    # reconozca. La ñ se mantiene. Luego, normalización morfológica: separa
+    # enclíticos ("abrime chrome"→"abre me chrome") y arregla el voseo, para que
+    # los patrones (escritos con las formas base) no necesiten cada variante.
+    m = _normalizar_morfologia(_sin_tildes(message.strip()))
 
     # Peticion con dos acciones: el parser solo sabe resolver una y descartaria
     # la otra sin avisar. Que la maneje el agente (encadena herramientas).

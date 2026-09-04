@@ -111,33 +111,35 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
 - [x] **Higiene previa**: FASE B mergeada a `main` (`b82760c`) + `main` y
       `feature/*` subidos. CI de Windows sigue en rojo (pre-existe a FASE B,
       15+ merges; el desarrollo Windows se pospone — solo interesa Linux).
-- [ ] **C1 — Normalización morfológica** (causa raíz 2, `BANCO §12`). El parser
-      casa formas de superficie y falla con enclíticos/contracciones/voseo/
-      tildes. NO añadir regex caso por caso. Diseño:
-      - Nueva función `_normalizar_morfologia(texto)` en `intent/parser.py`,
-        se aplica en `parse_intent` justo tras `_sin_tildes`.
-      - Contracciones: `\bdel\b`→`de el`, `\bal\b`→`a el`.
-      - Enclíticos: split guiado por (a) lista de raíces imperativas de mando
-        (`abre|abri|cierra|pon|manda|envia|busca|da|haz|di|lee|muestra|baja|
-        sube|quita|reproduce|calcula|resuelve|oculta|borra|elimina|renombra|
-        copia|mueve|apaga|reinicia|bloquea|suspende|guarda|anota|recuerda|
-        toma|cuenta|explica|trae`) + pronombre (`me|te|se|le|les|lo|la|los|
-        las|nos` y dobles `(se|me|te|nos)(lo|la|los|las)`); (b) regla de
-        infinitivo `\w{3,}(ar|er|ir)+PRON` y gerundio `\w+(ando|endo)+PRON`
-        (`abrirme`→`abrir me`, `diciéndole`→`diciendo le`). `abrime`→`abre me`.
-      - Voseo irregular → tuteo: `podes→puedes, tenes→tienes, queres→quieres,
-        sentis→sientes, venis→vienes, decis→dices, vivis→vives` (los regulares
-        `opinás→opinas`, `comés→comes` ya los arregla `_sin_tildes`).
-      - **Verbo rector antes de los bloques por palabra clave**: el bloque
-        CLIMA no debe disparar si "clima"/"tiempo" va regido por verbo de
-        opinión (`opinas/piensas/crees/hablas ... de(l) clima`) → es charla.
-      - Objetivo: A04 `abrime chrome`→`open_app`; B02 `qué opinás del clima`
-        →chat (no `weather`); E04 `oculta … del escritorio`→plan+/confirmar;
-        E05 `mándale un correo … diciéndole que…`→plan+/confirmar. Sin regex
-        nuevas específicas de esas 4 frases.
-      - Pruebas: unit de `_normalizar_morfologia` (docenas de pares) ·
-        `test_parser_coverage.py` sin regresión · quitar los xfail que
-        correspondan · suite completa · banco (grupo A ≥ 19/20).
+- [x] **C1 — Normalización morfológica** (causa raíz 2, `BANCO §12`). Hecho:
+      - `_normalizar_morfologia(texto)` en `intent/parser.py`, aplicada en
+        `parse_intent` tras `_sin_tildes`. Separa enclíticos de una lista corta
+        y segura de VERBOS DE MANDO (`abre|abri|cierra|manda|envia` + su
+        infinitivo) + pronombres simples y dobles; y normaliza el voseo
+        irregular (`podés→puedes`, `sentís→sientes`, `tenés→tienes`, …).
+      - **Verbo con clítico y nada más NO se parte** (`_SOLO_MULETILLA`):
+        "hazlo", "búscalo ya", "mándalo pues" siguen siendo orden vaga → chat.
+      - **Verbos excluidos a propósito** del split: `pon` ("ponme al día" =
+        briefing), `haz`/`da`/`di` (chocan con la aclaración), `recuerda`
+        (recordatorio), `lee`/`busca`/`muestra`/… (sus gates ya absorben el
+        clítico; partir capturaba "me …" como objeto). Esos fraseos caen a
+        chat como antes, sin regresión.
+      - Contracción `del`: NO se expande global (rompía "estado del sistema",
+        "5 al cubo"). El gate de ocultar acepta `del?` en su patrón.
+      - Verbo rector: guardia en el bloque CLIMA — "qué opinás **del** clima",
+        "el clima **loco** que ha hecho" → charla, no `weather`.
+      - Cuerpo de correo coloquial: "…**diciéndole que** renuncio" → `send_email`
+        plan + `/confirmar` (asunto derivado). No se envía sin confirmar.
+      - **Resultado (banco `--solo-clasificar`, enrutado):** A04
+        `cascada→parser` · B02 `parser(weather)→cascada` · E04
+        `cascada→parser-confirmacion` · E05 `cascada→parser-confirmacion`.
+        Grupo A sin cambios salvo A04 (ahora sí lo coge el parser). D-group,
+        E01–E03/E06–E10 idénticos.
+      - **Pendiente para C2:** B02 e2e todavía cae al agente, que elige `clima`
+        (99 s). El parser ya NO da el falso `weather`; que la charla no llegue
+        al agente es trabajo de la puerta de conversación (C2).
+      - `test/test_parser_morfologia.py` (nuevo) · suite completa sin
+        FAILED/ERROR · `ruff` limpio.
 - [ ] **C2 — Puerta de conversación** (causa raíz 1). Decidir "¿esto es
       conversación?" ANTES del retriever. Barata/determinista; si necesita
       modelo, diminuto y <300 ms. Medir y reportar el solapamiento después.
