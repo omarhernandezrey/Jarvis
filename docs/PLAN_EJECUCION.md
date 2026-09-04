@@ -389,15 +389,42 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
   antes/después, objetivos cumplidos/no cumplidos, sin maquillar) en
   `docs/BANCO_PRUEBAS_BASELINE.md §14`.
 
-## FASE D — VERIFY, auditoría y salida estructurada
+## FASE D — VERIFY, auditoría y salida estructurada  🚧 EN CURSO (rama `feature/fase-d-verify-auditoria`)
 
-- Toda herramienta de escritura comprueba su efecto (app abrió, archivo creado,
-  volumen cambió). Si falla → reintento con estrategia distinta; si vuelve a
-  fallar → lo dice. JARVIS nunca afirma haber hecho algo que no comprobó.
-- Registro de auditoría append-only de toda acción de escritura o sistema.
-- JSON Schema de Ollama en vez de depender solo del tool calling.
-- Cablear el fallback de modelo que está en config y no se usa.
-- Aceptar cuando: existe un test que fuerza un fallo silencioso y lo detecta.
+**Un commit por punto.** Al cerrar: test que fuerza un fallo silencioso y
+demuestra que se detecta · suite completa · `ruff` · banco sin regresión ·
+merge a main.
+
+### Estado
+- [ ] **D0 — CI de Windows en rojo desde antes de FASE B, sin diagnóstico
+      posible** (sin logs, sin máquina Windows). Se añade `test-linux` (Ubuntu,
+      Python 3.11/3.12/3.13) como el job que de verdad importa: es el SO y el
+      comando (`QT_QPA_PLATFORM=offscreen pytest test -q`) del protocolo real
+      de `CLAUDE.md`. `ruff` deja de ser `continue-on-error` ahí — siempre
+      salió limpio en esta sesión, así que ahora es una puerta real. El job de
+      Windows se queda (por si alguien retoma soporte Windows) pero con
+      `continue-on-error: true` y su motivo documentado en el propio workflow:
+      ya no bloquea el merge ni el estado del workflow.
+- [ ] **D1 — VERIFY post-acción**: cada herramienta de escritura comprueba su
+      propio efecto tras ejecutarse. Reintento con estrategia distinta si
+      falla; si vuelve a fallar, se informa qué se intentó y por qué no se
+      pudo. Empieza por abrir apps, archivos, volumen y multimedia (donde el
+      fallo silencioso es más probable — "pon pausa" fue el ejemplo real).
+- [ ] **D2 — Auditoría**: registro append-only de toda acción de escritura,
+      destructiva o de sistema (herramienta, cuándo, parámetros, resultado de
+      VERIFY, si hubo confirmación). Rotación de fichero. Consultable desde
+      JARVIS ("qué hiciste hoy").
+- [ ] **D3 — Salida estructurada**: JSON Schema de Ollama en vez de depender
+      solo del tool calling. Medir si baja los reintentos/rescates de
+      `agent/loop.py`, antes/después. Si no mejora, decirlo y no forzarlo.
+- [ ] **D4 — Fallback de modelo**: está en `config.yaml` (`router_fallback`)
+      y no está cableado. Cablearlo y probar qué pasa si el modelo principal
+      no responde o no está descargado.
+- [ ] **D5 — Ampliar el banco**: casos que verifiquen EFECTO real (pedir algo,
+      comprobar que ocurrió de verdad en la máquina) y casos de fallo forzado
+      (app inexistente, ruta sin permiso) — la respuesta correcta es un error
+      claro, nunca un éxito inventado. El banco de FASE C solo mide enrutado y
+      seguridad; sin esto no protege nada de lo que viene en E/F/G.
 
 ## FASE E — Control de máquina, oleada 1: procesos y sistema
 
