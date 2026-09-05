@@ -1,12 +1,30 @@
 """Tests de lectura en voz alta (portapapeles y archivos)"""
 import os
+import shutil
 import subprocess
 import sys
 import time
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.config import IS_WINDOWS, user_dir
+
+
+def _clipboard_disponible() -> bool:
+    """El portapapeles real necesita una herramienta (xclip/xsel/wl-clipboard)
+    Y un servidor gráfico. En CI headless no hay ninguno de los dos."""
+    if IS_WINDOWS:
+        return True
+    tiene_tool = any(shutil.which(t) for t in ("xclip", "xsel", "wl-paste"))
+    tiene_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return tiene_tool and tiene_display
+
+
+_sin_portapapeles = pytest.mark.skipif(
+    not _clipboard_disponible(),
+    reason="sin portapapeles funcional (falta xclip/wl-clipboard o servidor gráfico)")
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus
 from jarvis_local.tools.reader import (
@@ -88,6 +106,7 @@ def test_intent_leer_noticias_no_robado():
 # --- Portapapeles real (se guarda y restaura el del usuario) ---
 
 
+@_sin_portapapeles
 def test_leer_portapapeles_real():
     original = _get_clipboard_text() or ""
     try:
@@ -99,6 +118,7 @@ def test_leer_portapapeles_real():
         _set_clipboard(original)
 
 
+@_sin_portapapeles
 def test_portapapeles_vacio():
     original = _get_clipboard_text() or ""
     try:

@@ -72,9 +72,22 @@ def _exact_response(message: str) -> str | None:
 
 
 def _mc_test():
-    """Helper para tests: crea Jarvis con cliente mockeado."""
-    from unittest.mock import MagicMock
-    j = Jarvis()
+    """Helper para tests: crea Jarvis con cliente mockeado.
+
+    FASE D · D0: `Jarvis.__init__` llama a `_ensure_model()`, que exige un
+    Ollama vivo (`is_running()`) y aborta con ConnectionError si no lo hay.
+    En CI no hay Ollama, así que se cortocircuita el chequeo y el warm-up
+    SOLO durante la construcción — el cliente real se reemplaza justo
+    después por el MagicMock, así que esto no cambia nada en una máquina con
+    Ollama, pero deja el helper usable sin servidor (que es su propósito:
+    "crea Jarvis con cliente mockeado")."""
+    from unittest.mock import MagicMock, patch
+
+    from jarvis_local.ollama_client.client import OllamaClient
+    with patch.object(OllamaClient, "is_running", return_value=True), \
+         patch.object(OllamaClient, "model_exists", return_value=True), \
+         patch.object(Jarvis, "_warmup_model", lambda self, model: None):
+        j = Jarvis()
     mc = MagicMock()
     mc.is_running = MagicMock(return_value=True)
     mc.model_exists = MagicMock(return_value=True)

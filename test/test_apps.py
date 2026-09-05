@@ -138,7 +138,12 @@ def test_h2_no_duplica_app_instalada_ya_abierta():
     from jarvis_local.tools import apps as A
 
     match = {"name": "Visual Studio Code", "appid": "code.desktop", "norm": "visual studio code"}
-    with patch.object(A, "_running_procnames", return_value={"code"}), \
+    # get_app_path se mockea para que el test no dependa de que VS Code esté
+    # instalado en la máquina que corre la suite (en CI no lo está: sin este
+    # mock, open_app bloquea con "no esta instalada" antes de llegar a la
+    # lógica de no-duplicar, que es lo que este test cubre).
+    with patch.object(A, "get_app_path", return_value="/usr/bin/code"), \
+         patch.object(A, "_running_procnames", return_value={"code"}), \
          patch.object(A, "_try_focus", return_value=False), \
          patch("jarvis_local.tools.app_index.find_app", return_value=[match]), \
          patch("jarvis_local.tools.app_index.launch_app") as launch:
