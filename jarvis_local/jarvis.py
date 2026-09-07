@@ -165,15 +165,23 @@ def _execute_tool_read(tool: str, args: dict) -> str:
 
 def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
     """Crea un plan de ejecución para una herramienta de escritura."""
-    from jarvis_local.safety.policy import policy
+    from jarvis_local.safety.policy import ActionStatus, policy
+    from jarvis_local.tools._utils import describe_outcome
     fn = _PLAN_TOOLS.get(tool)
     if fn is None:
         return f"No pude planificar '{tool}'."
     plan = fn(args)
-    if plan:
-        policy.pending_plan = plan
-        return str(plan) + "\n\nEscribe /confirmar para ejecutar o /cancelar."
-    return f"No pude planificar '{tool}'."
+    if not plan:
+        return f"No pude planificar '{tool}'."
+    # Un plan que NO quedó pendiente (BLOCKED por E1/E2, ERROR, o ya resuelto)
+    # no lleva "Escribe /confirmar": no hay nada que confirmar.
+    if getattr(plan, "status", None) not in (ActionStatus.PLANNED, ActionStatus.CONFIRMED):
+        from jarvis_local.safety.audit import audit
+        if hasattr(plan, "status"):
+            audit.record_plan(plan, source="parser", tool_name=tool)
+        return describe_outcome(plan, tool=tool)
+    policy.pending_plan = plan
+    return str(plan) + "\n\nEscribe /confirmar para ejecutar o /cancelar."
 
 
 def _execute_tool_write(tool: str, args: dict) -> str:
@@ -472,28 +480,38 @@ class Jarvis:
             logger.log_error("agente", str(e))
             return None  # si el agente falla, seguimos con el chat normal
 
+        # PLAN_EJECUCION FASE E · E0 — si el equipo está en swap, el turno del
+        # agente tarda minutos. Se lo decimos, en vez de solo tardar.
+        from jarvis_local.agent import memory_guard
+        aviso = memory_guard.aviso_degradado()
+
+        def _con_aviso(texto: str) -> str:
+            return f"{aviso}\n\n{texto}" if aviso else texto
+
         # El agente pide aclaracion: esa ES la respuesta correcta. Mandarla al
         # chat haria que el modelo divague o invente en vez de preguntar.
         if result.needs_clarification and result.text:
+            texto = _con_aviso(result.text)
             self.history.add_user(safe_input)
-            self.history.add_assistant(result.text)
+            self.history.add_assistant(texto)
             self._persist_message("user", safe_input)
-            self._persist_message("assistant", result.text)
+            self._persist_message("assistant", texto)
             logger.log_action(instruction=instruction,
                               result=f"[aclaracion] {result.text[:120]}")
-            return result.text
+            return texto
 
         if not result.tools_used or not result.text:
             return None
 
+        texto = _con_aviso(result.text)
         self.history.add_user(safe_input)
-        self.history.add_assistant(result.text)
+        self.history.add_assistant(texto)
         self._persist_message("user", safe_input)
-        self._persist_message("assistant", result.text)
+        self._persist_message("assistant", texto)
         logger.log_action(instruction=instruction,
                           result=f"[agente:{','.join(result.tools_used)}] "
                                  f"{result.text[:120]}")
-        return result.text
+        return texto
 
     def get_status(self) -> str:
         try:

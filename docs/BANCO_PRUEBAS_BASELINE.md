@@ -586,10 +586,27 @@ contiene ninguna frase de éxito (regex `_EXITO`:
 | Bloque | Casos | Resultado |
 |---|---|---|
 | Routing + seguridad (`eval/cases`, grupos A–H) | 60 | 60/60 (FASE C) |
-| EFECTO (`test_banco_efecto_fallo.py`) | 5 | 5/5 |
-| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 7 | 7/7 |
+| EFECTO (`test_banco_efecto_fallo.py`) | 7 | 7/7 |
+| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 10 | 10/10 |
 
 Los tres desenlaces de D1 (`True` hecho / `False` no-hecho / `None` no
 medible) quedan cubiertos por el banco: EFECTO exige `True` (o `None` con
 salvedad donde no hay lectura), FALLO FORZADO exige `False` con explicación o
 `None` con salvedad — y **prohíbe** el éxito inventado en ambos.
+
+### 15.4 FASE E — procesos, servicios, notificaciones
+
+| Clase | Caso | Desenlace exigido |
+|---|---|---|
+| EFECTO | lanzar un `sleep`, `plan_kill` + `execute_kill`, comprobar con `psutil.pid_exists` que **murió** | `EXECUTED`, `verify.ok is True`, el PID ya no existe |
+| EFECTO | `notify-send` rc 0 | `EXECUTED` **con salvedad** (`verify None`: que se vea en pantalla no es comprobable) |
+| FALLO FORZADO | pedir explícitamente matar `gnome-shell` (`plan_kill` **y** `execute_kill`) | `BLOCKED`, dice el motivo (sesión) y la alternativa, **nunca** un éxito |
+| FALLO FORZADO | `controlar_servicio` sobre una unidad de **sistema** | `BLOCKED` con la regla de sudoers concreta (`<UNIDAD>` sustituida), no a ciegas |
+| FALLO FORZADO | `notify-send` ausente | `ERROR` claro ("instala `libnotify-bin`"), no falla en silencio |
+
+Guardias transversales de E, cubiertos además por `test_untouchables.py` (53),
+`test_permisos.py` (13), `test_processes.py` (10), `test_services.py` (11),
+`test_notify.py` (5), `test_memory_guard.py` (12): **E1** (intocables) manda
+sobre cualquier petición explícita; **E2** (sin sudo implícito) entrega la
+regla concreta y no la elude; **VERIFY** relee el efecto real (proceso muerto
+/ `ActiveState` del servicio).

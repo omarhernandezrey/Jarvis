@@ -483,6 +483,15 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
         return AgentResult(text=texto, needs_clarification=True, confidence=conf)
 
     tools = select_tools(consulta)
+
+    # PLAN_EJECUCION FASE E · E0 — presupuesto de memoria: bge-m3 ya no se
+    # vuelve a tocar este turno. Si la RAM disponible está por debajo del
+    # umbral, se suelta de memoria ANTES de la llamada a llama, para que el
+    # router no compita con el embedding por la RAM (docs/OPERACION_MEMORIA.md).
+    from jarvis_local.agent import memory_guard
+    if memory_guard.ajustado():
+        memory_guard.soltar_embeddings()
+
     if not tools:
         # Nada plausible ni semanticamente: es conversacion. No se gasta una
         # llamada al LLM con el catalogo de herramientas.

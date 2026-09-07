@@ -476,6 +476,130 @@ def _parse_auditoria(m: str) -> IntentResult | None:
                         reason="Consultar la auditoría de acciones")
 
 
+# PLAN_EJECUCION FASE E · E3 — procesos.
+_TRIGGER_LISTAR_PROC = re.compile(
+    r'\bque\s+procesos?\b|\bprocesos?\s+(?:que|por|activos|abiertos|corriendo)\b'
+    r'|\b(?:lista|listado|muestrame|dame|top)\b[^.?!]{0,20}\bprocesos?\b'
+    r'|\bque\s+(?:esta|hay)\s+(?:usando|consumiendo|comiendo)\s+(?:la\s+)?(?:cpu|ram|memoria|procesador)\b'
+    r'|\bque\s+(?:me\s+)?(?:come|chupa|traga)\s+(?:la\s+)?(?:cpu|ram|memoria)\b',
+    re.IGNORECASE)
+_TRIGGER_MATAR_PROC = re.compile(
+    r'\b(?:mata|matar|matame|termina(?:r)?|acaba\s+con|cierra|para(?:r)?|finaliza|'
+    r'kill)\b[^.?!]{0,20}\b(?:el\s+|la\s+|ese\s+)?proceso(?:s)?\b'
+    r'|\b(?:mata|matame|matar|kill)\b\s+(?:el\s+|la\s+)?(?:proceso\s+)?'
+    r'(?P<obj1>[\w.\-]+)'
+    r'|\bproceso\s+(?P<obj2>\d{2,})\b',
+    re.IGNORECASE)
+
+
+def _parse_procesos(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if _TRIGGER_LISTAR_PROC.search(mm):
+        por = "ram" if re.search(r'\b(ram|memoria)\b', mm) else "cpu"
+        return IntentResult(kind="tool_read", tool="list_processes",
+                            arguments={"por": por},
+                            reason="Listar procesos por consumo")
+    g = _TRIGGER_MATAR_PROC.search(mm)
+    if not g:
+        return None
+    # objetivo: un PID, o el token que sigue a "proceso", o el que sigue a "mata"
+    obj = g.groupdict().get("obj2") or g.groupdict().get("obj1") or ""
+    if not obj:
+        m_obj = re.search(r'\bproceso(?:s)?\s+(?:llamado\s+|de\s+)?["\']?([\w.\-]+)',
+                          mm)
+        obj = m_obj.group(1) if m_obj else ""
+        if not obj:
+            m_pid = re.search(r'\b(\d{2,})\b', mm)
+            obj = m_pid.group(1) if m_pid else ""
+    if obj in ("el", "la", "ese", "un", "los", "las", ""):
+        obj = ""
+    if not obj:
+        return IntentResult(kind="ambiguous",
+                            clarification="¿Qué proceso cierro, senor? Dime el "
+                            "nombre o el PID.")
+    return IntentResult(kind="tool_plan", tool="kill_process",
+                        arguments={"objetivo": obj},
+                        reason=f"Cerrar proceso: {obj}")
+
+
+# PLAN_EJECUCION FASE E · E4 — servicios systemd.
+_TRIGGER_SERVICIO = re.compile(
+    r'\bservicio\b|\bsystemctl\b|\bunidad\s+de\s+systemd\b|\bdemonio\b|\bdaemon\b',
+    re.IGNORECASE)
+_ACCION_SERVICIO = re.compile(
+    r'\b(reinicia(?:r|me)?|reinicio|para(?:r|me)?|detener|deten|arranca(?:r|me)?|'
+    r'inicia(?:r|me)?|levanta(?:r)?|apaga(?:r)?)\b', re.IGNORECASE)
+_NOMBRE_SERVICIO = re.compile(
+    r'\b(?:servicio|systemctl|unidad|demonio|daemon)\s+'
+    r'(?:status\s+|estado\s+de\s+)?'
+    r'(?:de(?:l)?\s+sistema\s+|de(?:l)?\s+usuario\s+|de\s+)?'
+    r'["\']?([A-Za-z0-9@._\-]+)', re.IGNORECASE)
+_PALABRAS_NO_NOMBRE = {"de", "del", "status", "estado", "el", "la", "sistema",
+                       "usuario", "un", "los", "las", ""}
+
+
+def _parse_servicios(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_SERVICIO.search(mm):
+        return None
+    nombre = ""
+    g = _NOMBRE_SERVICIO.search(mm)
+    if g:
+        nombre = g.group(1).strip('.,')
+    if nombre in _PALABRAS_NO_NOMBRE:
+        nombre = ""
+    ambito = "system" if re.search(r'\bde(?:l)?\s+sistema\b|--system\b', mm) else "user"
+
+    a = _ACCION_SERVICIO.search(mm)
+    es_estado = re.search(r'\bestado\b|\bcomo\s+esta\b|\bstatus\b|\besta\s+(?:corriendo|activo|encendido|parado)\b', mm)
+
+    if a and not es_estado:
+        verbo = _sin_tildes(a.group(1)).lower()
+        accion = ("reiniciar" if verbo.startswith("reinici")
+                  else "parar" if verbo.startswith(("para", "deten", "apaga"))
+                  else "iniciar")
+        if not nombre:
+            return IntentResult(kind="ambiguous",
+                                clarification="¿Qué servicio, senor? Dime el nombre.")
+        return IntentResult(kind="tool_plan", tool="service_control",
+                            arguments={"accion": accion, "servicio": nombre,
+                                       "ambito": ambito},
+                            reason=f"{accion} servicio {nombre}")
+    if not nombre:
+        return None
+    return IntentResult(kind="tool_read", tool="service_status",
+                        arguments={"servicio": nombre, "ambito": ambito},
+                        reason=f"Estado del servicio {nombre}")
+
+
+# PLAN_EJECUCION FASE E · E5 — notificaciones de escritorio.
+_TRIGGER_NOTIF = re.compile(
+    r'\bnotifica(?:me|cion|r)?\b|\bnotify-send\b|\b(?:manda|lanza|saca|muestra|'
+    r'echa)(?:me)?\s+(?:una\s+)?notificacion\b|\baviso\s+de\s+escritorio\b',
+    re.IGNORECASE)
+
+
+def _parse_notificacion(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_NOTIF.search(mm):
+        return None
+    # el texto tras "que diga" / "diciendo" / "con el texto" / dos puntos
+    g = re.search(r'(?:que\s+diga|diciendo|con\s+el\s+texto|con\s+el\s+mensaje|:)\s+'
+                  r'["\']?(.+?)["\']?\s*$', m.strip(), re.IGNORECASE)
+    if not g:
+        g = re.search(r'\bnotifica(?:me)?\s+(?:que\s+)?(.+?)\s*$', m.strip(),
+                      re.IGNORECASE)
+    mensaje = g.group(1).strip().rstrip('.!?') if g else ""
+    urg = ("alta" if re.search(r'\b(urgente|importante|critica|alta)\b', mm)
+           else "baja" if re.search(r'\b(baja|discreta|silenciosa)\b', mm) else "normal")
+    if not mensaje:
+        return IntentResult(kind="ambiguous",
+                            clarification="¿Qué quieres que diga la notificación, senor?")
+    return IntentResult(kind="tool_execute", tool="notify",
+                        arguments={"mensaje": mensaje, "urgencia": urg},
+                        reason="Mostrar notificación de escritorio")
+
+
 def _parse_media(low: str) -> IntentResult | None:
     """Volumen y control multimedia. Corre ANTES de fase4: 'quita el
     silencio' caeria en el patron de BORRAR ('quita...') si no."""
@@ -1020,6 +1144,19 @@ def parse_intent(message: str) -> IntentResult:
             clarification=("No formateo discos, no particiono ni reinstalo el "
                            "sistema, senor. Eso hagalo usted con las "
                            "herramientas del sistema."))
+
+    # --- PROCESOS Y SERVICIOS (FASE E · E3/E4): antes de fase5 y de las apps,
+    #     para que "cierra el proceso 12345" / "reinicia el servicio cups" no
+    #     caigan en close_app / Google ---
+    procesos = _parse_procesos(m)
+    if procesos is not None:
+        return procesos
+    servicios = _parse_servicios(m)
+    if servicios is not None:
+        return servicios
+    notif = _parse_notificacion(m)
+    if notif is not None:
+        return notif
 
     # --- FASE 5: empleo y navegador automatizado (antes que fase4 para
     #     que "busca trabajo ... en bogota" no se confunda con Google) ---

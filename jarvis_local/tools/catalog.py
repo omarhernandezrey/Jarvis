@@ -243,6 +243,31 @@ def _system_status():
     return system_status()
 
 
+def _list_processes(por: str = "cpu", top: int = 12):
+    from jarvis_local.tools.processes import list_processes
+    return list_processes(por, int(top or 12))
+
+
+def _kill_process(objetivo: str):
+    from jarvis_local.tools.processes import plan_kill
+    return plan_kill(str(objetivo))
+
+
+def _service_status(servicio: str, ambito: str = "user"):
+    from jarvis_local.tools.services import service_status
+    return service_status(servicio, ambito)
+
+
+def _service_control(accion: str, servicio: str, ambito: str = "user"):
+    from jarvis_local.tools.services import plan_service
+    return plan_service(accion, servicio, ambito)
+
+
+def _notify(mensaje: str, titulo: str = "JARVIS", urgencia: str = "normal"):
+    from jarvis_local.tools.notify import send_notification
+    return send_notification(mensaje, titulo, urgencia)
+
+
 def _wiki(topic: str):
     from jarvis_local.tools.wiki import wiki_summary
     return wiki_summary(topic)
@@ -864,6 +889,69 @@ CONTRACTS: list[ToolContract] = [
                  _obj({}, []), _system_status, RiskLevel.READ,
                  verify=_V_LECTURA, revert="n/a",
                  parser_intents=("system_status",)),
+
+    # ---- Procesos (FASE E · E3). Solo por la ruta del parser: matar procesos
+    #      es demasiado delicado para dejarlo al criterio del 3B. ----
+    ToolContract("listar_procesos",
+                 "Lista los procesos que más CPU o RAM consumen, con PID y usuario.",
+                 _obj({"por": _str("'cpu' o 'ram'", ["cpu", "ram"]),
+                       "top": _int("Cuántos mostrar (por defecto 12)")}, []),
+                 _list_processes, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("list_processes",)),
+    ToolContract("matar_proceso",
+                 "Cierra un proceso por nombre o PID, con confirmación.",
+                 _obj({"objetivo": _str("Nombre del proceso o PID a cerrar")}),
+                 _kill_process, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (E3/D1): tras SIGTERM/SIGKILL se comprueba "
+                        "que el PID ya no existe (o es zombie). Un kill que "
+                        "devuelve 0 y deja el proceso vivo -> ERROR. E1: no "
+                        "toca intocables. E2: proceso de otro usuario -> sudo.",
+                 revert="Irreversible; volver a lanzar la app manualmente.",
+                 plan_capable=True, plan_run=_kill_process,
+                 parser_intents=("kill_process",)),
+
+    # ---- Servicios systemd (FASE E · E4). Solo ruta parser. ----
+    ToolContract("estado_servicio",
+                 "Dice el estado de un servicio de systemd (activo/parado, "
+                 "habilitado al arranque).",
+                 _obj({"servicio": _str("Nombre del servicio, ej 'cups'"),
+                       "ambito": _str("'user' (por defecto) o 'system'",
+                                      ["user", "system"])}, ["servicio"]),
+                 _service_status, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("service_status",)),
+    ToolContract("controlar_servicio",
+                 "Inicia, para o reinicia un servicio de systemd, con "
+                 "confirmación. Solo servicios de usuario; los de sistema "
+                 "exigen una regla de sudoers que se te muestra.",
+                 _obj({"accion": _str("iniciar | parar | reiniciar",
+                                      ["iniciar", "parar", "reiniciar"]),
+                       "servicio": _str("Nombre del servicio"),
+                       "ambito": _str("'user' (por defecto) o 'system'",
+                                      ["user", "system"])}, ["accion", "servicio"]),
+                 _service_control, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (E4/D1): se RELEE `systemctl show` tras la "
+                        "acción; si el ActiveState no es el esperado -> ERROR. "
+                        "E1: no toca unidades intocables. E2: ámbito system -> "
+                        "sudo con la regla concreta.",
+                 revert="La acción inversa (parar<->iniciar); reiniciar no revierte.",
+                 plan_capable=True, plan_run=_service_control,
+                 parser_intents=("service_control",)),
+
+    # ---- Notificaciones (FASE E · E5) ----
+    ToolContract("enviar_notificacion",
+                 "Muestra una notificación de escritorio con notify-send.",
+                 _obj({"mensaje": _str("El texto de la notificación"),
+                       "titulo": _str("Título (por defecto 'JARVIS')"),
+                       "urgencia": _str("baja | normal | alta",
+                                        ["baja", "normal", "alta"])}, ["mensaje"]),
+                 _notify, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (E5/D1): notify-send rc 0 -> EXECUTED con "
+                        "salvedad (que se muestre en pantalla no es comprobable "
+                        "-> verify None). Sin notify-send -> ERROR claro.",
+                 revert="n/a (la notificación se descarta sola).",
+                 parser_intents=("notify",)),
 
     ToolContract(
         "ejecutar_comando",
