@@ -61,6 +61,10 @@ PROC_REASONS: dict[str, str] = {
     # --- el cerebro de JARVIS ---
     "ollama":               "es el servidor del modelo; matarlo me deja sin cerebro a mitad de tarea",   # [base]
     "llama-server":         "es el motor del modelo que estoy usando ahora mismo",   # [+E1]
+    # --- contenedores: matarlos aborta builds y deja contenedores huérfanos ---
+    "dockerd":              "es el demonio de Docker; matarlo aborta cualquier `docker build` o contenedor en marcha",   # [+E1·b]
+    "docker":               "es Docker; matarlo aborta builds y contenedores en marcha y deja estado colgando",   # [+E1·b]
+    "containerd":           "es el runtime de contenedores (Docker/Kubernetes); matarlo deja los contenedores en estado inconsistente",   # [+E1·b]
 }
 
 # Alternativa correcta por familia (lo que el usuario seguramente quería).
@@ -83,6 +87,10 @@ _ALTERNATIVAS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"sshd"),
      "Si necesitas reiniciar SSH, hazlo desde una consola local: "
      "`sudo systemctl restart ssh`."),
+    (re.compile(r"docker|containerd"),
+     "Para reiniciar Docker sin perder trabajo: espera a que terminen los "
+     "builds y contenedores en curso y luego `sudo systemctl restart docker`. "
+     "No lo mato yo."),
 ]
 
 _GENERICA = ("Es un proceso crítico del sistema o de tu sesión. Si de verdad "
@@ -106,6 +114,8 @@ UNIT_REASONS: dict[str, str] = {
     "ssh.service":              "es el servidor SSH",   # [base]
     "sshd.service":             "es el servidor SSH",   # [base]
     "ollama.service":           "es el servidor del modelo; sin él me quedo sin cerebro",   # [base]
+    "docker.service":           "es Docker; pararlo aborta builds y contenedores en marcha",   # [+E1·b]
+    "containerd.service":       "es el runtime de contenedores; pararlo deja los contenedores inconsistentes",   # [+E1·b]
 }
 _UNIT_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^user@\d+\.service$"), "es tu sesión de usuario de systemd; pararla te cierra la sesión"),

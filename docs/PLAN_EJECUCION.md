@@ -568,11 +568,14 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
       a 15 chars y a la línea de comandos.
       - `[base]` (fijo, del usuario): gnome-shell/mutter, systemd/logind/dbus,
         NetworkManager, sshd, ollama, JARVIS + su árbol (`own_pids()`), PID 1.
-      - `[+E1]` (propuesto tras inventariar el sistema — el usuario recorta lo
-        que sobre antes del merge): gdm3/Xwayland/gnome-session,
-        wpa_supplicant/ModemManager, polkitd, pipewire/pipewire-pulse/
-        wireplumber, systemd-journald/udevd/resolved/oomd, dbus-broker,
-        llama-server; unidades `user@N.service` y sus equivalentes.
+      - `[+E1]` (propuesto tras inventariar el sistema): gdm3/Xwayland/
+        gnome-session, wpa_supplicant/ModemManager, polkitd, pipewire/
+        pipewire-pulse/wireplumber, systemd-journald/udevd/resolved/oomd,
+        dbus-broker, llama-server; unidades `user@N.service` y sus equivalentes.
+      - `[+E1·b]` (criterio ampliado: muerte = estado inconsistente o trabajo
+        perdido, no solo pérdida de sesión): `docker`/`dockerd`/`containerd`
+        (+ shims) y `docker.service`/`containerd.service` — matarlos aborta
+        builds y deja contenedores huérfanos.
 - [x] **E2 — Modelo de permisos** (`jarvis_local/safety/permisos.py`,
       `docs/PERMISOS_SUDO.md`): tres niveles por `RiskLevel` —
       `nivel()` → `auto` (READ) / `verificar` (CREATE·EXECUTE, D1) /

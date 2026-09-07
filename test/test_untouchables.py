@@ -24,6 +24,7 @@ from jarvis_local.safety.untouchables import (
     "wpa_supplicant", "ModemManager", "polkitd", "pipewire",
     "pipewire-pulse", "wireplumber", "systemd-journald", "systemd-resolved",
     "dbus-broker",                                               # [+E1]
+    "dockerd", "docker", "containerd", "containerd-shim",        # [+E1·b]
 ])
 def test_proceso_critico_es_intocable(name):
     ok, motivo = is_untouchable_process(name=name)
@@ -82,7 +83,7 @@ def test_falso_positivo_ollama_helper_no_casa():
     "gdm.service", "NetworkManager.service", "dbus.service",
     "systemd-logind.service", "ssh.service", "ollama.service",
     "wpa_supplicant.service", "polkit.service", "systemd-journald.service",
-    "user@1000.service",
+    "user@1000.service", "docker.service", "containerd.service",   # [+E1·b]
 ])
 def test_unidad_critica_es_intocable(unit):
     ok, motivo = is_untouchable_unit(unit)
@@ -94,8 +95,8 @@ def test_unidad_critica_es_intocable(unit):
 
 
 @pytest.mark.parametrize("unit", [
-    "cups.service", "bluetooth.service", "docker.service", "cron.service",
-    "unattended-upgrades.service",
+    "cups.service", "bluetooth.service", "cron.service",
+    "unattended-upgrades.service", "chrony.service",
 ])
 def test_unidad_no_critica_no_es_intocable(unit):
     assert is_untouchable_unit(unit)[0] is False
