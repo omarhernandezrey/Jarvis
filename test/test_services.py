@@ -55,8 +55,11 @@ class _Systemctl:
 
 
 def _patch(monkeypatch, sysctl, hay=True):
+    from jarvis_local.safety import permisos
     monkeypatch.setattr(S, "_systemctl", sysctl)
     monkeypatch.setattr(S, "_hay_systemctl", lambda: hay)
+    # sin instalación de paquetes en curso salvo que el test la active
+    monkeypatch.setattr(permisos, "transaccion_de_paquetes_en_curso", lambda: False)
 
 
 # --- lectura -------------------------------------------------------------
@@ -157,6 +160,15 @@ def test_execute_re_chequea_intocables(monkeypatch):
     _patch(monkeypatch, _Systemctl({"gdm.service": "active"}))
     plan = S.execute_service("parar", "gdm", scope="system")
     assert plan.status == ActionStatus.BLOCKED
+
+
+def test_no_toca_servicios_con_instalacion_de_paquetes_en_curso(monkeypatch):
+    from jarvis_local.safety import permisos
+    _patch(monkeypatch, _Systemctl({"syncthing.service": "active"}))
+    monkeypatch.setattr(permisos, "transaccion_de_paquetes_en_curso", lambda: True)
+    plan = S.plan_service("reiniciar", "syncthing", scope="user")
+    assert plan.status == ActionStatus.BLOCKED
+    assert "instalación" in plan.result or "actualización" in plan.result
 
 
 if __name__ == "__main__":

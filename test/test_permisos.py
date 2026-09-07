@@ -82,5 +82,35 @@ def test_unidad_de_usuario_vs_sistema():
     assert permisos.unidad_es_de_sistema(None) is True
 
 
+# --- transacción de paquetes en curso (E1·c) --------------------------------
+
+
+class _FakeProc:
+    def __init__(self, name):
+        self.info = {"name": name}
+
+
+def test_transaccion_de_paquetes_detecta_dpkg_apt(monkeypatch):
+    monkeypatch.setattr("psutil.process_iter",
+                        lambda *a, **k: [_FakeProc("chrome"), _FakeProc("dpkg")])
+    assert permisos.transaccion_de_paquetes_en_curso() is True
+
+
+def test_sin_transaccion_si_solo_estan_los_demonios(monkeypatch):
+    # snapd / packagekitd siempre corren: NO son señal de transacción
+    monkeypatch.setattr("psutil.process_iter",
+                        lambda *a, **k: [_FakeProc("snapd"), _FakeProc("packagekitd"),
+                                         _FakeProc("firefox")])
+    assert permisos.transaccion_de_paquetes_en_curso() is False
+
+
+def test_bloqueo_por_transaccion_es_claro_no_finge_exito():
+    plan = permisos.bloqueo_por_transaccion("reiniciar el equipo")
+    assert plan.status == ActionStatus.BLOCKED
+    assert "instalación" in plan.result or "actualización" in plan.result
+    assert "espera" in plan.result.lower()
+    assert "operacion completada" not in plan.result.lower()
+
+
 if __name__ == "__main__":
     print("usa pytest")

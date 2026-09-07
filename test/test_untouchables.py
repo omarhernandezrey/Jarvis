@@ -25,6 +25,9 @@ from jarvis_local.safety.untouchables import (
     "pipewire-pulse", "wireplumber", "systemd-journald", "systemd-resolved",
     "dbus-broker",                                               # [+E1]
     "dockerd", "docker", "containerd", "containerd-shim",        # [+E1·b]
+    "dpkg", "dpkg-deb", "apt", "apt-get", "unattended-upgr",     # [+E1·c]
+    "packagekitd", "snapd", "udisksd",                           # [+E1·c]
+    "gnome-keyring-d", "gcr-ssh-agent", "ssh-agent",             # [+E1·c]
 ])
 def test_proceso_critico_es_intocable(name):
     ok, motivo = is_untouchable_process(name=name)
@@ -84,6 +87,8 @@ def test_falso_positivo_ollama_helper_no_casa():
     "systemd-logind.service", "ssh.service", "ollama.service",
     "wpa_supplicant.service", "polkit.service", "systemd-journald.service",
     "user@1000.service", "docker.service", "containerd.service",   # [+E1·b]
+    "snapd.service", "udisks2.service", "packagekit.service",      # [+E1·c]
+    "unattended-upgrades.service",                                 # [+E1·c]
 ])
 def test_unidad_critica_es_intocable(unit):
     ok, motivo = is_untouchable_unit(unit)
@@ -95,11 +100,30 @@ def test_unidad_critica_es_intocable(unit):
 
 
 @pytest.mark.parametrize("unit", [
-    "cups.service", "bluetooth.service", "cron.service",
-    "unattended-upgrades.service", "chrony.service",
+    "cups.service", "bluetooth.service", "cron.service", "chrony.service",
+    "avahi-daemon.service",
 ])
 def test_unidad_no_critica_no_es_intocable(unit):
     assert is_untouchable_unit(unit)[0] is False
+
+
+def test_explicar_lista_las_familias_y_dice_que_no_hay_forzar():
+    from jarvis_local.safety.untouchables import explicar
+    t = explicar()
+    for esperado in ("gnome-shell", "docker", "dpkg", "gnome-keyring",
+                     "user@N.service", "instalación de paquetes"):
+        assert esperado in t, esperado
+    assert "no hay forma de forzarlo" in t.lower()
+    assert "operacion completada" not in t.lower()
+
+
+def test_parser_enruta_la_consulta_de_intocables():
+    from jarvis_local.intent.parser import parse_intent
+    for frase in ("qué no puedes tocar", "qué procesos no matas",
+                  "qué está protegido", "lista de intocables",
+                  "qué servicios no reinicias"):
+        r = parse_intent(frase)
+        assert r.kind == "tool_read" and r.tool == "untouchables", frase
 
 
 if __name__ == "__main__":

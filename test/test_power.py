@@ -34,7 +34,9 @@ def _con_shutdown_falso(fn):
 
 def _con_shutdown_falso_linux(fn):
     """Captura las llamadas a `sudo shutdown` sin ejecutarlas (Linux)."""
+    from jarvis_local.safety import permisos
     original = power._run_shutdown_linux
+    original_tx = permisos.transaccion_de_paquetes_en_curso
     llamadas = []
 
     def fake(args):
@@ -42,10 +44,14 @@ def _con_shutdown_falso_linux(fn):
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
     power._run_shutdown_linux = fake
+    # E1·c: si la máquina que corre los tests está a mitad de un
+    # unattended-upgrade real, _delayed bloquearía; se neutraliza.
+    permisos.transaccion_de_paquetes_en_curso = lambda: False
     try:
         fn(llamadas)
     finally:
         power._run_shutdown_linux = original
+        permisos.transaccion_de_paquetes_en_curso = original_tx
 
 
 # --- Enrutamiento del parser (identico en ambos SO) ---

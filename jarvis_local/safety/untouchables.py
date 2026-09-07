@@ -65,6 +65,21 @@ PROC_REASONS: dict[str, str] = {
     "dockerd":              "es el demonio de Docker; matarlo aborta cualquier `docker build` o contenedor en marcha",   # [+E1·b]
     "docker":               "es Docker; matarlo aborta builds y contenedores en marcha y deja estado colgando",   # [+E1·b]
     "containerd":           "es el runtime de contenedores (Docker/Kubernetes); matarlo deja los contenedores en estado inconsistente",   # [+E1·b]
+    # --- gestores de paquetes: matarlos a mitad de transacción rompe dpkg/snap ---
+    "dpkg":                "está instalando o quitando paquetes; matarlo deja el sistema de paquetes a medias (hay que hacer `sudo dpkg --configure -a` para recuperar)",   # [+E1·c]
+    "apt":                 "es una instalación de paquetes en curso; matarla rompe la transacción",   # [+E1·c]
+    "apt-get":             "es una instalación de paquetes en curso; matarla rompe la transacción",   # [+E1·c]
+    "aptitude":            "es una instalación de paquetes en curso; matarla rompe la transacción",   # [+E1·c]
+    "unattended-upgr":     "es la actualización automática de seguridad; matarla a medias rompe dpkg",   # [+E1·c] (comm truncado)
+    "packagekitd":         "es el servicio de instalación de software (GNOME Software); matarlo a mitad de una instalación rompe dpkg",   # [+E1·c]
+    "packagekit":          "es el servicio de instalación de software",   # [+E1·c]
+    "snapd":               "gestiona los paquetes snap; matarlo a mitad de una instalación deja el snap corrupto",   # [+E1·c]
+    # --- discos: matarlo durante un montaje/formateo puede corromper datos ---
+    "udisksd":             "gestiona discos y montajes; matarlo durante una operación puede corromper el sistema de archivos de un USB o partición",   # [+E1·c]
+    # --- secretos de la sesión: matarlos pierde contraseñas y claves desbloqueadas ---
+    "gnome-keyring-d":     "guarda los secretos descifrados de tu sesión (contraseñas de wifi, del correo...); matarlo hace que todo te los vuelva a pedir",   # [+E1·c] (comm truncado)
+    "gcr-ssh-agent":       "guarda tus claves SSH desbloqueadas; matarlo te obliga a volver a meter la frase de paso",   # [+E1·c]
+    "ssh-agent":           "guarda tus claves SSH desbloqueadas; matarlo te obliga a volver a meter la frase de paso",   # [+E1·c]
 }
 
 # Alternativa correcta por familia (lo que el usuario seguramente quería).
@@ -91,6 +106,16 @@ _ALTERNATIVAS: list[tuple[re.Pattern, str]] = [
      "Para reiniciar Docker sin perder trabajo: espera a que terminen los "
      "builds y contenedores en curso y luego `sudo systemctl restart docker`. "
      "No lo mato yo."),
+    (re.compile(r"^dpkg|^apt|unattended-upgr|packagekit|^snapd"),
+     "Espera a que termine la instalación de paquetes (unos minutos). Si de "
+     "verdad se colgó, recupéralo tú con `sudo dpkg --configure -a`. Nunca lo "
+     "mates a medias."),
+    (re.compile(r"gnome-keyring|gcr-ssh-agent|ssh-agent"),
+     "Si el llavero da problemas, cierra sesión y vuelve a entrar. Matarlo te "
+     "deja sin las contraseñas y claves desbloqueadas de esta sesión."),
+    (re.compile(r"udisksd"),
+     "Desmonta lo que tengas conectado y hazlo tú si de verdad hace falta: "
+     "`sudo systemctl restart udisks2`."),
 ]
 
 _GENERICA = ("Es un proceso crítico del sistema o de tu sesión. Si de verdad "
@@ -116,6 +141,12 @@ UNIT_REASONS: dict[str, str] = {
     "ollama.service":           "es el servidor del modelo; sin él me quedo sin cerebro",   # [base]
     "docker.service":           "es Docker; pararlo aborta builds y contenedores en marcha",   # [+E1·b]
     "containerd.service":       "es el runtime de contenedores; pararlo deja los contenedores inconsistentes",   # [+E1·b]
+    "snapd.service":            "gestiona los paquetes snap; pararlo a mitad de una instalación deja el snap corrupto",   # [+E1·c]
+    "packagekit.service":       "es el servicio de instalación de software",   # [+E1·c]
+    "unattended-upgrades.service": "es la actualización automática de seguridad",   # [+E1·c]
+    "apt-daily.service":        "es la tarea diaria de apt (descarga/actualización)",   # [+E1·c]
+    "apt-daily-upgrade.service": "es la tarea diaria de actualización de apt",   # [+E1·c]
+    "udisks2.service":          "gestiona discos y montajes",   # [+E1·c]
 }
 _UNIT_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^user@\d+\.service$"), "es tu sesión de usuario de systemd; pararla te cierra la sesión"),
@@ -172,6 +203,24 @@ def is_untouchable_process(name: str | None = None, pid: int | None = None,
         if n.startswith(k) or (cl and re.search(rf"(^|/|\s){re.escape(k)}(\s|$|/)", cl)):
             return True, motivo
     return False, ""
+
+
+def explicar() -> str:
+    """Texto para la consulta 'qué no puedes tocar y por qué' (ruta parser)."""
+    procs = "\n".join(f"  · {k} — {v}" for k, v in PROC_REASONS.items())
+    units = "\n".join(f"  · {k} — {v}" for k, v in UNIT_REASONS.items())
+    return (
+        "Procesos que NO mato nunca, senor (ni aunque me lo pidas):\n"
+        f"{procs}\n"
+        "  · (además) el proceso 1 (init), yo mismo y mi árbol de procesos, y "
+        "cualquier proceso del sistema mientras haya una instalación de "
+        "paquetes en curso.\n\n"
+        "Servicios de systemd que NO paro ni reinicio:\n"
+        f"{units}\n"
+        "  · (además) tu sesión de usuario (user@N.service).\n\n"
+        "En todos, si me lo pides te explico por qué y te doy la alternativa "
+        "correcta; no hay forma de forzarlo desde aquí."
+    )
 
 
 def is_untouchable_unit(unit: str | None = None) -> tuple[bool, str]:

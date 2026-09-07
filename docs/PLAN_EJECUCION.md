@@ -572,10 +572,27 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
         gnome-session, wpa_supplicant/ModemManager, polkitd, pipewire/
         pipewire-pulse/wireplumber, systemd-journald/udevd/resolved/oomd,
         dbus-broker, llama-server; unidades `user@N.service` y sus equivalentes.
-      - `[+E1·b]` (criterio ampliado: muerte = estado inconsistente o trabajo
-        perdido, no solo pérdida de sesión): `docker`/`dockerd`/`containerd`
-        (+ shims) y `docker.service`/`containerd.service` — matarlos aborta
-        builds y deja contenedores huérfanos.
+      - `[+E1·b/c]` (criterio ampliado: muerte = estado inconsistente o
+        trabajo perdido, no solo pérdida de sesión):
+        · contenedores — `docker`/`dockerd`/`containerd` (+ shims),
+          `docker.service`/`containerd.service`;
+        · gestores de paquetes — `dpkg`/`apt`/`apt-get`/`aptitude`/
+          `unattended-upgr`/`packagekitd`/`snapd`, `snapd.service`/
+          `packagekit.service`/`unattended-upgrades.service`/`apt-daily*`;
+        · discos — `udisksd`, `udisks2.service`;
+        · secretos de la sesión — `gnome-keyring-daemon`/`gcr-ssh-agent`/
+          `ssh-agent`.
+      - **Transacción de paquetes en curso** (`permisos.transaccion_de_
+        paquetes_en_curso()`, barato — una pasada de `process_iter`): proteger
+        `dpkg` por nombre no basta, lo que importa es la transacción. Mientras
+        haya un `dpkg`/`apt`/`unattended-upgrade` corriendo, `matar_proceso`
+        (de procesos del sistema), `controlar_servicio` (cualquiera) y
+        `energia_del_equipo` (apagar/reiniciar) → BLOQUEADO
+        (`bloqueo_por_transaccion`): "espera unos minutos". El kill de un
+        proceso propio no-root sigue permitido.
+      - **Consulta por parser**: "qué no puedes tocar" / "qué procesos no
+        matas" / "lista de intocables" → `listar_intocables`
+        (`untouchables.explicar()`), como la consulta de auditoría de D2.
 - [x] **E2 — Modelo de permisos** (`jarvis_local/safety/permisos.py`,
       `docs/PERMISOS_SUDO.md`): tres niveles por `RiskLevel` —
       `nivel()` → `auto` (READ) / `verificar` (CREATE·EXECUTE, D1) /

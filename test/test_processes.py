@@ -88,6 +88,9 @@ def _fake(monkeypatch):
     # E2: 'mío' salvo postgres (otro usuario)
     monkeypatch.setattr(permisos, "proceso_es_del_usuario",
                         lambda pid: pid != 100)
+    # por defecto, sin instalación de paquetes en curso (los tests que la
+    # necesitan la activan)
+    monkeypatch.setattr(permisos, "transaccion_de_paquetes_en_curso", lambda: False)
     return fp
 
 
@@ -187,6 +190,17 @@ def test_execute_kill_re_chequea_intocables(_fake):
     plan = P.execute_kill(900)     # gnome-shell
     assert plan.status == ActionStatus.BLOCKED
     assert "gnome-shell" in plan.result
+
+
+def test_proceso_de_root_con_instalacion_en_curso_se_bloquea(_fake, monkeypatch):
+    """E1·c: un proceso del sistema mientras se instalan paquetes puede ser un
+    script de mantenimiento -> no se toca hasta que la transacción acabe
+    (y el mensaje habla de la instalación, no de sudo)."""
+    monkeypatch.setattr(permisos, "transaccion_de_paquetes_en_curso", lambda: True)
+    plan = P.plan_kill("100")   # postgres, de otro usuario
+    assert plan.status == ActionStatus.BLOCKED
+    assert "instalación" in plan.result or "actualización" in plan.result
+    assert "sudo" not in plan.result.lower()
 
 
 if __name__ == "__main__":

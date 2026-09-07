@@ -268,6 +268,16 @@ def _notify(mensaje: str, titulo: str = "JARVIS", urgencia: str = "normal"):
     return send_notification(mensaje, titulo, urgencia)
 
 
+def _untouchables_list():
+    from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+    from jarvis_local.safety.untouchables import explicar
+    p = ActionPlan(action="listar_intocables", risk=RiskLevel.READ,
+                   reason="Operacion de solo lectura")
+    p.result = explicar()
+    p.status = ActionStatus.EXECUTED
+    return p
+
+
 def _wiki(topic: str):
     from jarvis_local.tools.wiki import wiki_summary
     return wiki_summary(topic)
@@ -938,6 +948,12 @@ CONTRACTS: list[ToolContract] = [
                  revert="La acción inversa (parar<->iniciar); reiniciar no revierte.",
                  plan_capable=True, plan_run=_service_control,
                  parser_intents=("service_control",)),
+
+    ToolContract("listar_intocables",
+                 "Dice qué procesos y servicios NO puede tocar JARVIS y por qué.",
+                 _obj({}, []), _untouchables_list, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("untouchables",)),
 
     # ---- Notificaciones (FASE E · E5) ----
     ToolContract("enviar_notificacion",

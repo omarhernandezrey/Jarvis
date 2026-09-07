@@ -572,6 +572,25 @@ def _parse_servicios(m: str) -> IntentResult | None:
                         reason=f"Estado del servicio {nombre}")
 
 
+# PLAN_EJECUCION FASE E · E1 — consulta de la lista de intocables.
+_TRIGGER_INTOCABLES = re.compile(
+    r'\bque\s+(?:procesos?\s+|servicios?\s+)?no\s+(?:puedes\s+|vas\s+a\s+|'
+    r'quieres\s+|debes\s+)?'
+    r'(?:toca[rs]?|mata[rs]?|para[rs]?|cierra[rs]?|reinicia[rs]?|apaga[rs]?|'
+    r'detien[es]?|tocas)\b'
+    r'|\bque\s+esta\s+protegido\b|\blista\s+de\s+(?:los\s+)?intocables\b'
+    r'|\bque\s+(?:procesos?|servicios?)\s+(?:son\s+)?intocables\b'
+    r'|\bque\s+no\s+te\s+deja(?:s|n)?\b',
+    re.IGNORECASE)
+
+
+def _parse_intocables(m: str) -> IntentResult | None:
+    if not _TRIGGER_INTOCABLES.search(_sin_tildes(m).lower()):
+        return None
+    return IntentResult(kind="tool_read", tool="untouchables",
+                        reason="Consultar la lista de intocables")
+
+
 # PLAN_EJECUCION FASE E · E5 — notificaciones de escritorio.
 _TRIGGER_NOTIF = re.compile(
     r'\bnotifica(?:me|cion|r)?\b|\bnotify-send\b|\b(?:manda|lanza|saca|muestra|'
@@ -1148,6 +1167,9 @@ def parse_intent(message: str) -> IntentResult:
     # --- PROCESOS Y SERVICIOS (FASE E · E3/E4): antes de fase5 y de las apps,
     #     para que "cierra el proceso 12345" / "reinicia el servicio cups" no
     #     caigan en close_app / Google ---
+    intoc = _parse_intocables(m)   # "qué no puedes matar" antes de "qué procesos..."
+    if intoc is not None:
+        return intoc
     procesos = _parse_procesos(m)
     if procesos is not None:
         return procesos

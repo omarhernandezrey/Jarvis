@@ -102,6 +102,10 @@ def service_status(servicio: str, scope: str = "user") -> ActionPlan:
 # --- cambio de estado ----------------------------------------------------
 
 def _guardas(unit: str, scope: str) -> ActionPlan | None:
+    # E1·c: no se cambia el estado de ningún servicio mientras se instalan
+    # paquetes (el upgrade puede estar reiniciando ese mismo servicio).
+    if permisos.transaccion_de_paquetes_en_curso():
+        return permisos.bloqueo_por_transaccion(f"tocar el servicio {unit}")
     prot, motivo = is_untouchable_unit(unit)
     if prot:
         p = ActionPlan(action="controlar_servicio", risk=RiskLevel.DELETE,

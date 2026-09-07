@@ -65,6 +65,15 @@ def lock_pc() -> ActionPlan:
 
 def _delayed(action: str, win_flag: str, linux_flag: str, verbo: str,
              seconds: int = DEFAULT_DELAY_SECONDS) -> ActionPlan:
+    # E1·c: apagar/reiniciar a mitad de una instalación de paquetes deja el
+    # sistema roto. No se programa hasta que la transacción acabe.
+    from jarvis_local.safety.permisos import (
+        bloqueo_por_transaccion,
+        transaccion_de_paquetes_en_curso,
+    )
+    if not IS_WINDOWS and transaccion_de_paquetes_en_curso():
+        return bloqueo_por_transaccion(f"{verbo.lower()}r el equipo")
+
     seconds = max(10, min(int(seconds), 3600))  # nunca menor a 10 s
     plan = ActionPlan(action=action, params={"segundos": seconds},
                       risk=RiskLevel.EXECUTE,

@@ -323,6 +323,7 @@ def test_fallo_intentar_matar_gnome_shell_se_bloquea(monkeypatch):
 
 
 def test_fallo_servicio_de_sistema_pide_sudo_no_lo_hace_a_ciegas(monkeypatch):
+    from jarvis_local.safety import permisos
     from jarvis_local.tools import services
 
     class _Sc:
@@ -334,6 +335,7 @@ def test_fallo_servicio_de_sistema_pide_sudo_no_lo_hace_a_ciegas(monkeypatch):
 
     monkeypatch.setattr(services, "_systemctl", _Sc())
     monkeypatch.setattr(services, "_hay_systemctl", lambda: True)
+    monkeypatch.setattr(permisos, "transaccion_de_paquetes_en_curso", lambda: False)
 
     plan = services.plan_service("reiniciar", "cups", scope="system")
     assert plan.status == ActionStatus.BLOCKED
@@ -350,6 +352,29 @@ def test_fallo_notificacion_sin_notify_send_error_claro(monkeypatch):
     assert plan.status == ActionStatus.ERROR
     assert "notify-send" in plan.result and "libnotify-bin" in plan.result
     assert not _EXITO.search(plan.result)
+
+
+def test_fallo_no_toca_el_sistema_con_una_instalacion_de_paquetes_en_curso(monkeypatch):
+    """E1·c: con dpkg/apt corriendo, ni matar procesos del sistema, ni tocar
+    servicios, ni apagar/reiniciar. Dice que espere, nunca finge que lo hizo."""
+    from jarvis_local.safety import permisos
+    from jarvis_local.tools import power, services
+
+    monkeypatch.setattr(permisos, "transaccion_de_paquetes_en_curso", lambda: True)
+
+    class _Sc:
+        def __call__(self, scope, *a):
+            return subprocess.CompletedProcess([], 0,
+                "LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\n", "")
+    monkeypatch.setattr(services, "_systemctl", _Sc())
+    monkeypatch.setattr(services, "_hay_systemctl", lambda: True)
+
+    for plan in (services.plan_service("reiniciar", "syncthing", scope="user"),
+                 power.shutdown_pc(), power.restart_pc()):
+        assert plan.status == ActionStatus.BLOCKED
+        assert "instalación" in plan.result or "actualización" in plan.result
+        assert "espera" in plan.result.lower()
+        assert not _EXITO.search(plan.result)
 
 
 def test_efecto_notificacion_rc0_se_reporta_con_salvedad(monkeypatch):

@@ -178,6 +178,11 @@ def plan_kill(objetivo: str) -> ActionPlan:
 
     mio = permisos.proceso_es_del_usuario(i["pid"])
     if mio is False:
+        # E1·c: un proceso del sistema mientras se instalan paquetes puede ser
+        # un script de mantenimiento; no se toca hasta que la transacción acabe.
+        if permisos.transaccion_de_paquetes_en_curso():
+            return permisos.bloqueo_por_transaccion(
+                f"matar el PID {i['pid']} ({i['nombre']})")
         return permisos.bloqueo_por_sudo(
             "kill_otro_usuario",
             f"matar el PID {i['pid']} ({i['nombre']}, de {i['usuario']})",
@@ -224,6 +229,9 @@ def _re_guardas(pid: int) -> ActionPlan | None:
         pl.result = f"No mato el PID {pid} ({i['nombre']}): {motivo}, senor."
         return pl
     if permisos.proceso_es_del_usuario(pid) is False:
+        if permisos.transaccion_de_paquetes_en_curso():
+            return permisos.bloqueo_por_transaccion(
+                f"matar el PID {pid} ({i['nombre']})")
         return permisos.bloqueo_por_sudo(
             "kill_otro_usuario", f"matar el PID {pid} ({i['nombre']})",
             hazlo_tu=f"sudo kill {pid}")
