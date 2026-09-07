@@ -284,6 +284,50 @@ class OllamaClient:
         r.raise_for_status()
         return r.json().get("message", {})
 
+    def chat_structured(
+        self,
+        messages: list[dict],
+        schema: dict,
+        model: str | None = None,
+    ) -> dict:
+        """Chat con SALIDA ESTRUCTURADA (PLAN_EJECUCION FASE D · D3).
+
+        En vez del tool calling nativo (`tools=[...]` + canal `tool_calls`), se
+        pasa `format=<JSON Schema>` y Ollama restringe la generación a un JSON
+        que lo cumple. Devuelve el mensaje del modelo; `message["content"]` es
+        una cadena JSON válida contra `schema` (o vacía si el modelo falló).
+        """
+        cfg = get_config()["ollama"]
+        payload = {
+            "model": model or cfg.get("agent_model") or cfg["model"],
+            "messages": messages,
+            "format": schema,
+            "stream": False,
+            "keep_alive": cfg.get("keep_alive", "30m"),
+            "options": {
+                "num_ctx": cfg.get("agent_num_ctx", 2048),
+                # el JSON de decisión es más largo que un tool_call suelto:
+                # {"accion","herramienta","argumentos","respuesta"}. 200 cubre
+                # una respuesta de texto corta sin quedarse a medias.
+                "num_predict": cfg.get("agent_structured_num_predict", 200),
+                "temperature": 0.1,
+                "top_p": 0.9,
+            },
+        }
+        client = self._get_client()
+        if HAS_HTTPX:
+            r = client.post(
+                "/api/chat", json=payload,
+                timeout=httpx.Timeout(self.timeout, connect=15.0),
+            )
+        else:
+            r = client.post(
+                self._url("/api/chat"), json=payload,
+                timeout=(15, self.timeout),
+            )
+        r.raise_for_status()
+        return r.json().get("message", {})
+
     def get_model_info(self, model_name: str) -> dict:
         """Obtiene informacion de un modelo (tamano, parametros, etc.)."""
         client = self._get_client()
