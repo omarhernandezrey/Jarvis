@@ -573,10 +573,17 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
         wpa_supplicant/ModemManager, polkitd, pipewire/pipewire-pulse/
         wireplumber, systemd-journald/udevd/resolved/oomd, dbus-broker,
         llama-server; unidades `user@N.service` y sus equivalentes.
-- [ ] **E2 — Modelo de permisos**: lectura sin preguntar; escritura ejecuta +
-      verifica (D1); destructivo/sistema exige confirmación mostrando qué y
-      sobre qué, con cancelación. Sin sudo implícito (regla sudoers
-      documentada y pedida). Todo a la auditoría de D2.
+- [x] **E2 — Modelo de permisos** (`jarvis_local/safety/permisos.py`,
+      `docs/PERMISOS_SUDO.md`): tres niveles por `RiskLevel` —
+      `nivel()` → `auto` (READ) / `verificar` (CREATE·EXECUTE, D1) /
+      `confirmar` (DELETE·CRITICAL). `texto_confirmacion(verbo, objetivo,
+      detalles)` es el renderizador CANÓNICO (muestra qué y sobre qué,
+      `/confirmar`·`/cancelar`) para toda la oleada. **Sin sudo implícito**:
+      `bloqueo_por_sudo(capacidad, objetivo, hazlo_tu)` devuelve un ActionPlan
+      BLOQUEADO con la regla de sudoers CONCRETA (por unidad, nunca
+      `systemctl *`) y la alternativa manual; JARVIS nunca invoca `sudo`.
+      `proceso_es_del_usuario(pid)` (matable sin sudo) y `unidad_es_de_sistema
+      (scope)` para E3/E4. Todo a la auditoría de D2.
 - [ ] **E3 — Procesos**: listar por CPU y RAM; matar por nombre/PID con
       confirmación que muestra PID+nombre+comando+usuario; SIGTERM con espera,
       SIGKILL solo tras 2º aviso; varios matches → preguntar, no elegir;
