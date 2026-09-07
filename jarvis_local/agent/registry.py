@@ -165,10 +165,11 @@ def execute(name: str, arguments: dict) -> tuple[str, bool]:
             logger.log_error(f"tool:{name}",
                              f"Herramienta con needs_confirmation=True devolvió status: {result.status}")
 
+    from jarvis_local.tools._utils import describe_outcome
+
     if isinstance(result, ActionPlan):
         pendiente = result.status in (ActionStatus.PLANNED, ActionStatus.CONFIRMED)
-        texto = result.result or (str(result) if pendiente else "Operacion completada.")
         if pendiente:
-            texto = str(result)
-        return texto, pendiente
-    return str(result), False
+            return str(result), True
+        return describe_outcome(result, tool=name), False
+    return describe_outcome(result, tool=name), False

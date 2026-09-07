@@ -156,15 +156,11 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
 
 def _execute_tool_read(tool: str, args: dict) -> str:
     """Ejecuta una herramienta de lectura usando el registry."""
+    from jarvis_local.tools._utils import describe_outcome
     fn = _READ_TOOLS.get(tool)
     if fn is None:
         return f"Herramienta de lectura no encontrada: {tool}"
-    plan = fn(args)
-    if plan and hasattr(plan, "result") and plan.result:
-        return plan.result
-    if isinstance(plan, str):
-        return plan
-    return "Operacion completada."
+    return describe_outcome(fn(args), tool=tool)
 
 
 def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
@@ -182,25 +178,19 @@ def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
 
 def _execute_tool_write(tool: str, args: dict) -> str:
     """Ejecuta una herramienta de escritura usando el registry."""
+    from jarvis_local.tools._utils import describe_outcome
     fn = _WRITE_TOOLS.get(tool)
     if fn is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
     plan = fn(args)
     if plan is None:
-        return f"No pude ejecutar '{tool}': herramienta no encontrada."
+        return f"No pude ejecutar '{tool}': la herramienta no devolvió nada."
     # D2: auditoría append-only. record_plan filtra por riesgo (solo
     # escritura/destructivo/sistema) y redacta secretos antes de escribir.
     if hasattr(plan, "status"):
         from jarvis_local.safety.audit import audit
         audit.record_plan(plan, source="parser", tool_name=tool)
-    if hasattr(plan, "error") and plan.error:
-        safe_error, _ = redact_secrets(plan.error)
-        return f"Error: {safe_error}"
-    if hasattr(plan, "result") and plan.result:
-        return plan.result
-    if isinstance(plan, str):
-        return plan
-    return "Operacion completada."
+    return describe_outcome(plan, tool=tool)
 
 
 def _load_system_prompt() -> str:
