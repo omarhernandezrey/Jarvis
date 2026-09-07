@@ -250,3 +250,63 @@ def moved(src, dst) -> VerifyOutcome:
                              "os.path")
     return VerifyOutcome(True, f"{s.name} -> {d}", "os.path")
 
+
+# --- persistidos: recordatorios, notas, memoria ----------------------------
+# El fallo que NO se percibe en el momento (a diferencia del volumen, que se
+# oye): una nota que no se guardó se descubre tres días después. Se RELEE lo
+# escrito del almacenamiento, no se confía en el valor de retorno.
+
+def reminder_saved(rid: int, expected_text: str, expected_when) -> VerifyOutcome:
+    """Relee reminders.json de disco y comprueba que el recordatorio quedó con
+    su id, su texto y su hora (tolerancia de 60 s por el redondeo)."""
+    from datetime import datetime
+
+    from jarvis_local.tools.reminders import _load_store
+
+    for it in _load_store():
+        if it.get("id") != rid:
+            continue
+        if it.get("text") != expected_text:
+            return VerifyOutcome(False, "el texto en disco no es el pedido", "reminders.json")
+        try:
+            w = datetime.fromisoformat(it["when"])
+        except (KeyError, ValueError):
+            return VerifyOutcome(False, "la hora en disco es ilegible", "reminders.json")
+        if abs((w - expected_when).total_seconds()) > 60:
+            return VerifyOutcome(
+                False, f"hora en disco {w:%Y-%m-%d %H:%M} != pedida "
+                f"{expected_when:%Y-%m-%d %H:%M}", "reminders.json")
+        return VerifyOutcome(True, f"id={rid}, {it['text']!r} @ {w:%H:%M}", "reminders.json")
+    return VerifyOutcome(False, f"el recordatorio id={rid} no está en disco", "reminders.json")
+
+
+def note_appended(path, expected_line: str) -> VerifyOutcome:
+    """Relee el archivo de notas y comprueba que la línea escrita está ahí."""
+    from pathlib import Path as _P
+
+    p = _P(path)
+    if not p.is_file():
+        return VerifyOutcome(False, f"{p} no existe tras escribir la nota", "os.path")
+    try:
+        contenido = p.read_text(encoding="utf-8")
+    except OSError as e:
+        return VerifyOutcome(None, f"nota escrita; no pude releer el archivo: {e}", "read")
+    if expected_line in contenido:
+        return VerifyOutcome(True, "la línea está en el archivo de notas", "read")
+    return VerifyOutcome(False, "la línea no aparece en el archivo de notas", "read")
+
+
+def memory_saved(expected_text: str, base_dir=None) -> VerifyOutcome:
+    """Abre un MemoryStore NUEVO (relee memory.json) y comprueba que el dato
+    quedó guardado."""
+    from jarvis_local.storage.memory import MemoryStore
+
+    if base_dir is None:
+        from jarvis_local.config import BASE_DIR
+        base_dir = BASE_DIR
+    fresh = MemoryStore(base_dir / "data")
+    if any(it.get("text") == expected_text for it in fresh.list()):
+        return VerifyOutcome(True, "el dato está en el store de memoria", "memory.json")
+    return VerifyOutcome(False, "el dato no aparece en el store de memoria tras guardarlo",
+                         "memory.json")
+

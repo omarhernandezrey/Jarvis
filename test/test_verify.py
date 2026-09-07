@@ -6,9 +6,12 @@ JARVIS respondía "volumen al 50 por ciento, señor" y nadie se enteraba de que
 seguía al 20. Ahora lo comprueba, reintenta por otra vía, y si sigue sin
 cuadrar lo dice — nunca lo presenta como hecho.
 """
+import datetime
 import os
+import pathlib
 import subprocess
 import sys
+import tempfile
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -330,6 +333,115 @@ def test_media_next_verifica_que_la_pista_cambia():
 
     assert plan.status == ActionStatus.EXECUTED
     assert plan.params["verify"]["ok"] is True
+
+
+# --- persistidos: recordatorio, nota, memoria ------------------------------
+# El fallo que no se nota en el momento. Se fuerza que la escritura "diga que
+# sí" pero no persista, y se comprueba que VERIFY lo caza releyendo el disco.
+
+
+def test_set_reminder_persistencia_fallida_se_detecta_y_reintenta():
+    from jarvis_local.tools import reminders as rem
+
+    orig = rem.REMINDERS_PATH
+    tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+    tmp.close()
+    os.remove(tmp.name)
+    rem.REMINDERS_PATH = tmp.name
+    try:
+        # 1ª vía (_save_store) no escribe nada; el reintento atómico sí
+        with patch.object(rem, "_save_store", lambda items: None), \
+             patch.object(rem, "_arm", lambda *a, **k: None):
+            plan = rem.set_reminder("sacar la ropa", minutes=30)
+        assert plan.status == ActionStatus.EXECUTED
+        assert plan.params["verify"]["ok"] is True
+        assert "reintento" in plan.reason
+        # y de verdad quedó en disco, con su hora
+        guardados = rem._load_store()
+        assert len(guardados) == 1 and guardados[0]["text"] == "sacar la ropa"
+    finally:
+        rem.REMINDERS_PATH = orig
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+
+
+def test_set_reminder_persistencia_imposible_es_error():
+    from jarvis_local.tools import reminders as rem
+
+    orig = rem.REMINDERS_PATH
+    tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+    tmp.close()
+    os.remove(tmp.name)
+    rem.REMINDERS_PATH = tmp.name
+    try:
+        with patch.object(rem, "_save_store", lambda items: None), \
+             patch.object(rem, "_save_store_atomic", lambda items: None), \
+             patch.object(rem, "_arm", lambda *a, **k: None):
+            plan = rem.set_reminder("algo", minutes=10)
+        assert plan.status == ActionStatus.ERROR
+        assert plan.params["verify"]["ok"] is False
+        assert "no lo veo guardado" in plan.result.lower()
+    finally:
+        rem.REMINDERS_PATH = orig
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+
+
+def test_take_note_no_persiste_se_detecta_y_reintenta_con_fsync():
+    from jarvis_local.tools import notes
+
+    tmpdir = tempfile.mkdtemp()
+    objetivo = os.path.join(tmpdir, f"nota_{datetime.date.today():%Y-%m-%d}.txt")
+    with patch.object(notes, "NOTES_DIR", tmpdir), \
+         patch.object(notes, "_append_line", lambda p, ln: None):
+        plan = notes.take_note("comprar pan", open_notepad=False)
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+    assert "fsync" in plan.reason
+    assert "comprar pan" in open(objetivo, encoding="utf-8").read()
+
+
+def test_take_note_no_persiste_de_ninguna_forma_es_error():
+    from jarvis_local.tools import notes
+
+    tmpdir = tempfile.mkdtemp()
+    with patch.object(notes, "NOTES_DIR", tmpdir), \
+         patch.object(notes, "_append_line", lambda p, ln: None), \
+         patch.object(notes, "_append_line_fsync", lambda p, ln: None):
+        plan = notes.take_note("nota perdida", open_notepad=False)
+    assert plan.status == ActionStatus.ERROR
+    assert plan.params["verify"]["ok"] is False
+    assert "no aparece" in plan.result.lower()
+
+
+def test_remember_persistencia_fallida_se_detecta_y_reintenta():
+    import jarvis_local.config as cfgmod
+    from jarvis_local.storage.memory import MemoryStore
+    from jarvis_local.tools.catalog import _remember
+
+    base = pathlib.Path(tempfile.mkdtemp())
+    (base / "data").mkdir()
+    real_save = MemoryStore._save
+    estado = {"n": 0}
+
+    def _flaky_save(self):
+        estado["n"] += 1
+        if estado["n"] == 1:
+            return  # el primer guardado "se pierde"
+        return real_save(self)
+
+    orig_base = cfgmod.BASE_DIR
+    cfgmod.BASE_DIR = base
+    try:
+        with patch.object(MemoryStore, "_save", _flaky_save):
+            plan = _remember("prefiero llamadas cortas")
+        assert plan.status == ActionStatus.EXECUTED
+        assert plan.params["verify"]["ok"] is True
+        assert "reintento" in plan.reason
+        textos = [m["text"] for m in MemoryStore(base / "data").list()]
+        assert textos.count("prefiero llamadas cortas") == 1
+    finally:
+        cfgmod.BASE_DIR = orig_base
 
 
 if __name__ == "__main__":

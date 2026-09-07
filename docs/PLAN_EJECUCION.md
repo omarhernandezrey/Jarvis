@@ -434,11 +434,12 @@ merge a main.
       - **Verificado**: `docker run python:3.11-slim` con el workflow completo →
         `ruff` OK, `pytest test` EXIT 0, 0 FAILED. Suite local (3.14) sigue
         verde.
-- [ ] **D1 — VERIFY post-acción**: cada herramienta de escritura comprueba su
-      propio efecto tras ejecutarse. Reintento con estrategia distinta si
-      falla; si vuelve a fallar, se informa qué se intentó y por qué no se
-      pudo. Empieza por abrir apps, archivos, volumen y multimedia (donde el
-      fallo silencioso es más probable — "pon pausa" fue el ejemplo real).
+- [x] **D1 — VERIFY post-acción**: cada herramienta de escritura de los focos
+      priorizados comprueba su propio efecto tras ejecutarse. Reintento con
+      estrategia distinta si falla; si vuelve a fallar, se informa qué se
+      intentó y por qué no se pudo. Cubiertos: volumen, apps, multimedia,
+      archivos, y (fallo no perceptible en el momento) recordatorios, notas y
+      memoria.
     - [x] **D1·infra + volumen** (`jarvis_local/tools/verify.py`): `VerifyOutcome`
           con tres desenlaces (True hecho / False no-hecho / None no-medible) y
           `finish()` que los pliega igual en todos lados — None se reporta con
@@ -467,6 +468,26 @@ merge a main.
           con escritura cruda + `fsync`. `create_directory`, `copy_file`
           (tamaño == origen), `move_file`/`rename_file` (destino existe Y origen
           ya no) con su reintento por vía alterna.
+    - [x] **D1·recordatorios + notas + memoria** (`set_reminder`, `take_note`,
+          `recordar`): los únicos cuyo fallo NO se percibe en el momento (un
+          volumen que no cambia se oye; una nota que no se guardó se descubre
+          días después). Se verifica el EFECTO PERSISTIDO releyendo el
+          almacenamiento, no el retorno: `set_reminder` relee `reminders.json`
+          (id + texto + hora ±60 s; reintento escritura atómica); `take_note`
+          relee el archivo de notas (línea presente; reintento append+fsync);
+          `recordar` abre un `MemoryStore` nuevo (dato presente; reintento).
+          `_remember` pasa de devolver `str` a devolver `ActionPlan`.
+    - **Deuda conocida** — siguen con `verify` DECLARATIVO (texto, no
+      ejecutable), a la espera de que una fase posterior las necesite:
+      `enviar_whatsapp`, `add_contact`, `organizar_ventanas` / `minimize_all` /
+      `snap_window`, `cambiar_ventana`, `energia_del_equipo` / `lock_pc` /
+      `shutdown_pc` / `restart_pc` / `suspend_pc` / `cancel_shutdown`,
+      `ejecutar_comando`, `ubicar_lugar`, `abrir_sitio_web`, `buscar_en_google`,
+      `reproducir_en_spotify` / `reproducir_en_youtube` / `reproducir_musica_local`,
+      `navegar_con_selenium` / `cerrar_navegador`, `abrir_oferta_empleo` /
+      `mostrar_ofertas_empleo`, `captura_de_pantalla`, `cancelar_recordatorio`,
+      `cerrar_aplicacion` / `cerrar_todas_aplicaciones`, `enviar_correo`,
+      `ocultar_archivos`, `borrar_archivo`.
 - [ ] **D2 — Auditoría**: registro append-only de toda acción de escritura,
       destructiva o de sistema (herramienta, cuándo, parámetros, resultado de
       VERIFY, si hubo confirmación). Rotación de fichero. Consultable desde

@@ -360,12 +360,52 @@ def _close_browser():
 
 
 def _remember(text: str):
+    """Guarda un dato en la memoria permanente, COMPROBANDO que quedó escrito.
+
+    D1 · VERIFY: no se confía en el retorno de `MemoryStore.add`; se abre un
+    store nuevo (relee memory.json) y se comprueba que el dato está. El fallo
+    de una memoria no se percibe hasta que JARVIS no la recuerda, días después.
+    """
     from jarvis_local.config import BASE_DIR
-    from jarvis_local.storage.memory import MemoryStore
+    from jarvis_local.safety.policy import ActionPlan
+    from jarvis_local.storage.memory import MAX_MEMORY_LENGTH, MemoryStore
+    from jarvis_local.tools import verify as _v
+
+    plan = ActionPlan(action="recordar", params={"texto": str(text)[:80]},
+                      risk=RiskLevel.CREATE, reason="Guardar en memoria permanente")
+    clean = str(text)[:MAX_MEMORY_LENGTH].strip()
+    if not clean:
+        plan.status = ActionStatus.ERROR
+        plan.error = "texto vacío"
+        plan.result = "No me dijo qué recordar, senor."
+        return plan
+
     mem = MemoryStore(BASE_DIR / "data")
-    item = mem.add(text)
-    return (f"Lo recordare, senor: {text}" if item
-            else "No pude guardar la memoria (limite alcanzado).")
+    item = mem.add(clean)
+    if item is None:
+        plan.status = ActionStatus.ERROR
+        plan.error = "límite de memorias alcanzado"
+        plan.result = "No pude guardar la memoria (limite alcanzado), senor."
+        return plan
+
+    outcome = _v.memory_saved(clean, base_dir=BASE_DIR)
+    tried = [f"MemoryStore.add -> {outcome.detail}"]
+    if outcome.ok is False:
+        plan.reason += " (reintento sobre store nuevo)"
+        try:
+            mem2 = MemoryStore(BASE_DIR / "data")
+            if not any(it.get("text") == clean for it in mem2.list()):
+                mem2.add(clean)
+        except Exception as e:  # noqa: BLE001
+            tried.append(f"reintento falló ({e})")
+        else:
+            outcome = _v.memory_saved(clean, base_dir=BASE_DIR)
+            tried.append(f"reintento -> {outcome.detail}")
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Lo recordare, senor: {clean}",
+        fail_msg="Intenté guardarlo en memoria pero al releer no aparece, senor.")
 
 
 # =============================================================================
@@ -671,7 +711,9 @@ CONTRACTS: list[ToolContract] = [
               "hora": _str("Hora exacta en formato 24h HH:MM, ej '15:30'. Vacio si se usan minutos")},
              ["texto"]),
         _set_reminder, RiskLevel.CREATE,
-        verify="El recordatorio aparece en listar_recordatorios con la hora dada.",
+        verify="EJECUTABLE (D1): se RELEE reminders.json de disco y se comprueba "
+               "id + texto + hora (tol. 60 s); reintento con escritura atómica. "
+               "Sin verde -> ERROR.",
         revert="cancelar_recordatorio.",
         parser_intents=("set_reminder",),
         parser_argmap={"text": "texto", "minutes": "minutos", "at": "hora"}),
@@ -1068,7 +1110,9 @@ CONTRACTS: list[ToolContract] = [
                  "Bloc de notas.",
                  _obj({"text": _str("El texto de la nota")}),
                  _take_note, RiskLevel.CREATE,
-                 verify="El archivo de notas contiene el texto nuevo con marca de tiempo.",
+                 verify="EJECUTABLE (D1): se RELEE el archivo de notas y se "
+                        "comprueba que la línea escrita está; reintento con "
+                        "append + fsync. Sin verde -> ERROR.",
                  revert="Editar/borrar la línea en el archivo de notas.",
                  parser_intents=("take_note",)),
 
@@ -1103,7 +1147,9 @@ CONTRACTS: list[ToolContract] = [
                  "personales, gustos).",
                  _obj({"text": _str("El dato a recordar")}),
                  _remember, RiskLevel.CREATE,
-                 verify="El dato aparece en el store de memoria (MemoryStore).",
+                 verify="EJECUTABLE (D1): se abre un MemoryStore NUEVO (relee "
+                        "memory.json) y se comprueba que el dato está; reintento "
+                        "sobre store nuevo. Sin verde -> ERROR.",
                  revert="Borrar la entrada del store de memoria.",
                  # FASE C · C6: antes era la única de las 5 herramientas
                  # solo-agente sin NINGÚN intent de parser (a diferencia de
