@@ -559,12 +559,20 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
       - `estado_del_sistema` gana una línea con MB disponibles, swap y
         veredicto (holgada / ajustada / páginas frías / DEGRADADO).
       - En un SO sin `/proc/meminfo` todo es no-op.
-- [ ] **E1 — Lista de intocables (bloqueante)**: procesos/servicios que NUNCA
-      se tocan, ni a petición explícita (gnome-shell + compositor, systemd/
-      logind/dbus, NetworkManager, sshd, ollama sirviendo, el propio JARVIS y
-      sus hijos). Guardia duro: si se pide, explica por qué no y ofrece la
-      alternativa. Ampliar con lo crítico del sistema del usuario, proponérselo
-      antes de fijar.
+- [x] **E1 — Lista de intocables (guardia DURO)** (`jarvis_local/safety/
+      untouchables.py`): `is_untouchable_process(name, pid, cmdline)` y
+      `is_untouchable_unit(unit)` devuelven `(True, motivo)` para lo que NO se
+      toca nunca — ni a petición explícita. Sin ruta de "forzar": la
+      herramienta bloquea, explica POR QUÉ y ofrece la alternativa
+      (`alternativa()` por familia). Match tolerante a la truncación de `comm`
+      a 15 chars y a la línea de comandos.
+      - `[base]` (fijo, del usuario): gnome-shell/mutter, systemd/logind/dbus,
+        NetworkManager, sshd, ollama, JARVIS + su árbol (`own_pids()`), PID 1.
+      - `[+E1]` (propuesto tras inventariar el sistema — el usuario recorta lo
+        que sobre antes del merge): gdm3/Xwayland/gnome-session,
+        wpa_supplicant/ModemManager, polkitd, pipewire/pipewire-pulse/
+        wireplumber, systemd-journald/udevd/resolved/oomd, dbus-broker,
+        llama-server; unidades `user@N.service` y sus equivalentes.
 - [ ] **E2 — Modelo de permisos**: lectura sin preguntar; escritura ejecuta +
       verifica (D1); destructivo/sistema exige confirmación mostrando qué y
       sobre qué, con cancelación. Sin sudo implícito (regla sudoers
