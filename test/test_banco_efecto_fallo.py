@@ -74,22 +74,36 @@ def test_efecto_crear_carpeta_existe_de_verdad():
 
 
 def test_efecto_volumen_al_30_y_se_relee():
-    """Volumen al 30 y se lee. Si la máquina no tiene forma de leerlo (CI sin
-    audio) el desenlace es NONE y DEBE reportarse con salvedad — no un
-    'volumen al 30' afirmado a ciegas."""
+    """Volumen al 30 y se COMPRUEBA. Tres desenlaces honestos según lo que la
+    máquina permita — y ninguno es un 'volumen al 30' afirmado a ciegas:
+
+      1. hay lectura de audio  -> EXECUTED, verify True, get_volume() ≈ 30
+      2. hay herramienta pero no lectura (CI con wpctl sin sink) -> EXECUTED,
+         verify None, mensaje CON salvedad
+      3. no hay ni wpctl ni pactl (contenedor pelado) -> ERROR que dice
+         qué se intentó ('Intenté: ...')
+
+    Lo que el banco PROHÍBE: EXECUTED + "volumen al 30" sin verify detrás.
+    """
     from jarvis_local.tools.media_controls import get_volume, set_volume
 
     inicial = get_volume()
     plan = set_volume(30)
-    if inicial is None:
-        assert plan.status == ActionStatus.EXECUTED
-        assert plan.params["verify"]["ok"] is None
+    v = plan.params["verify"]["ok"]
+
+    if plan.status == ActionStatus.ERROR:                       # desenlace 3
+        assert v is False
+        assert "intenté" in plan.result.lower()
+        assert not _EXITO.search(plan.result)
+        return
+    assert plan.status == ActionStatus.EXECUTED
+    if v is None:                                               # desenlace 2
         assert "no pude confirmar" in plan.result.lower()
         return
+    # desenlace 1: comprobación independiente contra el sistema real
+    assert v is True
     try:
-        assert plan.status == ActionStatus.EXECUTED
-        assert plan.params["verify"]["ok"] is True
-        assert abs(get_volume() - 30) <= 4        # el sistema real lo confirma
+        assert inicial is not None and abs(get_volume() - 30) <= 4
     finally:
         set_volume(inicial)
 
