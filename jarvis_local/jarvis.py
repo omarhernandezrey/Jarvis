@@ -165,15 +165,23 @@ def _execute_tool_read(tool: str, args: dict) -> str:
 
 def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
     """Crea un plan de ejecución para una herramienta de escritura."""
-    from jarvis_local.safety.policy import policy
+    from jarvis_local.safety.policy import ActionStatus, policy
+    from jarvis_local.tools._utils import describe_outcome
     fn = _PLAN_TOOLS.get(tool)
     if fn is None:
         return f"No pude planificar '{tool}'."
     plan = fn(args)
-    if plan:
-        policy.pending_plan = plan
-        return str(plan) + "\n\nEscribe /confirmar para ejecutar o /cancelar."
-    return f"No pude planificar '{tool}'."
+    if not plan:
+        return f"No pude planificar '{tool}'."
+    # Un plan que NO quedó pendiente (BLOCKED por E1/E2, ERROR, o ya resuelto)
+    # no lleva "Escribe /confirmar": no hay nada que confirmar.
+    if getattr(plan, "status", None) not in (ActionStatus.PLANNED, ActionStatus.CONFIRMED):
+        from jarvis_local.safety.audit import audit
+        if hasattr(plan, "status"):
+            audit.record_plan(plan, source="parser", tool_name=tool)
+        return describe_outcome(plan, tool=tool)
+    policy.pending_plan = plan
+    return str(plan) + "\n\nEscribe /confirmar para ejecutar o /cancelar."
 
 
 def _execute_tool_write(tool: str, args: dict) -> str:

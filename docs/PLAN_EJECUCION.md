@@ -27,7 +27,7 @@
 | B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (merge `b82760c`) |
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `ed26f56`) |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `8dcb8de`) |
-| E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ⬜ pendiente |
+| E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `<pendiente>`) |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ⬜ pendiente |
 | G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
@@ -537,7 +537,7 @@ merge a main.
       "Operacion completada" (por agente y por parser) y el `verify None`
       reportado CON salvedad (exigido, no tolerado).
 
-## FASE E — Control de máquina, oleada 1: procesos y sistema  🚧 EN CURSO (rama `feature/fase-e-procesos-sistema`)
+## FASE E — Control de máquina, oleada 1: procesos y sistema  ✅ COMPLETA 2026-09-07 (rama `feature/fase-e-procesos-sistema`)
 
 Modelo de permisos primero, para todas las oleadas: lectura sin preguntar;
 escritura se ejecuta y se verifica; destructivo/sistema exige confirmación
@@ -584,17 +584,53 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
       `systemctl *`) y la alternativa manual; JARVIS nunca invoca `sudo`.
       `proceso_es_del_usuario(pid)` (matable sin sudo) y `unidad_es_de_sistema
       (scope)` para E3/E4. Todo a la auditoría de D2.
-- [ ] **E3 — Procesos**: listar por CPU y RAM; matar por nombre/PID con
-      confirmación que muestra PID+nombre+comando+usuario; SIGTERM con espera,
-      SIGKILL solo tras 2º aviso; varios matches → preguntar, no elegir;
-      VERIFY que el proceso murió de verdad.
-- [ ] **E4 — Servicios systemd**: estado/iniciar/parar/reiniciar; user por
-      defecto, system exige sudo→confirmación+regla; intocables de E1;
-      VERIFY releyendo el estado.
-- [ ] **E5 — Notificaciones**: `notify-send` con detección de disponibilidad.
-- [ ] **Cierre**: banco EFECTO + FALLO FORZADO para lo nuevo (matar proceso de
-      prueba y comprobar; intentar matar gnome-shell y comprobar el bloqueo).
-      Suite, ruff, CI, merge.
+- [x] **E3 — Procesos** (`jarvis_local/tools/processes.py`; parser
+      `_parse_procesos`; contratos `listar_procesos`/`matar_proceso`,
+      `llm_visible=False` — solo ruta parser, matar es demasiado delicado para
+      el 3B).
+      - `list_processes(por, top)`: top por CPU (doble sondeo de
+        `cpu_percent`) o RAM, con PID y usuario.
+      - `plan_kill(objetivo)`: PID o nombre. **E1**: intocable → BLOQUEADO con
+        el motivo + `alternativa()`. **PID 1** → BLOQUEADO. **E2**: proceso de
+        otro usuario → `bloqueo_por_sudo`. **Varios matches** → BLOQUEADO,
+        lista los procesos (marca los protegidos) y pide el PID exacto; JARVIS
+        no elige. Uno solo y mío → PLANNED con `texto_confirmacion` (PID,
+        usuario, comando).
+      - `execute_kill(pid)`: **SIGTERM** + espera (3 s) + VERIFY (`pid_exists`
+        / zombie). Si sigue vivo → NO fuerza: arma un plan `forzar_matar_
+        proceso` que pide un **segundo** `/confirmar` para SIGKILL. `kill -9`
+        nunca es la primera opción.
+      - `execute_kill_force(pid)`: **SIGKILL** + espera + VERIFY. Si aún vive →
+        ERROR honesto ("ni con SIGKILL… kernel / zombie / root").
+      - Re-chequea E1/E2 antes de ejecutar (defensa en profundidad).
+      - Sin `psutil` → lo dice; no falla en silencio.
+- [x] **E4 — Servicios systemd** (`jarvis_local/tools/services.py`; parser
+      `_parse_servicios`; contratos `estado_servicio`/`controlar_servicio`,
+      `llm_visible=False`).
+      - `service_status(servicio, ambito)`: `systemctl [--user] show` →
+        ActiveState/SubState/UnitFileState. Si no es de ese ámbito pero sí del
+        otro, lo dice. Sin `systemctl` → error claro.
+      - `plan_service(accion, servicio, ambito)`: `iniciar`/`parar`/`reiniciar`.
+        **E1**: unidad intocable → BLOQUEADO + `alternativa()`. **E2**: ámbito
+        `system` → `bloqueo_por_sudo` con la regla `systemctl … <UNIDAD>`
+        sustituida por la unidad exacta (nunca `systemctl *`). No existe →
+        lo dice. User + válido → PLANNED con `texto_confirmacion` (unidad,
+        acción, estado actual, ámbito).
+      - `execute_service(...)`: ejecuta y **RELEE** `systemctl show`; si el
+        `ActiveState` no es el esperado (`active` para start/restart,
+        `inactive`/`dead`/`failed` para stop) → ERROR, aunque `systemctl`
+        haya devuelto 0. Re-chequea E1/E2.
+- [x] **E5 — Notificaciones** (`jarvis_local/tools/notify.py`; parser
+      `_parse_notificacion`; contrato `enviar_notificacion`): `notify-send`
+      (libnotify) con **detección de disponibilidad en runtime** — sin él,
+      ERROR claro ("instala `libnotify-bin`"). rc 0 → EXECUTED con salvedad
+      (que la notificación se muestre no es comprobable → `verify None`).
+      Urgencia baja/normal/alta. Verificado en vivo.
+- [x] **Cierre**: banco EFECTO + FALLO FORZADO para lo nuevo — matar un
+      `sleep` de prueba y comprobar `pid_exists`; `gnome-shell` bloqueado por
+      `plan_kill` y `execute_kill`; servicio de sistema → sudo; `notify-send`
+      ausente → error claro (`test_banco_efecto_fallo.py` +5;
+      `BANCO_PRUEBAS_BASELINE.md §15.4`). Suite ✅, ruff ✅.
 
 ## FASE F — Control de máquina, oleada 2: escritorio
 

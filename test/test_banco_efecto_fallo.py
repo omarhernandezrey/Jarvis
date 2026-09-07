@@ -260,5 +260,110 @@ def test_fallo_volumen_que_no_cuaja_es_error_con_lo_que_se_intento():
     assert not _EXITO.search(plan.result)
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# FASE E — procesos, servicios, notificaciones
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def test_efecto_matar_un_proceso_de_prueba_y_comprobar_que_murio(monkeypatch):
+    """EFECTO real: se lanza un proceso, se mata y se comprueba EN LA MÁQUINA
+    (psutil.pid_exists) que dejó de existir."""
+    import time
+
+    from jarvis_local.safety import untouchables
+    from jarvis_local.tools import processes
+
+    # el proceso lo lanza el test, así que sería 'hijo de JARVIS': se protege
+    # solo el propio runner para simular un proceso normal del usuario.
+    monkeypatch.setattr(untouchables, "own_pids", lambda: {os.getpid()})
+
+    proc = subprocess.Popen(["sleep", "37"])
+    try:
+        time.sleep(0.3)
+        assert __import__("psutil").pid_exists(proc.pid)
+
+        pk = processes.plan_kill(str(proc.pid))
+        assert pk.status == ActionStatus.PLANNED
+        assert f"PID: {proc.pid}" in pk.simulation_result
+
+        done = processes.execute_kill(proc.pid)
+        assert done.status == ActionStatus.EXECUTED
+        assert done.params["verify"]["ok"] is True
+        assert not __import__("psutil").pid_exists(proc.pid)     # comprobación independiente
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_fallo_intentar_matar_gnome_shell_se_bloquea(monkeypatch):
+    """FALLO FORZADO: aunque se pida explícitamente, gnome-shell NO se mata.
+    Se responde con el motivo y la alternativa, nunca un éxito."""
+    from jarvis_local.tools import processes
+
+    class _P:
+        pid = 4242
+        info = {"pid": 4242, "name": "gnome-shell"}
+        def name(self): return "gnome-shell"
+        def username(self): return "omar"
+        def cmdline(self): return ["/usr/bin/gnome-shell"]
+
+    class _Ps:
+        NoSuchProcess = RuntimeError
+        def process_iter(self, *a, **k): return [_P()]
+        def Process(self, pid): return _P()
+        def pid_exists(self, pid): return True
+
+    monkeypatch.setattr(processes, "_psutil", lambda: _Ps())
+
+    for plan in (processes.plan_kill("gnome-shell"), processes.execute_kill(4242)):
+        assert plan.status == ActionStatus.BLOCKED
+        assert "gnome-shell" in plan.result
+        assert not _EXITO.search(plan.result)
+        assert "sesión" in plan.result.lower() or "sesion" in plan.result.lower()
+
+
+def test_fallo_servicio_de_sistema_pide_sudo_no_lo_hace_a_ciegas(monkeypatch):
+    from jarvis_local.tools import services
+
+    class _Sc:
+        def __call__(self, scope, *a):
+            if a and a[0] == "show":
+                return subprocess.CompletedProcess([], 0,
+                    "LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\n", "")
+            return subprocess.CompletedProcess([], 0, "", "")
+
+    monkeypatch.setattr(services, "_systemctl", _Sc())
+    monkeypatch.setattr(services, "_hay_systemctl", lambda: True)
+
+    plan = services.plan_service("reiniciar", "cups", scope="system")
+    assert plan.status == ActionStatus.BLOCKED
+    assert "no uso sudo" in plan.result.lower()
+    assert "cups.service" in plan.result and "<UNIDAD>" not in plan.result
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_notificacion_sin_notify_send_error_claro(monkeypatch):
+    from jarvis_local.tools.notify import send_notification
+
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    plan = send_notification("algo")
+    assert plan.status == ActionStatus.ERROR
+    assert "notify-send" in plan.result and "libnotify-bin" in plan.result
+    assert not _EXITO.search(plan.result)
+
+
+def test_efecto_notificacion_rc0_se_reporta_con_salvedad(monkeypatch):
+    """Que notify-send acepte el mensaje no prueba que se viera: verify None."""
+    from jarvis_local.tools.notify import send_notification
+
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/notify-send")
+    monkeypatch.setattr("subprocess.run",
+                        lambda *a, **k: subprocess.CompletedProcess([], 0, "", ""))
+    plan = send_notification("compilación lista", titulo="Build")
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is None
+    assert "no puedo confirmar" in plan.result.lower()
+
+
 if __name__ == "__main__":
     print("usa pytest")

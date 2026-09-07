@@ -259,6 +259,19 @@ def handle_confirm(jarvis=None):
             from jarvis_local.tools.hidden_files import execute_hide
             plan = execute_hide(plan.params["path"], plan.params["hide"])
             print(describe_outcome(plan, tool="ocultar_archivos"))
+        elif plan.action == "matar_proceso":
+            from jarvis_local.tools.processes import execute_kill
+            plan = execute_kill(int(plan.params["pid"]))
+            print(describe_outcome(plan, tool="matar_proceso"))
+        elif plan.action == "forzar_matar_proceso":
+            from jarvis_local.tools.processes import execute_kill_force
+            plan = execute_kill_force(int(plan.params["pid"]))
+            print(describe_outcome(plan, tool="forzar_matar_proceso"))
+        elif plan.action == "controlar_servicio":
+            from jarvis_local.tools.services import execute_service
+            plan = execute_service(plan.params["accion"], plan.params["servicio"],
+                                   plan.params.get("scope", "user"))
+            print(describe_outcome(plan, tool="controlar_servicio"))
         elif plan.action in ("crear_archivo", "crear_carpeta"):
             print(plan)
             print("[INFO] Creacion confirmada pero no ejecutada en esta fase (solo simulacion).")
