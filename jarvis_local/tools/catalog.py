@@ -593,7 +593,8 @@ CONTRACTS: list[ToolContract] = [
                              ["subir", "bajar", "silenciar", "activar", "nivel"]),
               "nivel": _int("Nivel 0-100, solo si accion=nivel")}, ["accion"]),
         _volume_control, RiskLevel.EXECUTE,
-        verify="`wpctl get-volume` devuelve el nivel/estado esperado.",
+        verify="EJECUTABLE (D1): tras aplicar se lee el volumen/estado real; si no "
+               "cuadra se reintenta por vía alterna (pactl) y, sin verde, ERROR.",
         revert="Fijar el volumen anterior (controlar_volumen accion=nivel)."),
 
     ToolContract(
@@ -608,23 +609,31 @@ CONTRACTS: list[ToolContract] = [
 
     ToolContract("volume_up", "Sube el volumen un paso.", _obj({}, []),
                  _volume_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` subió.", revert="volume_down.",
+                 verify="EJECUTABLE (D1): se comprueba que el volumen subió; si no, "
+                        "reintento por pactl y, sin verde, ERROR.",
+                 revert="volume_down.",
                  parser_intents=("volume_up",), parser_fixed={"accion": "subir"}),
     ToolContract("volume_down", "Baja el volumen un paso.", _obj({}, []),
                  _volume_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` bajó.", revert="volume_up.",
+                 verify="EJECUTABLE (D1): se comprueba que el volumen bajó; si no, "
+                        "reintento por pactl y, sin verde, ERROR.",
+                 revert="volume_up.",
                  parser_intents=("volume_down",), parser_fixed={"accion": "bajar"}),
     ToolContract("volume_set", "Fija el volumen a un nivel exacto (0-100).",
                  _obj({"level": _int("Nivel 0-100")}),
                  _volume_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` == nivel pedido.",
+                 verify="EJECUTABLE (D1): se lee el volumen real y se compara con el "
+                        "pedido (tol. redondeo); si no, reintento por pactl y, sin "
+                        "verde, ERROR.",
                  revert="Fijar el nivel anterior.",
                  parser_intents=("volume_set",), parser_fixed={"accion": "nivel"},
                  parser_argmap={"level": "nivel"}),
     ToolContract("volume_mute", "Silencia o reactiva el sonido.",
                  _obj({"mute": _bool("true=silenciar, false=activar")}, []),
                  _volume_mute_bool, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` muestra [MUTED] o no.",
+                 verify="EJECUTABLE (D1): se lee el estado real de silencio y se "
+                        "compara con el pedido; si no, reintento por pactl y, sin "
+                        "verde, ERROR.",
                  revert="volume_mute con el valor inverso.",
                  parser_intents=("volume_mute",)),
     ToolContract("media_play_pause", "Pausa o reanuda la reproduccion.", _obj({}, []),

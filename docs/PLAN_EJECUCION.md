@@ -439,6 +439,21 @@ merge a main.
       falla; si vuelve a fallar, se informa qué se intentó y por qué no se
       pudo. Empieza por abrir apps, archivos, volumen y multimedia (donde el
       fallo silencioso es más probable — "pon pausa" fue el ejemplo real).
+    - [x] **D1·infra + volumen** (`jarvis_local/tools/verify.py`): `VerifyOutcome`
+          con tres desenlaces (True hecho / False no-hecho / None no-medible) y
+          `finish()` que los pliega igual en todos lados — None se reporta con
+          salvedad explícita, nunca como éxito. `set_volume`, `volume_up/down` y
+          `volume_mute` leen el estado real tras aplicar; si no cuadra reintentan
+          por vía alterna (`pactl` en vez de `wpctl`; handle COM nuevo en Windows)
+          y si sigue sin cuadrar → ERROR diciendo qué se intentó.
+          Test `test_verify.py`: comando de sistema con returncode 0 pero efecto
+          ausente → detectado, reintentado y reportado sin fingir.
+    - [ ] **D1·apps**: `open_app` comprueba que el proceso existe tras lanzar.
+    - [ ] **D1·multimedia**: `media_play_pause/next/previous` comprueban que
+          `playerctl` encontró un reproductor y que el estado cambió (caza el
+          "pon pausa" que decía "hecho" sin nada sonando).
+    - [ ] **D1·archivos**: `create_file/directory`, `copy/move/rename` comprueban
+          que el destino existe (y el tamaño en crear/copiar).
 - [ ] **D2 — Auditoría**: registro append-only de toda acción de escritura,
       destructiva o de sistema (herramienta, cuándo, parámetros, resultado de
       VERIFY, si hubo confirmación). Rotación de fichero. Consultable desde

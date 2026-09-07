@@ -143,6 +143,16 @@ def _wpctl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["wpctl", *args], capture_output=True, text=True)
 
 
+def _pactl(*args: str) -> subprocess.CompletedProcess:
+    """Estrategia DISTINTA a wpctl para el reintento de VERIFY (D1): habla el
+    protocolo pulse (PipeWire lo expone vía pipewire-pulse). Si no está
+    instalado, lanza FileNotFoundError y el llamador lo trata como "no pude"."""
+    return subprocess.run(["pactl", *args], capture_output=True, text=True)
+
+
+_PA_SINK = "@DEFAULT_SINK@"
+
+
 def _get_volume_linux() -> tuple[int | None, bool]:
     """(volumen 0-100, muteado) leyendo `wpctl get-volume`, o (None, False)
     si PipeWire/wpctl no esta disponible."""
@@ -190,107 +200,232 @@ def _plan(action: str, reason: str) -> ActionPlan:
     return ActionPlan(action=action, risk=RiskLevel.EXECUTE, reason=reason)
 
 
+def _set_volume_linux_wpctl(level: int) -> str:
+    out = _wpctl("set-volume", _SINK, f"{level}%")
+    if out.returncode != 0:
+        raise OSError(out.stderr.strip() or "wpctl set-volume fallo")
+    if level > 0:
+        _wpctl("set-mute", _SINK, "0")
+    return "wpctl set-volume"
+
+
+def _set_volume_linux_pactl(level: int) -> str:
+    out = _pactl("set-sink-volume", _PA_SINK, f"{level}%")
+    if out.returncode != 0:
+        raise OSError(out.stderr.strip() or "pactl set-sink-volume fallo")
+    if level > 0:
+        _pactl("set-sink-mute", _PA_SINK, "0")
+    return "pactl set-sink-volume"
+
+
+def _set_volume_windows(level: int) -> str:
+    ep = _get_endpoint_volume()
+    if ep is None:
+        raise OSError("control de volumen COM no disponible")
+    ep.SetMasterVolumeLevelScalar(level / 100.0, None)
+    if level > 0 and ep.GetMute():
+        ep.SetMute(False, None)
+    return "WASAPI SetMasterVolumeLevelScalar"
+
+
 def set_volume(level: int) -> ActionPlan:
-    """Fija el volumen maestro a un nivel exacto (0-100)."""
+    """Fija el volumen maestro a un nivel exacto (0-100), COMPROBANDO el efecto.
+
+    D1: tras aplicar, se lee el volumen real. Si no cuadra, se reintenta con
+    una vía distinta (pactl en Linux; un handle COM nuevo en Windows) y se
+    vuelve a leer. Si sigue sin cuadrar, el plan queda en ERROR: JARVIS no
+    dice "volumen al 50" si el volumen no está al 50.
+    """
+    from jarvis_local.tools import verify as _v
+
     level = max(0, min(int(level), 100))
     plan = _plan("fijar_volumen", f"Fijar el volumen al {level}%")
     plan.params = {"nivel": level}
-    try:
-        if not IS_WINDOWS:
-            out = _wpctl("set-volume", _SINK, f"{level}%")
-            if out.returncode != 0:
-                raise OSError(out.stderr.strip() or "wpctl set-volume fallo")
-            if level > 0:
-                _wpctl("set-mute", _SINK, "0")
-        else:
-            ep = _get_endpoint_volume()
-            if ep is None:
-                raise OSError("control de volumen COM no disponible")
-            ep.SetMasterVolumeLevelScalar(level / 100.0, None)
-            if level > 0 and ep.GetMute():
-                ep.SetMute(False, None)
-        plan.result = f"Volumen al {level} por ciento, senor."
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No pude fijar el volumen: {e}"
-    return plan
+
+    if not IS_WINDOWS:
+        estrategias = [_set_volume_linux_wpctl, _set_volume_linux_pactl]
+    else:
+        estrategias = [_set_volume_windows, _set_volume_windows]
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, aplicar in enumerate(estrategias):
+        try:
+            metodo = aplicar(level)
+        except Exception as e:
+            tried.append(f"{getattr(aplicar, '__name__', 'estrategia')} falló ({e})")
+            outcome = _v.VerifyOutcome(False, str(e), "aplicar")
+            continue
+        _v.grace()
+        outcome = _v.volume_settled(level)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0:
+            plan.reason += " (reintento con vía alterna)"
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Volumen al {level} por ciento, senor.",
+        fail_msg=f"No pude dejar el volumen al {level} por ciento, senor.",
+    )
 
 
-def _change_volume(delta: int, action: str, reason: str, vk_fallback: int,
-                   ok_msg: str) -> ActionPlan:
+def _step_volume_linux_wpctl(delta: int) -> str:
+    signo = "+" if delta > 0 else "-"
+    # -l 1.0: sin este limite, wpctl deja subir el volumen por encima del
+    # 100% (hasta 150% por defecto) en vez de topar como hace WASAPI.
+    out = _wpctl("set-volume", "-l", "1.0", _SINK, f"{abs(delta)}%{signo}")
+    if out.returncode != 0:
+        raise OSError(out.stderr.strip() or "wpctl set-volume fallo")
+    if delta > 0:
+        _wpctl("set-mute", _SINK, "0")
+    return "wpctl set-volume"
+
+
+def _step_volume_linux_pactl(delta: int) -> str:
+    signo = "+" if delta > 0 else "-"
+    out = _pactl("set-sink-volume", _PA_SINK, f"{signo}{abs(delta)}%")
+    if out.returncode != 0:
+        raise OSError(out.stderr.strip() or "pactl set-sink-volume fallo")
+    if delta > 0:
+        _pactl("set-sink-mute", _PA_SINK, "0")
+    return "pactl set-sink-volume"
+
+
+def _step_volume_windows(delta: int) -> str:
+    ep = _get_endpoint_volume()
+    if ep is not None:
+        actual = round(ep.GetMasterVolumeLevelScalar() * 100)
+        nuevo = max(0, min(actual + delta, 100))
+        ep.SetMasterVolumeLevelScalar(nuevo / 100.0, None)
+        if delta > 0 and ep.GetMute():
+            ep.SetMute(False, None)
+        return "WASAPI SetMasterVolumeLevelScalar"
+    _press(_VK_VOLUME_UP if delta > 0 else _VK_VOLUME_DOWN, abs(delta) // 2 or 1)
+    return "tecla multimedia de volumen"
+
+
+def _change_volume(delta: int, action: str, reason: str, ok_msg: str) -> ActionPlan:
+    """Sube/baja el volumen COMPROBANDO que se movió en el sentido pedido (D1).
+
+    Si tras el 1er intento el volumen no cambió (o cambió al revés), se
+    reintenta con otra vía y se vuelve a leer. Sin verde, el plan es ERROR.
+    """
+    from jarvis_local.tools import verify as _v
+
     plan = _plan(action, reason)
-    try:
-        if not IS_WINDOWS:
-            signo = "+" if delta > 0 else "-"
-            # -l 1.0: sin este limite, wpctl deja subir el volumen por
-            # encima del 100% (hasta 150% por defecto) en vez de topar como
-            # hace WASAPI en Windows.
-            out = _wpctl("set-volume", "-l", "1.0", _SINK, f"{abs(delta)}%{signo}")
-            if out.returncode != 0:
-                raise OSError(out.stderr.strip() or "wpctl set-volume fallo")
-            if delta > 0:
-                _wpctl("set-mute", _SINK, "0")
-            nuevo, _ = _get_volume_linux()
-            plan.result = (f"{ok_msg} Quedo al {nuevo} por ciento, senor."
-                           if nuevo is not None else f"{ok_msg} Senor.")
-        else:
-            ep = _get_endpoint_volume()
-            if ep is not None:
-                actual = round(ep.GetMasterVolumeLevelScalar() * 100)
-                nuevo = max(0, min(actual + delta, 100))
-                ep.SetMasterVolumeLevelScalar(nuevo / 100.0, None)
-                if delta > 0 and ep.GetMute():
-                    ep.SetMute(False, None)
-                plan.params = {"antes": actual, "ahora": nuevo}
-                plan.result = f"{ok_msg} Quedo al {nuevo} por ciento, senor."
-            else:
-                _press(vk_fallback, abs(delta) // 2 or 1)
-                plan.result = f"{ok_msg} Senor."
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No pude cambiar el volumen: {e}"
-    return plan
+    direction = 1 if delta > 0 else -1
+    before = get_volume()
+    plan.params = {"antes": before}
+
+    if not IS_WINDOWS:
+        estrategias = [_step_volume_linux_wpctl, _step_volume_linux_pactl]
+    else:
+        estrategias = [_step_volume_windows, _step_volume_windows]
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, aplicar in enumerate(estrategias):
+        try:
+            metodo = aplicar(delta)
+        except Exception as e:
+            tried.append(f"{getattr(aplicar, '__name__', 'estrategia')} falló ({e})")
+            outcome = _v.VerifyOutcome(False, str(e), "aplicar")
+            continue
+        _v.grace()
+        outcome = _v.volume_changed(before, direction=direction)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0:
+            plan.reason += " (reintento con vía alterna)"
+
+    after = get_volume()
+    plan.params["ahora"] = after
+    cola = f" Quedo al {after} por ciento, senor." if after is not None else " Senor."
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"{ok_msg}{cola}",
+        fail_msg="No pude cambiar el volumen, senor.",
+    )
 
 
 def volume_up() -> ActionPlan:
     return _change_volume(_VOLUME_STEP_PCT, "subir_volumen",
-                          "Subir el volumen del sistema",
-                          _VK_VOLUME_UP, "Volumen arriba.")
+                          "Subir el volumen del sistema", "Volumen arriba.")
 
 
 def volume_down() -> ActionPlan:
     return _change_volume(-_VOLUME_STEP_PCT, "bajar_volumen",
-                          "Bajar el volumen del sistema",
-                          _VK_VOLUME_DOWN, "Volumen abajo.")
+                          "Bajar el volumen del sistema", "Volumen abajo.")
+
+
+def _mute_linux_wpctl(mute: bool) -> str:
+    out = _wpctl("set-mute", _SINK, "1" if mute else "0")
+    if out.returncode != 0:
+        raise OSError(out.stderr.strip() or "wpctl set-mute fallo")
+    return "wpctl set-mute"
+
+
+def _mute_linux_pactl(mute: bool) -> str:
+    out = _pactl("set-sink-mute", _PA_SINK, "1" if mute else "0")
+    if out.returncode != 0:
+        raise OSError(out.stderr.strip() or "pactl set-sink-mute fallo")
+    return "pactl set-sink-mute"
+
+
+def _mute_windows(mute: bool) -> str:
+    ep = _get_endpoint_volume()
+    if ep is not None:
+        ep.SetMute(mute, None)
+        return "WASAPI SetMute"
+    # con teclas solo hay alternar: pulsar solo si el estado difiere
+    if is_muted() is not mute:
+        _press(_VK_VOLUME_MUTE)
+    return "tecla multimedia mute"
 
 
 def volume_mute(mute: bool = True) -> ActionPlan:
-    """Silencia (mute=True) o reactiva (mute=False) el sonido."""
+    """Silencia (mute=True) o reactiva (mute=False) el sonido, COMPROBÁNDOLO (D1).
+
+    Tras aplicar, se lee el estado real de silencio. Si no coincide, se
+    reintenta por otra vía y se vuelve a leer. Sin verde, ERROR.
+    """
+    from jarvis_local.tools import verify as _v
+
     accion = "silenciar" if mute else "activar_sonido"
     plan = _plan(accion, "Silenciar el sonido" if mute else "Activar el sonido")
-    try:
-        if not IS_WINDOWS:
-            out = _wpctl("set-mute", _SINK, "1" if mute else "0")
-            if out.returncode != 0:
-                raise OSError(out.stderr.strip() or "wpctl set-mute fallo")
-        else:
-            ep = _get_endpoint_volume()
-            if ep is not None:
-                ep.SetMute(mute, None)
-            else:
-                # con teclas solo hay alternar: pulsar solo si el estado difiere
-                _press(_VK_VOLUME_MUTE)
-        plan.result = "Silenciado, senor." if mute else "Sonido activado, senor."
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No pude cambiar el silencio: {e}"
-    return plan
+    plan.params = {"mute": mute}
+
+    if not IS_WINDOWS:
+        estrategias = [_mute_linux_wpctl, _mute_linux_pactl]
+    else:
+        estrategias = [_mute_windows, _mute_windows]
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, aplicar in enumerate(estrategias):
+        try:
+            metodo = aplicar(mute)
+        except Exception as e:
+            tried.append(f"{getattr(aplicar, '__name__', 'estrategia')} falló ({e})")
+            outcome = _v.VerifyOutcome(False, str(e), "aplicar")
+            continue
+        _v.grace()
+        outcome = _v.mute_settled(mute)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0:
+            plan.reason += " (reintento con vía alterna)"
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg="Silenciado, senor." if mute else "Sonido activado, senor.",
+        fail_msg="No pude silenciar el sonido, senor." if mute
+        else "No pude reactivar el sonido, senor.",
+    )
 
 
 def _media_key_or_playerctl(vk: int, playerctl_cmd: str) -> None:
