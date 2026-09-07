@@ -454,6 +454,28 @@ def _parse_recordar(m: str) -> IntentResult | None:
                         reason="Guardar dato en memoria permanente")
 
 
+# PLAN_EJECUCION FASE D · D2 — consulta de la auditoría por la ruta del parser
+# (sin agente: es una pregunta frecuente y no debe costar ~40 s).
+_TRIGGER_AUDITORIA = re.compile(
+    r'\bque\s+(?:cosas\s+)?(?:has\s+hecho|hiciste|hice|cambiaste|cambie|'
+    r'modificaste|ejecutaste|tocaste|has\s+cambiado|has\s+tocado)\b'
+    r'|\bque\s+acciones\b'
+    r'|\bmuestrame\s+(?:la\s+)?(?:auditoria|el\s+registro\s+de\s+(?:tus\s+)?acciones)\b'
+    r'|\b(?:tu\s+)?registro\s+de\s+(?:tus\s+)?acciones\b'
+    r'|\bque\s+(?:has\s+)?anotado\s+en\s+la\s+auditoria\b',
+    re.IGNORECASE)
+
+
+def _parse_auditoria(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_AUDITORIA.search(mm):
+        return None
+    dia = "ayer" if re.search(r'\bayer\b', mm) else "hoy"
+    return IntentResult(kind="tool_read", tool="audit_query",
+                        arguments={"dia": dia},
+                        reason="Consultar la auditoría de acciones")
+
+
 def _parse_media(low: str) -> IntentResult | None:
     """Volumen y control multimedia. Corre ANTES de fase4: 'quita el
     silencio' caeria en el patron de BORRAR ('quita...') si no."""
@@ -1015,6 +1037,11 @@ def parse_intent(message: str) -> IntentResult:
     recordar = _parse_recordar(m)
     if recordar is not None:
         return recordar
+
+    # --- AUDITORÍA (FASE D · D2): "qué hiciste hoy" / "qué cambiaste ayer" ---
+    auditoria = _parse_auditoria(m)
+    if auditoria is not None:
+        return auditoria
 
     # --- VOLUMEN Y MULTIMEDIA (antes de fase4: "quita el silencio"
     #     caeria en el patron de BORRAR) ---

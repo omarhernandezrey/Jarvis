@@ -359,6 +359,11 @@ def _close_browser():
     return close_browser()
 
 
+def _audit_query(dia: str = "hoy"):
+    from jarvis_local.tools.audit_query import query_audit
+    return query_audit(dia)
+
+
 def _remember(text: str):
     """Guarda un dato en la memoria permanente, COMPROBANDO que quedó escrito.
 
@@ -799,6 +804,15 @@ CONTRACTS: list[ToolContract] = [
                  _obj({}, []), _read_clipboard, RiskLevel.READ,
                  verify=_V_LECTURA, revert="n/a",
                  parser_intents=("read_clipboard",)),
+
+    ToolContract("consultar_auditoria",
+                 "Dice qué acciones de escritura/sistema hizo JARVIS hoy o ayer, "
+                 "con su resultado, si se verificaron y si el usuario las "
+                 "confirmó. Solo lectura de la auditoría append-only (D2).",
+                 _obj({"dia": _str("'hoy' o 'ayer'", ["hoy", "ayer"])}, []),
+                 _audit_query, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("audit_query",)),
 
     ToolContract("leer_archivo",
                  "Lee en voz alta el contenido de un archivo de texto (txt, md, "

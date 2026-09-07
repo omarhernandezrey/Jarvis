@@ -488,7 +488,7 @@ merge a main.
       `mostrar_ofertas_empleo`, `captura_de_pantalla`, `cancelar_recordatorio`,
       `cerrar_aplicacion` / `cerrar_todas_aplicaciones`, `enviar_correo`,
       `ocultar_archivos`, `borrar_archivo`.
-- [ ] **D2 — Auditoría append-only**.
+- [x] **D2 — Auditoría append-only**.
     - [x] **D2·registro** (`jarvis_local/safety/audit.py`): cada acción de
           escritura/destructiva/sistema (`risk >= CREATE`) queda en
           `logs/audit.jsonl` — herramienta, `ts`, parámetros, el
@@ -501,8 +501,13 @@ merge a main.
           y resultado ANTES de tocar disco. Enganchada en `_execute_tool_write`
           (parser), `registry.execute` (agente) y `handle_confirm` (CLI). Las
           lecturas NO se auditan.
-    - [ ] **D2·consulta**: "qué hiciste hoy" / "qué cambiaste ayer" desde
-          JARVIS, por la ruta del parser (sin agente: no debe costar ~40 s).
+    - [x] **D2·consulta** (`tools/audit_query.py`): "qué hiciste hoy" / "qué
+          cambiaste ayer" desde JARVIS por la RUTA DEL PARSER (`_parse_auditoria`
+          → intent `audit_query{dia}`), sin agente. Resumen legible: hora +
+          herramienta + params + estado ("hecho y verificado" / "no se pudo
+          verificar el efecto" / "la verificación FALLÓ" / "pendiente de
+          confirmación" / "error" / "bloqueado") + `[confirmado por usted]`.
+          Contrato `consultar_auditoria` con `llm_visible=False` (el LLM no lo ve).
 - [ ] **D3 — Salida estructurada**: JSON Schema de Ollama en vez de depender
       solo del tool calling. Medir si baja los reintentos/rescates de
       `agent/loop.py`, antes/después. Si no mejora, decirlo y no forzarlo.
