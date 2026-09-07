@@ -14,7 +14,7 @@ import subprocess
 import time
 
 from jarvis_local.config import IS_WINDOWS
-from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+from jarvis_local.safety.policy import ActionPlan, RiskLevel
 
 if IS_WINDOWS:
     import ctypes
@@ -428,47 +428,138 @@ def volume_mute(mute: bool = True) -> ActionPlan:
     )
 
 
-def _media_key_or_playerctl(vk: int, playerctl_cmd: str) -> None:
+def _playerctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["playerctl", *args], capture_output=True, text=True)
+
+
+def _player_status() -> str | None:
+    """'Playing' / 'Paused' / 'Stopped', o None si NO hay reproductor MPRIS
+    activo (o no se pudo consultar)."""
     if IS_WINDOWS:
-        _press(vk)
-    else:
-        subprocess.run(["playerctl", playerctl_cmd], capture_output=True, text=True)
+        return None
+    try:
+        out = _playerctl("status")
+    except OSError:
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def _player_fingerprint() -> str | None:
+    """Huella de la pista actual (título + artista + trackid). Cambia al pasar
+    de canción. None si no hay reproductor."""
+    if IS_WINDOWS:
+        return None
+    try:
+        out = _playerctl("metadata", "--format",
+                         "{{title}}|{{artist}}|{{mpris:trackid}}")
+    except OSError:
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+# El "pon pausa" que reproducía una canción llamada "pausa" y nadie se enteró:
+# el caso que D1 tiene que cazar. Estas herramientas SIEMPRE decían "Hecho,
+# senor." — incluso sin ningún reproductor (playerctl salía con código != 0 y
+# se ignoraba). Ahora: si no hay reproductor -> ERROR claro. Si lo hay, se
+# comprueba que el estado/la pista cambió de verdad.
+
+def _run_media(cmd: str, kind: str, vk: int, action: str, reason: str,
+               ok_msg: str, fail_no_player: str, fail_no_effect: str) -> ActionPlan:
+    from jarvis_local.tools import verify as _v
+
+    plan = _plan(action, reason)
+
+    if IS_WINDOWS:
+        try:
+            _press(vk)
+        except Exception as e:
+            return _v.finish(plan, _v.VerifyOutcome(False, str(e), "keybd_event"),
+                             ok_msg=ok_msg,
+                             fail_msg="No pude enviar la tecla multimedia, senor.")
+        return _v.finish(
+            plan,
+            _v.VerifyOutcome(None, "las teclas multimedia de Windows no exponen "
+                             "estado legible para comprobar el efecto", "keybd_event"),
+            ok_msg=ok_msg, fail_msg="")
+
+    # Linux: ¿hay algún reproductor?
+    antes_status = _player_status()
+    if antes_status is None:
+        return _v.finish(
+            plan,
+            _v.VerifyOutcome(False, "playerctl no encuentra ningún reproductor "
+                             "MPRIS activo", "playerctl status"),
+            ok_msg=ok_msg, fail_msg=fail_no_player)
+    antes_fp = _player_fingerprint()
+
+    def _verificar() -> _v.VerifyOutcome:
+        if kind == "toggle":
+            ahora = _player_status()
+            if ahora is None:
+                return _v.VerifyOutcome(None, "no pude releer el estado del reproductor",
+                                        "playerctl status")
+            if ahora != antes_status:
+                return _v.VerifyOutcome(True, f"{antes_status} -> {ahora}",
+                                        "playerctl status")
+            return _v.VerifyOutcome(False, f"el estado sigue en {ahora}",
+                                    "playerctl status")
+        # kind == "track"
+        ahora_fp = _player_fingerprint()
+        if ahora_fp is None:
+            return _v.VerifyOutcome(None, "no pude releer la pista", "playerctl metadata")
+        if ahora_fp != antes_fp:
+            return _v.VerifyOutcome(True, "la pista cambió", "playerctl metadata")
+        return _v.VerifyOutcome(False, "la pista no cambió", "playerctl metadata")
+
+    estrategias = [(cmd,), ("--all-players", cmd)]
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, args in enumerate(estrategias):
+        out = _playerctl(*args)
+        if out.returncode != 0:
+            tried.append(f"playerctl {' '.join(args)} rc={out.returncode} "
+                         f"({out.stderr.strip()})")
+            outcome = _v.VerifyOutcome(False, out.stderr.strip() or "playerctl falló",
+                                       "playerctl")
+            continue
+        _v.grace(0.25)
+        outcome = _verificar()
+        tried.append(f"playerctl {' '.join(args)} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0:
+            plan.reason += " (reintento con --all-players)"
+
+    return _v.finish(plan, outcome, tried=tried, ok_msg=ok_msg,
+                     fail_msg=fail_no_effect)
 
 
 def media_play_pause() -> ActionPlan:
-    plan = _plan("pausar_reproducir", "Pausar o reanudar la reproduccion")
-    try:
-        _media_key_or_playerctl(_VK_MEDIA_PLAY_PAUSE, "play-pause")
-        plan.result = "Hecho, senor."
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No pude pausar la reproduccion: {e}"
-    return plan
+    return _run_media(
+        "play-pause", "toggle", _VK_MEDIA_PLAY_PAUSE,
+        "pausar_reproducir", "Pausar o reanudar la reproduccion",
+        ok_msg="Hecho, senor.",
+        fail_no_player="No hay ningún reproductor activo, senor: no hay nada que "
+                       "pausar ni reanudar.",
+        fail_no_effect="Le di a pausa/reanudar pero el reproductor no cambió de "
+                       "estado, senor.")
 
 
 def media_next() -> ActionPlan:
-    plan = _plan("siguiente_cancion", "Pasar a la siguiente cancion")
-    try:
-        _media_key_or_playerctl(_VK_MEDIA_NEXT, "next")
-        plan.result = "Siguiente cancion, senor."
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No pude cambiar de cancion: {e}"
-    return plan
+    return _run_media(
+        "next", "track", _VK_MEDIA_NEXT,
+        "siguiente_cancion", "Pasar a la siguiente cancion",
+        ok_msg="Siguiente cancion, senor.",
+        fail_no_player="No hay ningún reproductor activo, senor: no hay ninguna "
+                       "cola de la que pasar de canción.",
+        fail_no_effect="Pedí la siguiente canción pero la pista no cambió, senor.")
 
 
 def media_previous() -> ActionPlan:
-    plan = _plan("cancion_anterior", "Volver a la cancion anterior")
-    try:
-        _media_key_or_playerctl(_VK_MEDIA_PREV, "previous")
-        plan.result = "Cancion anterior, senor."
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No pude volver a la cancion anterior: {e}"
-    return plan
+    return _run_media(
+        "previous", "track", _VK_MEDIA_PREV,
+        "cancion_anterior", "Volver a la cancion anterior",
+        ok_msg="Cancion anterior, senor.",
+        fail_no_player="No hay ningún reproductor activo, senor: no hay ninguna "
+                       "cola a la que volver.",
+        fail_no_effect="Pedí la canción anterior pero la pista no cambió, senor.")

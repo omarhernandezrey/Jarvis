@@ -246,6 +246,92 @@ def test_moved_verifica_que_el_origen_ya_no_esta():
                 os.remove(r)
 
 
+# --- multimedia: "pon pausa" que decía "hecho" sin nada sonando -------------
+
+
+def _pc(returncode=0, stdout="", stderr=""):
+    return subprocess.CompletedProcess(args=[], returncode=returncode,
+                                       stdout=stdout, stderr=stderr)
+
+
+def test_media_sin_reproductor_no_dice_hecho():
+    """El caso real: no hay reproductor. Antes -> 'Hecho, senor.'. Ahora ERROR."""
+    from jarvis_local.tools import media_controls as m
+
+    with patch.object(m, "IS_WINDOWS", False), \
+         patch.object(m, "_playerctl", return_value=_pc(1, "", "No players found")):
+        plan = m.media_play_pause()
+
+    assert plan.status == ActionStatus.ERROR
+    assert "hecho" not in plan.result.lower()
+    assert "no hay ningún reproductor" in plan.result.lower()
+    assert plan.params["verify"]["ok"] is False
+
+
+def test_media_play_pause_ok_si_el_estado_cambia():
+    from jarvis_local.tools import media_controls as m
+
+    llamadas = {"n": 0}
+
+    def _fake(*args):
+        # status: 1ª = Playing (antes), 2ª = Paused (después). El comando en medio.
+        if args and args[0] == "status":
+            llamadas["n"] += 1
+            return _pc(0, "Playing" if llamadas["n"] == 1 else "Paused")
+        return _pc(0)  # play-pause
+
+    with patch.object(m, "IS_WINDOWS", False), \
+         patch("jarvis_local.tools.verify.grace", lambda *a, **k: None), \
+         patch.object(m, "_playerctl", side_effect=_fake):
+        plan = m.media_play_pause()
+
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.result == "Hecho, senor."
+    assert plan.params["verify"]["ok"] is True
+
+
+def test_media_play_pause_falla_si_el_estado_no_cambia():
+    from jarvis_local.tools import media_controls as m
+
+    def _fake(*args):
+        if args and args[0] == "status":
+            return _pc(0, "Playing")          # nunca cambia
+        return _pc(0)
+
+    with patch.object(m, "IS_WINDOWS", False), \
+         patch("jarvis_local.tools.verify.grace", lambda *a, **k: None), \
+         patch.object(m, "_playerctl", side_effect=_fake):
+        plan = m.media_play_pause()
+
+    assert plan.status == ActionStatus.ERROR
+    assert plan.params["verify"]["ok"] is False
+    assert "--all-players" in plan.result  # consta el reintento
+
+
+def test_media_next_verifica_que_la_pista_cambia():
+    from jarvis_local.tools import media_controls as m
+
+    fp = {"v": "Pausa|Rio|/t/1"}
+
+    def _fake(*args):
+        if args and args[0] == "status":
+            return _pc(0, "Playing")
+        if args and args[0] == "metadata":
+            return _pc(0, fp["v"])
+        if args and args[0] == "next":
+            fp["v"] = "Otra|Rio|/t/2"          # la pista avanza
+            return _pc(0)
+        return _pc(0)
+
+    with patch.object(m, "IS_WINDOWS", False), \
+         patch("jarvis_local.tools.verify.grace", lambda *a, **k: None), \
+         patch.object(m, "_playerctl", side_effect=_fake):
+        plan = m.media_next()
+
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_"):

@@ -455,9 +455,13 @@ merge a main.
           proceso que arranca y muere → False. Caso "ya estaba abierta": se
           verifica el FOCO, no el proceso; sin gestión de ventanas Wayland →
           None. Reintento por vía alterna (`gtk-launch` .desktop vs exec directo).
-    - [ ] **D1·multimedia**: `media_play_pause/next/previous` comprueban que
-          `playerctl` encontró un reproductor y que el estado cambió (caza el
-          "pon pausa" que decía "hecho" sin nada sonando).
+    - [x] **D1·multimedia**: `media_play_pause/next/previous` — SIN reproductor
+          MPRIS activo -> ERROR claro ("no hay nada que pausar"), no el "Hecho,
+          senor." incondicional de antes (el caso "pon pausa"). CON reproductor:
+          se mide el estado ANTES y se comprueba que el `playerctl status`
+          (pausa) o la huella de la pista (siguiente/anterior) cambió de verdad;
+          reintento con `--all-players`. Windows: sin estado legible -> None con
+          salvedad.
     - [x] **D1·archivos**: `create_file` comprueba existencia + TAMAÑO +
           CONTENIDO byte a byte (un fichero creado y vacío no pasa); reintento
           con escritura cruda + `fsync`. `create_directory`, `copy_file`

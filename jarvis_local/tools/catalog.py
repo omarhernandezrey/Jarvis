@@ -607,7 +607,9 @@ CONTRACTS: list[ToolContract] = [
         _obj({"accion": _str("Una de: pausar, siguiente, anterior",
                              ["pausar", "siguiente", "anterior"])}),
         _media_control, RiskLevel.EXECUTE,
-        verify="`playerctl status`/`metadata` refleja el cambio de pista o pausa.",
+        verify="EJECUTABLE (D1): sin reproductor MPRIS -> ERROR (no un 'hecho' "
+               "vacío). Con reproductor, se comprueba que el estado (pausa) o la "
+               "pista (siguiente/anterior) cambió; reintento con --all-players.",
         revert="Acción inversa (anterior/pausar); no siempre exacta."),
 
     ToolContract("volume_up", "Sube el volumen un paso.", _obj({}, []),
@@ -641,16 +643,20 @@ CONTRACTS: list[ToolContract] = [
                  parser_intents=("volume_mute",)),
     ToolContract("media_play_pause", "Pausa o reanuda la reproduccion.", _obj({}, []),
                  _media_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`playerctl status`.", revert="Volver a pulsar.",
+                 verify="EJECUTABLE (D1): sin reproductor -> ERROR; con él, el "
+                        "`playerctl status` tiene que haber cambiado.",
+                 revert="Volver a pulsar.",
                  parser_intents=("media_play_pause",), parser_fixed={"accion": "pausar"}),
     ToolContract("media_next", "Salta a la siguiente pista.", _obj({}, []),
                  _media_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`playerctl metadata` cambió de título.",
+                 verify="EJECUTABLE (D1): sin reproductor -> ERROR; con él, la "
+                        "huella de la pista (`playerctl metadata`) tiene que cambiar.",
                  revert="media_previous.",
                  parser_intents=("media_next",), parser_fixed={"accion": "siguiente"}),
     ToolContract("media_previous", "Vuelve a la pista anterior.", _obj({}, []),
                  _media_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`playerctl metadata` cambió de título.",
+                 verify="EJECUTABLE (D1): sin reproductor -> ERROR; con él, la "
+                        "huella de la pista (`playerctl metadata`) tiene que cambiar.",
                  revert="media_next.",
                  parser_intents=("media_previous",), parser_fixed={"accion": "anterior"}),
 
