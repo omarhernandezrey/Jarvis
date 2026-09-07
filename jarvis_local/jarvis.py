@@ -188,6 +188,11 @@ def _execute_tool_write(tool: str, args: dict) -> str:
     plan = fn(args)
     if plan is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
+    # D2: auditoría append-only. record_plan filtra por riesgo (solo
+    # escritura/destructivo/sistema) y redacta secretos antes de escribir.
+    if hasattr(plan, "status"):
+        from jarvis_local.safety.audit import audit
+        audit.record_plan(plan, source="parser", tool_name=tool)
     if hasattr(plan, "error") and plan.error:
         safe_error, _ = redact_secrets(plan.error)
         return f"Error: {safe_error}"

@@ -488,10 +488,21 @@ merge a main.
       `mostrar_ofertas_empleo`, `captura_de_pantalla`, `cancelar_recordatorio`,
       `cerrar_aplicacion` / `cerrar_todas_aplicaciones`, `enviar_correo`,
       `ocultar_archivos`, `borrar_archivo`.
-- [ ] **D2 — Auditoría**: registro append-only de toda acción de escritura,
-      destructiva o de sistema (herramienta, cuándo, parámetros, resultado de
-      VERIFY, si hubo confirmación). Rotación de fichero. Consultable desde
-      JARVIS ("qué hiciste hoy").
+- [ ] **D2 — Auditoría append-only**.
+    - [x] **D2·registro** (`jarvis_local/safety/audit.py`): cada acción de
+          escritura/destructiva/sistema (`risk >= CREATE`) queda en
+          `logs/audit.jsonl` — herramienta, `ts`, parámetros, el
+          `VerifyOutcome` de D1 (`plan.params["verify"]`), `confirmed`
+          (true/false/null), status, resultado truncado, `source`
+          (parser/agente/confirmacion). Append-only de verdad: `O_APPEND` +
+          `fsync` en cada escritura, sin API de update/delete (endurecible con
+          `chattr +a`). Rotación por tamaño (`audit_max_bytes` 5 MiB,
+          `audit_keep` 10). Redacta secretos (`safety/secrets`) en parámetros
+          y resultado ANTES de tocar disco. Enganchada en `_execute_tool_write`
+          (parser), `registry.execute` (agente) y `handle_confirm` (CLI). Las
+          lecturas NO se auditan.
+    - [ ] **D2·consulta**: "qué hiciste hoy" / "qué cambiaste ayer" desde
+          JARVIS, por la ruta del parser (sin agente: no debe costar ~40 s).
 - [ ] **D3 — Salida estructurada**: JSON Schema de Ollama en vez de depender
       solo del tool calling. Medir si baja los reintentos/rescates de
       `agent/loop.py`, antes/después. Si no mejora, decirlo y no forzarlo.

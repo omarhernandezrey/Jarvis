@@ -145,6 +145,11 @@ def execute(name: str, arguments: dict) -> tuple[str, bool]:
         logger.log_error(f"tool:{name}", str(e))
         return f"No pude ejecutar '{name}': {e}", False
 
+    # D2: auditoría append-only (filtra por riesgo y redacta secretos).
+    if isinstance(result, ActionPlan):
+        from jarvis_local.safety.audit import audit
+        audit.record_plan(result, source="agente", tool_name=name)
+
     # Verificación centralizada de needs_confirmation
     if tool.needs_confirmation:
         if not isinstance(result, ActionPlan):

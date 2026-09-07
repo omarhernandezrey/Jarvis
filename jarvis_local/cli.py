@@ -289,6 +289,10 @@ def handle_confirm(jarvis=None):
             print("[OK] Todas las memorias borradas.")
         else:
             print(plan)
+        # D2: la acción se ejecutó tras confirmación explícita del usuario.
+        from jarvis_local.safety.audit import audit
+        if hasattr(plan, "status"):
+            audit.record_plan(plan, source="confirmacion", confirmed=True)
     else:
         print(plan)
 
