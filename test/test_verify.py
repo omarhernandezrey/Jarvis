@@ -172,6 +172,80 @@ def test_volume_mute_ok_por_via_alterna():
     assert "reintento" in plan.reason
 
 
+# --- archivos: existir no basta; tamaño y contenido -------------------------
+
+
+def _docs_tmp(nombre: str):
+    from jarvis_local.config import user_dir
+    return os.path.join(user_dir("documents"), nombre)
+
+
+def test_file_written_detecta_fichero_vacio():
+    """Un fichero creado pero VACÍO pasa 'existe' y falla la verificación real."""
+    from jarvis_local.tools import files
+
+    ruta = _docs_tmp("_verify_d1_vacio.txt")
+    try:
+        # 1ª vía deja el fichero vacío; la 2ª (cruda) tampoco escribe nada
+        with patch("pathlib.Path.write_text", lambda self, *a, **k: self.touch()), \
+             patch("jarvis_local.tools.files.os.open", side_effect=OSError("disco lleno")):
+            plan = files.create_file(ruta, "contenido que debía quedar escrito")
+        assert plan.status == ActionStatus.ERROR
+        assert plan.params["verify"]["ok"] is False
+        assert "tamaño" in plan.result.lower() or "contenido" in plan.result.lower()
+    finally:
+        if os.path.exists(ruta):
+            os.remove(ruta)
+
+
+def test_create_file_ok_verifica_contenido_y_tamano():
+    from jarvis_local.tools import files
+
+    ruta = _docs_tmp("_verify_d1_ok.txt")
+    try:
+        plan = files.create_file(ruta, "hola señor")
+        assert plan.status == ActionStatus.EXECUTED
+        assert plan.params["verify"]["ok"] is True
+        assert "contenido verificado" in plan.params["verify"]["detail"]
+    finally:
+        if os.path.exists(ruta):
+            os.remove(ruta)
+
+
+def test_create_file_reintento_lowlevel_cuando_pathlib_no_escribe():
+    from jarvis_local.tools import files
+
+    ruta = _docs_tmp("_verify_d1_retry.txt")
+    try:
+        # 1ª estrategia (write_text) no deja nada; la 2ª (os.write real) sí
+        with patch("pathlib.Path.write_text", lambda self, *a, **k: None):
+            plan = files.create_file(ruta, "rescatado por fsync")
+        assert plan.status == ActionStatus.EXECUTED
+        assert plan.params["verify"]["ok"] is True
+        assert "reintento" in plan.reason
+        assert open(ruta, encoding="utf-8").read() == "rescatado por fsync"
+    finally:
+        if os.path.exists(ruta):
+            os.remove(ruta)
+
+
+def test_moved_verifica_que_el_origen_ya_no_esta():
+    ruta_o = _docs_tmp("_verify_d1_src.txt")
+    ruta_d = _docs_tmp("_verify_d1_dst.txt")
+    with open(ruta_o, "w", encoding="utf-8") as f:
+        f.write("x" * 20)
+    try:
+        # simular una "copia disfrazada de move": destino creado, origen sigue
+        with open(ruta_d, "w", encoding="utf-8") as f:
+            f.write("x" * 20)
+        out = v.moved(ruta_o, ruta_d)
+        assert out.ok is False and "sigue ahí" in out.detail
+    finally:
+        for r in (ruta_o, ruta_d):
+            if os.path.exists(r):
+                os.remove(r)
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(globals().items()):
         if _name.startswith("test_"):

@@ -58,6 +58,27 @@ def grace(seconds: float = GRACE_SECONDS) -> None:
         time.sleep(seconds)
 
 
+def wait_until(pred, *, timeout: float = 3.0, interval: float = 0.2) -> bool:
+    """Sondea `pred()` hasta que sea verdadero o se agote `timeout`.
+
+    Arrancar una app (o cualquier efecto asíncrono) NO es instantáneo:
+    comprobar justo después da un falso negativo. Esto sondea cada `interval`
+    segundos hasta `timeout` y devuelve en cuanto `pred` se cumple. Si se
+    agota sin cumplirse, devuelve False — eso es un fallo real, no un
+    "no medible".
+    """
+    import time as _t
+
+    if pred():
+        return True
+    deadline = _t.monotonic() + max(0.0, timeout)
+    while _t.monotonic() < deadline:
+        _t.sleep(interval)
+        if pred():
+            return True
+    return False
+
+
 def finish(
     plan: ActionPlan,
     outcome: VerifyOutcome,
@@ -147,3 +168,85 @@ def mute_settled(expected: bool) -> VerifyOutcome:
     if actual is expected:
         return VerifyOutcome(True, f"muteado={actual}", "is_muted")
     return VerifyOutcome(False, f"muteado={actual}, se pidió {expected}", "is_muted")
+
+
+# --- archivos ----------------------------------------------------------------
+# Que el fichero EXISTA no basta: un fichero creado y vacío pasa una
+# comprobación de existencia. Se comprueba también el TAMAÑO y, cuando es
+# razonable leerlo, el CONTENIDO byte a byte.
+
+_MAX_READBACK = 2_000_000  # por encima de esto solo se compara el tamaño
+
+
+def file_written(path, expected_content: str = "") -> VerifyOutcome:
+    """Comprueba que `path` es un fichero, con el tamaño y (si es abarcable) el
+    contenido que se pidió escribir."""
+    from pathlib import Path as _P
+
+    p = _P(path)
+    if not p.is_file():
+        return VerifyOutcome(False, f"{p} no existe como fichero tras escribir", "os.path")
+    esperado = (expected_content or "").encode("utf-8")
+    try:
+        real_size = p.stat().st_size
+    except OSError as e:
+        return VerifyOutcome(False, f"no pude leer el tamaño de {p}: {e}", "os.stat")
+    if real_size != len(esperado):
+        return VerifyOutcome(
+            False, f"tamaño={real_size} B, se esperaban {len(esperado)} B", "os.stat")
+    if len(esperado) > _MAX_READBACK:
+        return VerifyOutcome(
+            None, f"tamaño OK ({real_size} B); contenido no comparado (fichero grande)",
+            "os.stat")
+    try:
+        real = p.read_bytes()
+    except OSError as e:
+        return VerifyOutcome(None, f"tamaño OK; no pude releer el contenido: {e}", "read")
+    if real != esperado:
+        return VerifyOutcome(False, "el contenido en disco no es el que se pidió", "read")
+    return VerifyOutcome(True, f"{real_size} B, contenido verificado", "read")
+
+
+def dir_created(path) -> VerifyOutcome:
+    from pathlib import Path as _P
+
+    p = _P(path)
+    if p.is_dir():
+        return VerifyOutcome(True, f"{p} existe como carpeta", "os.path")
+    return VerifyOutcome(False, f"{p} no existe como carpeta tras crearla", "os.path")
+
+
+def copied(src, dst) -> VerifyOutcome:
+    """El destino existe y su tamaño (fichero) o su condición de carpeta casa
+    con el origen."""
+    from pathlib import Path as _P
+
+    s, d = _P(src), _P(dst)
+    if s.is_dir():
+        return (VerifyOutcome(True, f"{d} existe como carpeta", "os.path")
+                if d.is_dir()
+                else VerifyOutcome(False, f"{d} no existe tras copiar la carpeta", "os.path"))
+    if not d.is_file():
+        return VerifyOutcome(False, f"{d} no existe como fichero tras copiar", "os.path")
+    try:
+        if d.stat().st_size != s.stat().st_size:
+            return VerifyOutcome(
+                False, f"tamaño destino {d.stat().st_size} != origen {s.stat().st_size}",
+                "os.stat")
+    except OSError as e:
+        return VerifyOutcome(None, f"destino existe; no pude comparar tamaños: {e}", "os.stat")
+    return VerifyOutcome(True, f"{d} copiado ({d.stat().st_size} B)", "os.stat")
+
+
+def moved(src, dst) -> VerifyOutcome:
+    """El destino existe y el origen ya NO."""
+    from pathlib import Path as _P
+
+    s, d = _P(src), _P(dst)
+    if not d.exists():
+        return VerifyOutcome(False, f"{d} no existe tras mover", "os.path")
+    if s.exists():
+        return VerifyOutcome(False, f"{d} existe pero {s} sigue ahí (copia, no movimiento)",
+                             "os.path")
+    return VerifyOutcome(True, f"{s.name} -> {d}", "os.path")
+

@@ -159,11 +159,97 @@ def test_h2_si_no_corre_nada_si_lanza():
 
     from jarvis_local.tools import apps as A
 
-    with patch.object(A, "_running_procnames", return_value=set()), \
+    # D1: el proceso APARECE al lanzarlo. Antes el mock decía "nada corre
+    # nunca", incompatible con la verificación post-acción.
+    estado = {"procs": set()}
+
+    def _popen(*_a, **_k):
+        estado["procs"] = {"xterm"}
+        return MagicMock(pid=99)
+
+    with patch.object(A, "_running_procnames", side_effect=lambda: set(estado["procs"])), \
          patch.object(A, "get_app_path", return_value="/usr/bin/xterm"), \
-         patch("subprocess.Popen", return_value=MagicMock(pid=99)) as popen:
+         patch.object(A, "_window_presente", return_value=None), \
+         patch("jarvis_local.tools.verify.grace", lambda *a, **k: None), \
+         patch("subprocess.Popen", side_effect=_popen) as popen:
         plan = A.open_app("terminal")
 
+    # proceso vivo pero sin poder confirmar la ventana (Wayland) -> EXECUTED
+    # con salvedad, nunca un "hecho" liso
     assert plan.status == ActionStatus.EXECUTED
     assert "abierto correctamente" in plan.result.lower()
+    assert "no pude confirmar" in plan.result.lower()
+    assert plan.params["verify"]["ok"] is None
     popen.assert_called_once()
+
+
+def test_h2_lanzar_pero_el_proceso_no_aparece_es_error():
+    """D1: si tras lanzar el proceso NUNCA aparece, eso es un fallo real
+    (False), no un 'no medible'. JARVIS no dice 'abierto correctamente'."""
+    from unittest.mock import MagicMock, patch
+
+    from jarvis_local.tools import apps as A
+
+    with patch.object(A, "_running_procnames", return_value=set()), \
+         patch.object(A, "get_app_path", return_value="/usr/bin/xterm"), \
+         patch("jarvis_local.tools.verify.grace", lambda *a, **k: None), \
+         patch("jarvis_local.tools.verify.wait_until", return_value=False), \
+         patch("jarvis_local.tools.app_index.find_app", return_value=[]), \
+         patch("subprocess.Popen", return_value=MagicMock(pid=99)):
+        plan = A.open_app("terminal")
+
+    assert plan.status == ActionStatus.ERROR
+    assert plan.params["verify"]["ok"] is False
+    assert "no pude abrir" in plan.result.lower()
+    assert "intenté" in plan.result.lower()
+
+
+def test_h2_proceso_que_arranca_y_muere_es_error():
+    """D1: un proceso que aparece y muere a los instantes no ha abierto nada.
+    El chequeo por PID lo daría por bueno; VERIFY no."""
+    from unittest.mock import MagicMock, patch
+
+    from jarvis_local.tools import apps as A
+
+    llamadas = {"n": 0}
+
+    def _procs():
+        # 1ª mirada (foto previa en open_app): nada corría.
+        # 2ª (wait_until tras lanzar): el proceso aparece.
+        # 3ª+ (tras la gracia): ya no está -> arrancó y murió.
+        llamadas["n"] += 1
+        return {"xterm"} if llamadas["n"] == 2 else set()
+
+    with patch.object(A, "_running_procnames", side_effect=_procs), \
+         patch.object(A, "get_app_path", return_value="/usr/bin/xterm"), \
+         patch.object(A, "_window_presente", return_value=None), \
+         patch("jarvis_local.tools.verify.grace", lambda *a, **k: None), \
+         patch("jarvis_local.tools.app_index.find_app", return_value=[]), \
+         patch("subprocess.Popen", return_value=MagicMock(pid=99)):
+        plan = A.open_app("terminal")
+
+    assert plan.status == ActionStatus.ERROR
+    assert plan.params["verify"]["ok"] is False
+    assert "murió enseguida" in plan.result   # consta en lo que se intentó
+
+
+def test_h2_ya_abierta_verifica_foco_no_proceso():
+    """D1: si ya estaba abierta, JARVIS enfoca; lo que se verifica es el FOCO.
+    Sin gestión de ventanas en Wayland (FASE F) -> None con salvedad, jamás un
+    'la traje al frente' afirmado sin comprobar."""
+    from unittest.mock import patch
+
+    from jarvis_local.tools import apps as A
+
+    with patch.object(A, "_running_procnames", return_value={"code"}), \
+         patch.object(A, "get_app_path", return_value="/usr/bin/code"), \
+         patch.object(A, "_try_focus", return_value=True), \
+         patch.object(A, "_session_is_wayland", return_value=True), \
+         patch("subprocess.Popen") as popen:
+        plan = A.open_app("vscode")
+
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is None
+    assert "no pude confirmar" in plan.result.lower()
+    assert "foco" in plan.result.lower()
+    popen.assert_not_called()

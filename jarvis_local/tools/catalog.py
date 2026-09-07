@@ -554,7 +554,10 @@ CONTRACTS: list[ToolContract] = [
         "Usar cuando el usuario pida abrir, lanzar o iniciar un programa.",
         _obj({"app": _str("Nombre de la aplicacion, ej: 'whatsapp', 'chrome', 'word'")}),
         _open_app, RiskLevel.EXECUTE,
-        verify="El proceso de la app aparece en la lista de procesos tras lanzarla.",
+        verify="EJECUTABLE (D1): sondeo con tope tras lanzar. Proceso que no "
+               "aparece o muere -> ERROR. Proceso vivo pero sin poder listar "
+               "ventanas (Wayland) -> EXECUTED con salvedad, no un 'hecho' liso. "
+               "Reintento por gtk-launch (.desktop) vs exec directo.",
         revert="Cerrar la app (cerrar_aplicacion).",
         plan_capable=True, parser_intents=("open_app",)),
 
@@ -837,7 +840,8 @@ CONTRACTS: list[ToolContract] = [
     ToolContract("crear_carpeta", "Crea una carpeta nueva en una ruta permitida.",
                  _obj({"path": _str("Ruta completa de la carpeta a crear")}),
                  _create_directory, RiskLevel.CREATE,
-                 verify="`os.path.isdir(path)` es True tras la operación.",
+                 verify="EJECUTABLE (D1): os.path.isdir tras crear; reintento con "
+                        "os.makedirs. Sin verde -> ERROR.",
                  revert="Borrar la carpeta creada.",
                  plan_capable=True, parser_intents=("create_directory",)),
 
@@ -845,21 +849,26 @@ CONTRACTS: list[ToolContract] = [
                  _obj({"path": _str("Ruta completa del archivo"),
                        "content": _str("Contenido del archivo")}, ["path"]),
                  _create_file, RiskLevel.CREATE,
-                 verify="`os.path.isfile(path)` y el tamaño coincide con el contenido.",
+                 verify="EJECUTABLE (D1): existe + TAMAÑO + CONTENIDO byte a byte "
+                        "(un fichero vacío no pasa); reintento con escritura cruda "
+                        "+ fsync. Sin verde -> ERROR.",
                  revert="Borrar el archivo creado.",
                  plan_capable=True, parser_intents=("create_file",)),
 
     ToolContract("copiar_archivo", "Copia un archivo de una ruta permitida a otra.",
                  _obj({"src": _str("Ruta origen"), "dst": _str("Ruta destino")}),
                  _copy_file, RiskLevel.CREATE, llm_visible=False,
-                 verify="El archivo destino existe y su tamaño == origen.",
+                 verify="EJECUTABLE (D1): destino existe y tamaño == origen; "
+                        "reintento con copyfileobj + fsync. Sin verde -> ERROR.",
                  revert="Borrar la copia.",
                  plan_capable=True, parser_intents=("copy_file",)),
 
     ToolContract("mover_archivo", "Mueve o renombra un archivo entre rutas permitidas.",
                  _obj({"src": _str("Ruta origen"), "dst": _str("Ruta destino")}),
                  _move_file, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="El destino existe y el origen ya no.",
+                 verify="EJECUTABLE (D1): destino existe Y origen ya no (si el "
+                        "origen sigue, fue copia, no move -> ERROR); reintento "
+                        "copy2 + remove.",
                  revert="Mover de vuelta (mover_archivo con src/dst invertidos).",
                  plan_capable=True, parser_intents=("move_file",)),
 
@@ -867,7 +876,8 @@ CONTRACTS: list[ToolContract] = [
                  _obj({"path": _str("Ruta del archivo"),
                        "new_name": _str("Nuevo nombre (sin carpeta)")}),
                  _rename_file, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="Existe un archivo con el nombre nuevo y no con el viejo.",
+                 verify="EJECUTABLE (D1): existe el nombre nuevo y no el viejo; "
+                        "reintento con shutil.move. Sin verde -> ERROR.",
                  revert="Renombrar de vuelta al nombre anterior.",
                  plan_capable=True, parser_intents=("rename_file",)),
 

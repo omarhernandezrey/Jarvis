@@ -131,16 +131,47 @@ def create_file(path_str: str, content: str = "") -> ActionPlan:
         risk=RiskLevel.CREATE,
         reason="Crear archivo",
     )
-    try:
+    from jarvis_local.tools import verify as _v
+
+    contenido = content or ""
+
+    def _escribir_pathlib() -> str:
         resolved.parent.mkdir(parents=True, exist_ok=True)
-        resolved.write_text(content or "", encoding="utf-8")
-        plan.result = f"Archivo creado: {resolved}"
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"Error al crear archivo: {e}"
-    return plan
+        resolved.write_text(contenido, encoding="utf-8")
+        return "Path.write_text"
+
+    def _escribir_lowlevel() -> str:
+        # Estrategia DISTINTA: descriptor crudo + fsync (descarta un buffer de
+        # write_text que no llegó a disco).
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(resolved), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        try:
+            os.write(fd, contenido.encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return "os.write + fsync"
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, escribir in enumerate((_escribir_pathlib, _escribir_lowlevel)):
+        try:
+            metodo = escribir()
+        except Exception as e:
+            tried.append(f"{getattr(escribir, '__name__', 'estrategia')}: {e}")
+            outcome = _v.VerifyOutcome(False, str(e), "escribir")
+            continue
+        outcome = _v.file_written(resolved, contenido)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0:
+            plan.reason += " (reintento con escritura cruda + fsync)"
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Archivo creado: {resolved}",
+        fail_msg=f"No pude crear el archivo {resolved} con el contenido pedido, senor.")
 
 
 def create_directory(path_str: str) -> ActionPlan:
@@ -156,15 +187,29 @@ def create_directory(path_str: str) -> ActionPlan:
         risk=RiskLevel.CREATE,
         reason="Crear carpeta",
     )
-    try:
-        resolved.mkdir(parents=True, exist_ok=True)
-        plan.result = f"Carpeta creada: {resolved}"
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"Error al crear carpeta: {e}"
-    return plan
+    from jarvis_local.tools import verify as _v
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, crear in enumerate((
+        lambda: (resolved.mkdir(parents=True, exist_ok=True), "Path.mkdir")[1],
+        lambda: (os.makedirs(str(resolved), exist_ok=True), "os.makedirs")[1],
+    )):
+        try:
+            metodo = crear()
+        except Exception as e:
+            tried.append(f"estrategia {i}: {e}")
+            outcome = _v.VerifyOutcome(False, str(e), "mkdir")
+            continue
+        outcome = _v.dir_created(resolved)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Carpeta creada: {resolved}",
+        fail_msg=f"No pude crear la carpeta {resolved}, senor.")
 
 
 def copy_file(src_str: str, dst_str: str) -> ActionPlan:
@@ -181,20 +226,48 @@ def copy_file(src_str: str, dst_str: str) -> ActionPlan:
         risk=RiskLevel.CREATE,
         reason="Copiar archivo",
     )
-    try:
-        import shutil as _shutil
+    import shutil as _shutil
+
+    from jarvis_local.tools import verify as _v
+
+    def _copiar_shutil() -> str:
         if src.is_dir():
             _shutil.copytree(str(src), str(dst))
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)
             _shutil.copy2(str(src), str(dst))
-        plan.result = f"Copiado: {src} -> {dst}"
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"Error al copiar: {e}"
-    return plan
+        return "shutil.copy"
+
+    def _copiar_crudo() -> str:
+        if src.is_dir():
+            raise RuntimeError("copia cruda no cubre carpetas")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
+            _shutil.copyfileobj(fsrc, fdst)
+            fdst.flush()
+            os.fsync(fdst.fileno())
+        return "copyfileobj + fsync"
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, copiar in enumerate((_copiar_shutil, _copiar_crudo)):
+        try:
+            metodo = copiar()
+        except Exception as e:
+            tried.append(f"{getattr(copiar, '__name__', 'estrategia')}: {e}")
+            outcome = _v.VerifyOutcome(False, str(e), "copiar")
+            continue
+        outcome = _v.copied(src, dst)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0:
+            plan.reason += " (reintento con copia cruda + fsync)"
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Copiado: {src} -> {dst}",
+        fail_msg=f"No pude copiar {src} a {dst}, senor.")
 
 
 def move_file(src_str: str, dst_str: str) -> ActionPlan:
@@ -211,17 +284,45 @@ def move_file(src_str: str, dst_str: str) -> ActionPlan:
         risk=RiskLevel.CREATE,
         reason="Mover archivo",
     )
-    try:
-        import shutil as _shutil
+    import shutil as _shutil
+
+    from jarvis_local.tools import verify as _v
+
+    def _mover_shutil() -> str:
         dst.parent.mkdir(parents=True, exist_ok=True)
         _shutil.move(str(src), str(dst))
-        plan.result = f"Movido: {src} -> {dst}"
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"Error al mover: {e}"
-    return plan
+        return "shutil.move"
+
+    def _mover_copia_y_borra() -> str:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            _shutil.copytree(str(src), str(dst), dirs_exist_ok=True)
+            _shutil.rmtree(str(src))
+        else:
+            _shutil.copy2(str(src), str(dst))
+            os.remove(str(src))
+        return "copy2 + remove"
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, mover in enumerate((_mover_shutil, _mover_copia_y_borra)):
+        try:
+            metodo = mover()
+        except Exception as e:
+            tried.append(f"{getattr(mover, '__name__', 'estrategia')}: {e}")
+            outcome = _v.VerifyOutcome(False, str(e), "mover")
+            continue
+        outcome = _v.moved(src, dst)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0:
+            plan.reason += " (reintento: copiar y borrar)"
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Movido: {src} -> {dst}",
+        fail_msg=f"No pude mover {src} a {dst}, senor.")
 
 
 def rename_file(path_str: str, new_name: str) -> ActionPlan:
@@ -245,15 +346,33 @@ def rename_file(path_str: str, new_name: str) -> ActionPlan:
         risk=RiskLevel.CREATE,
         reason="Renombrar",
     )
-    try:
-        resolved.rename(new_path)
-        plan.result = f"Renombrado: {resolved.name} -> {new_name}"
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"Error al renombrar: {e}"
-    return plan
+    import shutil as _shutil
+
+    from jarvis_local.tools import verify as _v
+
+    viejo = Path(str(resolved))  # copia: resolved.rename muta el objeto
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, renombrar in enumerate((
+        lambda: (viejo.rename(new_path), "Path.rename")[1],
+        lambda: (_shutil.move(str(viejo), str(new_path)), "shutil.move")[1],
+    )):
+        try:
+            metodo = renombrar()
+        except Exception as e:
+            tried.append(f"estrategia {i}: {e}")
+            outcome = _v.VerifyOutcome(False, str(e), "renombrar")
+            continue
+        outcome = _v.moved(viejo, new_path)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Renombrado: {viejo.name} -> {new_name}",
+        fail_msg=f"No pude renombrar {viejo.name} a {new_name}, senor.")
 
 
 def plan_delete(path_str: str) -> ActionPlan:

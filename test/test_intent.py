@@ -230,7 +230,13 @@ def test_run_command_does_not_execute():
 def test_confirm_executes_open_app():
     """open_app ahora ejecuta directamente sin pasar por plan/confirm."""
     from jarvis_local.tools.apps import execute_open_app, open_app
-    with patch("subprocess.Popen") as mock_popen:
+    # D1: sin sondeos reales de 3 s ni activación .desktop de verdad; aquí
+    # solo importa que ejecuta directo, no la verificación (cubierta en
+    # test_apps.py / test_verify.py).
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("jarvis_local.tools.verify.grace", lambda *a, **k: None), \
+         patch("jarvis_local.tools.verify.wait_until", return_value=False), \
+         patch("jarvis_local.tools.app_index.find_app", return_value=[]):
         plan = open_app("chrome")
     # Ahora ejecuta directo: EXECUTED o ERROR segun si existe la app
     assert plan.status in (ActionStatus.EXECUTED, ActionStatus.ERROR, ActionStatus.BLOCKED)

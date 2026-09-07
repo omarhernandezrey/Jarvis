@@ -448,12 +448,21 @@ merge a main.
           y si sigue sin cuadrar → ERROR diciendo qué se intentó.
           Test `test_verify.py`: comando de sistema con returncode 0 pero efecto
           ausente → detectado, reintentado y reportado sin fingir.
-    - [ ] **D1·apps**: `open_app` comprueba que el proceso existe tras lanzar.
+    - [x] **D1·apps**: sondeo con tope (`wait_until`, cada 200 ms hasta 3 s), no
+          sleep fijo. Foto PREVIA del estado para distinguir "lo abrí yo" de "ya
+          estaba". "Proceso existe" ≠ "ventana abrió": proceso vivo pero sin
+          poder listar ventanas en Wayland → None con salvedad (FASE F), no True;
+          proceso que arranca y muere → False. Caso "ya estaba abierta": se
+          verifica el FOCO, no el proceso; sin gestión de ventanas Wayland →
+          None. Reintento por vía alterna (`gtk-launch` .desktop vs exec directo).
     - [ ] **D1·multimedia**: `media_play_pause/next/previous` comprueban que
           `playerctl` encontró un reproductor y que el estado cambió (caza el
           "pon pausa" que decía "hecho" sin nada sonando).
-    - [ ] **D1·archivos**: `create_file/directory`, `copy/move/rename` comprueban
-          que el destino existe (y el tamaño en crear/copiar).
+    - [x] **D1·archivos**: `create_file` comprueba existencia + TAMAÑO +
+          CONTENIDO byte a byte (un fichero creado y vacío no pasa); reintento
+          con escritura cruda + `fsync`. `create_directory`, `copy_file`
+          (tamaño == origen), `move_file`/`rename_file` (destino existe Y origen
+          ya no) con su reintento por vía alterna.
 - [ ] **D2 — Auditoría**: registro append-only de toda acción de escritura,
       destructiva o de sistema (herramienta, cuándo, parámetros, resultado de
       VERIFY, si hubo confirmación). Rotación de fichero. Consultable desde
