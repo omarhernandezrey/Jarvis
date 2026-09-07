@@ -62,8 +62,11 @@ def test_proceso_propio_es_del_usuario():
     assert permisos.proceso_es_del_usuario(os.getpid()) is True
 
 
+@pytest.mark.skipif(os.getuid() == 0,
+                    reason="ejecutando como root: root 'posee' todos los procesos "
+                           "(caso CI en contenedor); la distinción solo aplica sin root")
 def test_proceso_de_root_no_es_del_usuario():
-    # PID 1 (systemd) es de root salvo en contenedores raros
+    # PID 1 (systemd) es de root; un usuario normal no lo posee
     r = permisos.proceso_es_del_usuario(1)
     assert r in (False, None)   # False normal; None si psutil no puede leerlo
 
