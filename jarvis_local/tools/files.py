@@ -398,6 +398,14 @@ def plan_delete(path_str: str) -> ActionPlan:
         f"({'directorio' if is_dir else 'archivo'}). "
         f"El borrado no esta habilitado en esta fase."
     )
+    # Sin .result, los llamadores que hacen `plan.result or "Operacion
+    # completada."` (agent/registry.execute, jarvis.py) reportaban un borrado
+    # BLOQUEADO como si se hubiera hecho. Mismo motivo que policy.block().
+    plan.result = (
+        f"No borro nada, senor: el borrado de archivos no esta habilitado "
+        f"todavia. Se eliminaria {resolved} "
+        f"({'carpeta' if is_dir else 'archivo'})."
+    )
     return plan
 
 
