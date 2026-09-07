@@ -26,7 +26,7 @@
 | A | Deuda abierta: push + análisis de los fallos del banco, arreglar los de seguridad | ✅ 2026-09-03 (commit `<pendiente>`) |
 | B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (merge `b82760c`) |
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `ed26f56`) |
-| D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ⬜ pendiente |
+| D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `<pendiente>`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ⬜ pendiente |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ⬜ pendiente |
 | G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
@@ -389,7 +389,7 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
   antes/después, objetivos cumplidos/no cumplidos, sin maquillar) en
   `docs/BANCO_PRUEBAS_BASELINE.md §14`.
 
-## FASE D — VERIFY, auditoría y salida estructurada  🚧 EN CURSO (rama `feature/fase-d-verify-auditoria`)
+## FASE D — VERIFY, auditoría y salida estructurada  ✅ COMPLETA 2026-09-07 (rama `feature/fase-d-verify-auditoria`)
 
 **Un commit por punto.** Al cerrar: test que fuerza un fallo silencioso y
 demuestra que se detecta · suite completa · `ruff` · banco sin regresión ·
@@ -508,17 +508,34 @@ merge a main.
           verificar el efecto" / "la verificación FALLÓ" / "pendiente de
           confirmación" / "error" / "bloqueado") + `[confirmado por usted]`.
           Contrato `consultar_auditoria` con `llm_visible=False` (el LLM no lo ve).
-- [ ] **D3 — Salida estructurada**: JSON Schema de Ollama en vez de depender
-      solo del tool calling. Medir si baja los reintentos/rescates de
-      `agent/loop.py`, antes/después. Si no mejora, decirlo y no forzarlo.
-- [ ] **D4 — Fallback de modelo**: está en `config.yaml` (`router_fallback`)
-      y no está cableado. Cablearlo y probar qué pasa si el modelo principal
-      no responde o no está descargado.
-- [ ] **D5 — Ampliar el banco**: casos que verifiquen EFECTO real (pedir algo,
-      comprobar que ocurrió de verdad en la máquina) y casos de fallo forzado
-      (app inexistente, ruta sin permiso) — la respuesta correcta es un error
-      claro, nunca un éxito inventado. El banco de FASE C solo mide enrutado y
-      seguridad; sin esto no protege nada de lo que viene en E/F/G.
+- [x] **D3 — Salida estructurada** (`client.chat_structured` + `loop._decidir_
+      estructurado` + flag `agent.structured_output`, apagado): camino JSON
+      Schema como alternativa al tool calling nativo. **Medido** con Ollama
+      vivo (`jarvis_local/eval/measure_structured.py`, `docs/D3_MEDICION_
+      SALIDA_ESTRUCTURADA.md`): con `llama3.2:3b` los rescates ya son 0 con
+      tool calling (nada que arreglar), los reintentos no dan señal (varianza
+      ±3 >> diferencia −0,5) y la salida estructurada **pierde ~1,5 pts de
+      acierto** de 10. **No se activa** — no gana con claridad y la latencia
+      no cuenta (D3 la excluye). Código y medidor quedan para repetir con un
+      modelo mejor. Hallazgo colateral: `docs/OPERACION_MEMORIA.md`.
+- [x] **D4 — Fallback de modelo** (`loop._llamar_modelo`): `ollama.router_
+      fallback` estaba sin cablear. Si el router falla técnicamente (no
+      responde / no descargado → excepción), reintento único con el modelo de
+      fallback; si éste también falla, propaga el error del principal. Log
+      `fallback_de_modelo:<modelo>`. **Ejercitado en vivo**: primario
+      inexistente → cae a `qwen2.5:3b` y enruta bien; sin fallback → error
+      claro ("Tuve un inconveniente…"), sin cuelgue ni éxito fingido.
+- [x] **D5 — Ampliar el banco** (`test/test_banco_efecto_fallo.py`, 12 casos;
+      `docs/BANCO_PRUEBAS_BASELINE.md §15`): dos clases nuevas.
+      **EFECTO** (5): pedir algo y comprobarlo EN LA MÁQUINA por un camino
+      independiente del plan — fichero (contenido + tamaño releídos), carpeta,
+      volumen al 30 releído (o `verify None` + salvedad sin audio),
+      recordatorio en el store con su hora, nota en el archivo.
+      **FALLO FORZADO** (7): app inexistente, ruta sin permiso, multimedia sin
+      reproductor → error claro que dice qué se intentó, nunca éxito
+      inventado (regex lo prohíbe). Incluye el `borrar_archivo` bloqueado ≠
+      "Operacion completada" (por agente y por parser) y el `verify None`
+      reportado CON salvedad (exigido, no tolerado).
 
 ## FASE E — Control de máquina, oleada 1: procesos y sistema
 
