@@ -26,7 +26,7 @@
 | A | Deuda abierta: push + análisis de los fallos del banco, arreglar los de seguridad | ✅ 2026-09-03 (commit `<pendiente>`) |
 | B | Catálogo único de herramientas + contrato de herramienta | ✅ 2026-09-03 (merge `b82760c`) |
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `ed26f56`) |
-| D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ⬜ pendiente |
+| D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `<pendiente>`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ⬜ pendiente |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ⬜ pendiente |
 | G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
@@ -389,15 +389,153 @@ Datos base: prefill 17,6 s vs decode 3,9 s; con 0 esquemas el prefill baja a
   antes/después, objetivos cumplidos/no cumplidos, sin maquillar) en
   `docs/BANCO_PRUEBAS_BASELINE.md §14`.
 
-## FASE D — VERIFY, auditoría y salida estructurada
+## FASE D — VERIFY, auditoría y salida estructurada  ✅ COMPLETA 2026-09-07 (rama `feature/fase-d-verify-auditoria`)
 
-- Toda herramienta de escritura comprueba su efecto (app abrió, archivo creado,
-  volumen cambió). Si falla → reintento con estrategia distinta; si vuelve a
-  fallar → lo dice. JARVIS nunca afirma haber hecho algo que no comprobó.
-- Registro de auditoría append-only de toda acción de escritura o sistema.
-- JSON Schema de Ollama en vez de depender solo del tool calling.
-- Cablear el fallback de modelo que está en config y no se usa.
-- Aceptar cuando: existe un test que fuerza un fallo silencioso y lo detecta.
+**Un commit por punto.** Al cerrar: test que fuerza un fallo silencioso y
+demuestra que se detecta · suite completa · `ruff` · banco sin regresión ·
+merge a main.
+
+### Estado
+- [x] **D0 — CI de Linux como señal real; Windows no bloqueante**.
+      - Se añade `test-linux` (Ubuntu, Python 3.11/3.12/3.13): el SO y el
+        comando (`QT_QPA_PLATFORM=offscreen pytest test`) del protocolo real
+        de `CLAUDE.md`. Antes NO existía job de Linux — solo Windows, en rojo
+        desde antes de FASE B sin diagnóstico posible (sin logs del runner,
+        sin máquina Windows). `ruff` deja de ser `continue-on-error` ahí: es
+        una puerta real (salió limpio en cada commit de FASE B/C).
+      - Windows: se conserva con `continue-on-error: true` y el motivo escrito
+        en el propio workflow. Ya no bloquea el merge ni el estado.
+      - **El job de Linux nuevo TAMBIÉN salía en rojo.** Diagnosticado sin
+        acceso a los logs de GitHub: reproducido en local con
+        `docker run python:3.11-slim` + las mismas libs del workflow. 40
+        fallos, 5 causas raíz, ninguna una regresión de fase — la suite nunca
+        se había corrido contra un entorno mínimo (siempre el escritorio del
+        dev, con Ollama, `~/Documentos`, reproductor, voces TTS…). "Falla en
+        3.11–3.13, pasa en 3.14" era engañoso: 3.14 solo corre en local
+        (entorno completo), 3.11–3.13 solo en CI (entorno mínimo). Cero
+        correlación con la versión de Python.
+        Arreglado:
+        · workflow: libs de sistema completas para que PySide6.QtQuick y
+          `sounddevice` IMPORTEN (si no, revientan la colección entera, no un
+          test); `espeak-ng` (backend de pyttsx3), `playerctl`, `xdg-user-dirs`
+          + `xdg-user-dirs-update` (para que `~/Documents` exista — 26 tests de
+          archivos escriben ahí).
+        · `jarvis._mc_test()`: cortocircuita `is_running()`/`model_exists()`/
+          warm-up SOLO durante la construcción, para que el helper "crea
+          Jarvis con cliente mockeado" funcione sin Ollama (11 fallos:
+          `test_cache_prefijo`, `test_intent`, `test_memory_context`).
+        · `test_media::test_media_keys_no_fallan`: acepta un ERROR CONTROLADO
+          (sin `playerctl` en CI) — su intención es "no explota", no "tiene
+          éxito".
+        · `test_apps::test_h2_...`: mockea `get_app_path` (el test asumía VS
+          Code instalado en la máquina que corre la suite).
+        · `test_reader`: `@skipif` en los 2 tests de portapapeles cuando no
+          hay xclip/wl-clipboard + servidor gráfico.
+      - **Verificado**: `docker run python:3.11-slim` con el workflow completo →
+        `ruff` OK, `pytest test` EXIT 0, 0 FAILED. Suite local (3.14) sigue
+        verde.
+- [x] **D1 — VERIFY post-acción**: cada herramienta de escritura de los focos
+      priorizados comprueba su propio efecto tras ejecutarse. Reintento con
+      estrategia distinta si falla; si vuelve a fallar, se informa qué se
+      intentó y por qué no se pudo. Cubiertos: volumen, apps, multimedia,
+      archivos, y (fallo no perceptible en el momento) recordatorios, notas y
+      memoria.
+    - [x] **D1·infra + volumen** (`jarvis_local/tools/verify.py`): `VerifyOutcome`
+          con tres desenlaces (True hecho / False no-hecho / None no-medible) y
+          `finish()` que los pliega igual en todos lados — None se reporta con
+          salvedad explícita, nunca como éxito. `set_volume`, `volume_up/down` y
+          `volume_mute` leen el estado real tras aplicar; si no cuadra reintentan
+          por vía alterna (`pactl` en vez de `wpctl`; handle COM nuevo en Windows)
+          y si sigue sin cuadrar → ERROR diciendo qué se intentó.
+          Test `test_verify.py`: comando de sistema con returncode 0 pero efecto
+          ausente → detectado, reintentado y reportado sin fingir.
+    - [x] **D1·apps**: sondeo con tope (`wait_until`, cada 200 ms hasta 3 s), no
+          sleep fijo. Foto PREVIA del estado para distinguir "lo abrí yo" de "ya
+          estaba". "Proceso existe" ≠ "ventana abrió": proceso vivo pero sin
+          poder listar ventanas en Wayland → None con salvedad (FASE F), no True;
+          proceso que arranca y muere → False. Caso "ya estaba abierta": se
+          verifica el FOCO, no el proceso; sin gestión de ventanas Wayland →
+          None. Reintento por vía alterna (`gtk-launch` .desktop vs exec directo).
+    - [x] **D1·multimedia**: `media_play_pause/next/previous` — SIN reproductor
+          MPRIS activo -> ERROR claro ("no hay nada que pausar"), no el "Hecho,
+          senor." incondicional de antes (el caso "pon pausa"). CON reproductor:
+          se mide el estado ANTES y se comprueba que el `playerctl status`
+          (pausa) o la huella de la pista (siguiente/anterior) cambió de verdad;
+          reintento con `--all-players`. Windows: sin estado legible -> None con
+          salvedad.
+    - [x] **D1·archivos**: `create_file` comprueba existencia + TAMAÑO +
+          CONTENIDO byte a byte (un fichero creado y vacío no pasa); reintento
+          con escritura cruda + `fsync`. `create_directory`, `copy_file`
+          (tamaño == origen), `move_file`/`rename_file` (destino existe Y origen
+          ya no) con su reintento por vía alterna.
+    - [x] **D1·recordatorios + notas + memoria** (`set_reminder`, `take_note`,
+          `recordar`): los únicos cuyo fallo NO se percibe en el momento (un
+          volumen que no cambia se oye; una nota que no se guardó se descubre
+          días después). Se verifica el EFECTO PERSISTIDO releyendo el
+          almacenamiento, no el retorno: `set_reminder` relee `reminders.json`
+          (id + texto + hora ±60 s; reintento escritura atómica); `take_note`
+          relee el archivo de notas (línea presente; reintento append+fsync);
+          `recordar` abre un `MemoryStore` nuevo (dato presente; reintento).
+          `_remember` pasa de devolver `str` a devolver `ActionPlan`.
+    - **Deuda conocida** — siguen con `verify` DECLARATIVO (texto, no
+      ejecutable), a la espera de que una fase posterior las necesite:
+      `enviar_whatsapp`, `add_contact`, `organizar_ventanas` / `minimize_all` /
+      `snap_window`, `cambiar_ventana`, `energia_del_equipo` / `lock_pc` /
+      `shutdown_pc` / `restart_pc` / `suspend_pc` / `cancel_shutdown`,
+      `ejecutar_comando`, `ubicar_lugar`, `abrir_sitio_web`, `buscar_en_google`,
+      `reproducir_en_spotify` / `reproducir_en_youtube` / `reproducir_musica_local`,
+      `navegar_con_selenium` / `cerrar_navegador`, `abrir_oferta_empleo` /
+      `mostrar_ofertas_empleo`, `captura_de_pantalla`, `cancelar_recordatorio`,
+      `cerrar_aplicacion` / `cerrar_todas_aplicaciones`, `enviar_correo`,
+      `ocultar_archivos`, `borrar_archivo`.
+- [x] **D2 — Auditoría append-only**.
+    - [x] **D2·registro** (`jarvis_local/safety/audit.py`): cada acción de
+          escritura/destructiva/sistema (`risk >= CREATE`) queda en
+          `logs/audit.jsonl` — herramienta, `ts`, parámetros, el
+          `VerifyOutcome` de D1 (`plan.params["verify"]`), `confirmed`
+          (true/false/null), status, resultado truncado, `source`
+          (parser/agente/confirmacion). Append-only de verdad: `O_APPEND` +
+          `fsync` en cada escritura, sin API de update/delete (endurecible con
+          `chattr +a`). Rotación por tamaño (`audit_max_bytes` 5 MiB,
+          `audit_keep` 10). Redacta secretos (`safety/secrets`) en parámetros
+          y resultado ANTES de tocar disco. Enganchada en `_execute_tool_write`
+          (parser), `registry.execute` (agente) y `handle_confirm` (CLI). Las
+          lecturas NO se auditan.
+    - [x] **D2·consulta** (`tools/audit_query.py`): "qué hiciste hoy" / "qué
+          cambiaste ayer" desde JARVIS por la RUTA DEL PARSER (`_parse_auditoria`
+          → intent `audit_query{dia}`), sin agente. Resumen legible: hora +
+          herramienta + params + estado ("hecho y verificado" / "no se pudo
+          verificar el efecto" / "la verificación FALLÓ" / "pendiente de
+          confirmación" / "error" / "bloqueado") + `[confirmado por usted]`.
+          Contrato `consultar_auditoria` con `llm_visible=False` (el LLM no lo ve).
+- [x] **D3 — Salida estructurada** (`client.chat_structured` + `loop._decidir_
+      estructurado` + flag `agent.structured_output`, apagado): camino JSON
+      Schema como alternativa al tool calling nativo. **Medido** con Ollama
+      vivo (`jarvis_local/eval/measure_structured.py`, `docs/D3_MEDICION_
+      SALIDA_ESTRUCTURADA.md`): con `llama3.2:3b` los rescates ya son 0 con
+      tool calling (nada que arreglar), los reintentos no dan señal (varianza
+      ±3 >> diferencia −0,5) y la salida estructurada **pierde ~1,5 pts de
+      acierto** de 10. **No se activa** — no gana con claridad y la latencia
+      no cuenta (D3 la excluye). Código y medidor quedan para repetir con un
+      modelo mejor. Hallazgo colateral: `docs/OPERACION_MEMORIA.md`.
+- [x] **D4 — Fallback de modelo** (`loop._llamar_modelo`): `ollama.router_
+      fallback` estaba sin cablear. Si el router falla técnicamente (no
+      responde / no descargado → excepción), reintento único con el modelo de
+      fallback; si éste también falla, propaga el error del principal. Log
+      `fallback_de_modelo:<modelo>`. **Ejercitado en vivo**: primario
+      inexistente → cae a `qwen2.5:3b` y enruta bien; sin fallback → error
+      claro ("Tuve un inconveniente…"), sin cuelgue ni éxito fingido.
+- [x] **D5 — Ampliar el banco** (`test/test_banco_efecto_fallo.py`, 12 casos;
+      `docs/BANCO_PRUEBAS_BASELINE.md §15`): dos clases nuevas.
+      **EFECTO** (5): pedir algo y comprobarlo EN LA MÁQUINA por un camino
+      independiente del plan — fichero (contenido + tamaño releídos), carpeta,
+      volumen al 30 releído (o `verify None` + salvedad sin audio),
+      recordatorio en el store con su hora, nota en el archivo.
+      **FALLO FORZADO** (7): app inexistente, ruta sin permiso, multimedia sin
+      reproductor → error claro que dice qué se intentó, nunca éxito
+      inventado (regex lo prohíbe). Incluye el `borrar_archivo` bloqueado ≠
+      "Operacion completada" (por agente y por parser) y el `verify None`
+      reportado CON salvedad (exigido, no tolerado).
 
 ## FASE E — Control de máquina, oleada 1: procesos y sistema
 

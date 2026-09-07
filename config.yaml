@@ -7,6 +7,11 @@ agent:
   timeout: 30
   # Máximo de pasos encadenados por petición
   max_steps: 3
+  # PLAN_EJECUCION FASE D · D3 — salida estructurada (JSON Schema de Ollama)
+  # en vez del tool calling nativo. Apagado hasta que la medición
+  # (jarvis_local/eval/measure_structured.py) demuestre que baja los
+  # rescates/reintentos sin perder acierto ni latencia.
+  structured_output: false
 hud:
   # Ventana sin marco del SO (chrome propio, esquinas redondeadas, sombra).
   # En algunas sesiones Wayland/GNOME una ventana sin marco + transparente
@@ -30,6 +35,11 @@ logging:
   actions_log: actions.log
   dir: logs
   errors_log: errors.log
+  # PLAN_EJECUCION FASE D · D2 — auditoría append-only de acciones de
+  # escritura/destructivas/de sistema. Rotación por tamaño.
+  audit_log: audit.jsonl
+  audit_max_bytes: 5242880   # 5 MiB
+  audit_keep: 10             # ficheros rotados que se conservan
 ollama:
   # Parametros del agente (tool calling). Mas ajustados que los del chat:
   # el modelo solo debe emitir una llamada a herramienta, no redactar.

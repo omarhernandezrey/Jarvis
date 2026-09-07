@@ -72,9 +72,22 @@ def _exact_response(message: str) -> str | None:
 
 
 def _mc_test():
-    """Helper para tests: crea Jarvis con cliente mockeado."""
-    from unittest.mock import MagicMock
-    j = Jarvis()
+    """Helper para tests: crea Jarvis con cliente mockeado.
+
+    FASE D · D0: `Jarvis.__init__` llama a `_ensure_model()`, que exige un
+    Ollama vivo (`is_running()`) y aborta con ConnectionError si no lo hay.
+    En CI no hay Ollama, así que se cortocircuita el chequeo y el warm-up
+    SOLO durante la construcción — el cliente real se reemplaza justo
+    después por el MagicMock, así que esto no cambia nada en una máquina con
+    Ollama, pero deja el helper usable sin servidor (que es su propósito:
+    "crea Jarvis con cliente mockeado")."""
+    from unittest.mock import MagicMock, patch
+
+    from jarvis_local.ollama_client.client import OllamaClient
+    with patch.object(OllamaClient, "is_running", return_value=True), \
+         patch.object(OllamaClient, "model_exists", return_value=True), \
+         patch.object(Jarvis, "_warmup_model", lambda self, model: None):
+        j = Jarvis()
     mc = MagicMock()
     mc.is_running = MagicMock(return_value=True)
     mc.model_exists = MagicMock(return_value=True)
@@ -143,15 +156,11 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
 
 def _execute_tool_read(tool: str, args: dict) -> str:
     """Ejecuta una herramienta de lectura usando el registry."""
+    from jarvis_local.tools._utils import describe_outcome
     fn = _READ_TOOLS.get(tool)
     if fn is None:
         return f"Herramienta de lectura no encontrada: {tool}"
-    plan = fn(args)
-    if plan and hasattr(plan, "result") and plan.result:
-        return plan.result
-    if isinstance(plan, str):
-        return plan
-    return "Operacion completada."
+    return describe_outcome(fn(args), tool=tool)
 
 
 def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
@@ -169,20 +178,19 @@ def _create_tool_plan(tool: str, args: dict, reason: str) -> str:
 
 def _execute_tool_write(tool: str, args: dict) -> str:
     """Ejecuta una herramienta de escritura usando el registry."""
+    from jarvis_local.tools._utils import describe_outcome
     fn = _WRITE_TOOLS.get(tool)
     if fn is None:
         return f"No pude ejecutar '{tool}': herramienta no encontrada."
     plan = fn(args)
     if plan is None:
-        return f"No pude ejecutar '{tool}': herramienta no encontrada."
-    if hasattr(plan, "error") and plan.error:
-        safe_error, _ = redact_secrets(plan.error)
-        return f"Error: {safe_error}"
-    if hasattr(plan, "result") and plan.result:
-        return plan.result
-    if isinstance(plan, str):
-        return plan
-    return "Operacion completada."
+        return f"No pude ejecutar '{tool}': la herramienta no devolvió nada."
+    # D2: auditoría append-only. record_plan filtra por riesgo (solo
+    # escritura/destructivo/sistema) y redacta secretos antes de escribir.
+    if hasattr(plan, "status"):
+        from jarvis_local.safety.audit import audit
+        audit.record_plan(plan, source="parser", tool_name=tool)
+    return describe_outcome(plan, tool=tool)
 
 
 def _load_system_prompt() -> str:

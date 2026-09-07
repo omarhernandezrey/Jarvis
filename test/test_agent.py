@@ -147,11 +147,69 @@ def test_agente_respuesta_de_texto_sin_tools():
 
 
 def test_agente_accion_peligrosa_espera_confirmacion():
+    """Una acción peligrosa BIEN FORMADA y con sus precondiciones cumplidas
+    tiene que quedar PENDIENTE de /confirmar, nunca ejecutarse sola.
+
+    Se mockea la config de correo: sin ella, `plan_email` corta con un BLOQUEO
+    ("correo no configurado") ANTES del flujo de confirmación y el test dejaba
+    de comprobar lo que dice comprobar — pasaría igual con la confirmación
+    rota. (El orden precondición→confirmación es correcto y fail-safe: una
+    precondición solo puede restringir, nunca saltarse la confirmación para
+    ejecutar. Ver test_acciones_peligrosas_no_se_ejecutan_sin_confirmar.)
+    """
+    secrets_ok = {"email": {"address": "yo@example.com",
+                            "app_password": "abcd efgh ijkl mnop"}}
     client = _mock_client(_tool_call(
         "enviar_correo", {"to": "x@y.com", "subject": "A", "body": "B"}))
-    r = run_agent(client, "envia un correo a x@y.com asunto A mensaje B")
+    with patch("jarvis_local.tools.email_sender.get_secrets", return_value=secrets_ok):
+        r = run_agent(client, "envia un correo a x@y.com asunto A mensaje B")
+    assert r.tools_used == ["enviar_correo"]          # llegó a execute(), no lo cortó un bloqueo
     assert r.pending_confirmation is True
     assert "confirmar" in r.text.lower()
+    assert "no esta configurado" not in r.text.lower()  # no es el camino del bloqueo
+
+
+def test_acciones_peligrosas_no_se_ejecutan_sin_confirmar():
+    """Barrido de las 3 acciones confirm-gated: con la precondición CUMPLIDA,
+    `execute()` devuelve pendiente=True (plan PLANNED) y NO ejecuta.
+
+    Blinda el patrón, no una herramienta suelta: si una precondición previa
+    pudiera colar la ejecución sin confirmación, sería un fallo de diseño.
+    """
+    import os as _os
+
+    from jarvis_local.config import user_dir
+
+    secrets_ok = {"email": {"address": "yo@example.com",
+                            "app_password": "abcd efgh ijkl mnop"}}
+    with patch("jarvis_local.tools.email_sender.get_secrets", return_value=secrets_ok):
+        texto, pendiente = execute("enviar_correo",
+                                   {"to": "x@y.com", "subject": "A", "body": "B"})
+    assert pendiente is True and "confirmar" in texto.lower()
+
+    # ocultar_archivos: acción peligrosa SIN dependencia de config externa
+    carpeta = _os.path.join(user_dir("documents"), "_test_confirm_gate")
+    _os.makedirs(carpeta, exist_ok=True)
+    try:
+        texto, pendiente = execute("ocultar_archivos", {"path": carpeta, "hide": True})
+        assert pendiente is True and "confirmar" in texto.lower()
+    finally:
+        _os.rmdir(carpeta)
+
+    # borrar_archivo: hoy queda BLOQUEADO (borrado deshabilitado esta fase),
+    # que también es "no ejecuta": lo que NUNCA debe pasar es pendiente=False
+    # con la acción hecha.
+    archivo = _os.path.join(user_dir("documents"), "_test_confirm_gate.txt")
+    with open(archivo, "w", encoding="utf-8") as f:
+        f.write("x")
+    try:
+        texto, pendiente = execute("borrar_archivo", {"path": archivo})
+        assert _os.path.exists(archivo), "borrar_archivo ejecutó sin confirmación"
+        assert pendiente is False
+        assert texto != "Operacion completada.", "borrado bloqueado reportado como hecho"
+        assert "borr" in texto.lower()   # dice claramente que NO borró
+    finally:
+        _os.remove(archivo)
 
 
 def test_agente_ignora_herramienta_inexistente():

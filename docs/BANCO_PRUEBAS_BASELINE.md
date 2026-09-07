@@ -541,3 +541,55 @@ Grupo A: **20/20**, sin excepción, en cada uno de los 6 checkpoints de FASE C
 sin ninguna fila que empeorara respecto al checkpoint anterior en ningún
 punto de la fase. `pytest test -q`: sin FAILED/ERROR en los 6 commits.
 `ruff check .`: limpio en los 6.
+
+---
+
+## 15. FASE D · D5 — el banco gana dos clases: EFECTO y FALLO FORZADO
+
+El banco de routing (`jarvis_local/eval/cases`, 60/60 tras FASE C) mide
+**enrutado y seguridad**: qué herramienta se elige. No sabía nada de si la
+herramienta, una vez elegida, **hace lo que dice**. D5 lo añade en
+`test/test_banco_efecto_fallo.py` (12 casos, `pytest`).
+
+### 15.1 Clase EFECTO — se hace y se comprueba EN LA MÁQUINA
+
+Contraparte de D1. Cada caso ejecuta la herramienta y comprueba el efecto
+**por un camino independiente del plan** (releer disco, leer el volumen real,
+inspeccionar el store), no el `ActionPlan` que devuelve la herramienta.
+
+| Caso | Comprobación independiente |
+|---|---|
+| `create_file(ruta, contenido)` | `open(ruta).read() == contenido` y `getsize == len(bytes)` |
+| `create_directory(ruta)` | `os.path.isdir(ruta)` |
+| `set_volume(30)` | `get_volume()` real ≈ 30 — **o**, si la máquina no tiene lectura de volumen (CI sin audio), `verify.ok is None` **y** el mensaje trae la salvedad |
+| `set_reminder("...", minutes=45)` | aparece en `_load_store()` con el texto y la hora (±90 s) |
+| `take_note("...")` | la línea está en el archivo de notas releído |
+
+### 15.2 Clase FALLO FORZADO — error claro, jamás un éxito inventado
+
+Se pide algo imposible. La respuesta correcta dice **qué se intentó** y no
+contiene ninguna frase de éxito (regex `_EXITO`:
+`operación completada|hecho, señor|abierto correctamente|con éxito|…`).
+
+| Caso | Desenlace exigido |
+|---|---|
+| `open_app("zzz_app_que_no_existe_9x")` | `BLOCKED`, dice "no encontré / no está instalada", **no** "abierto correctamente" |
+| `create_file` en ruta fuera de la whitelist (`/etc/...`) | `BLOCKED`, y el fichero **no** se crea |
+| `read_file_aloud("/etc/passwd")` | `BLOCKED` |
+| `media_play_pause()` / `media_next()` sin reproductor MPRIS | `ERROR` "no hay reproductor", `verify.ok is False` — **no** "Hecho, senor." |
+| **`borrar_archivo` bloqueado** (borrado deshabilitado esta fase) — por ruta agente (`execute`) y por ruta parser (`_execute_tool_write`) | `pendiente=False`, texto **≠** "Operacion completada.", el fichero **sigue ahí**. *(El fallo concreto que se encontró en D0/D2: `plan_delete` devolvía `BLOCKED` con `.result` vacío y la capa de arriba lo rellenaba con "Operacion completada." — un borrado bloqueado reportado como hecho. Blindado.)* |
+| verify `None` (Windows: teclas multimedia sin estado legible) | `EXECUTED` **con salvedad** ("No pude confirmar…"), nunca "Hecho, senor." a secas. El banco lo **exige**, no lo tolera. |
+| `set_volume(30)` cuyo `wpctl`/`pactl` "responden 0" pero el volumen no cambia | `ERROR`, `verify.ok is False`, el mensaje trae "Intenté: …" |
+
+### 15.3 Estado del banco
+
+| Bloque | Casos | Resultado |
+|---|---|---|
+| Routing + seguridad (`eval/cases`, grupos A–H) | 60 | 60/60 (FASE C) |
+| EFECTO (`test_banco_efecto_fallo.py`) | 5 | 5/5 |
+| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 7 | 7/7 |
+
+Los tres desenlaces de D1 (`True` hecho / `False` no-hecho / `None` no
+medible) quedan cubiertos por el banco: EFECTO exige `True` (o `None` con
+salvedad donde no hay lectura), FALLO FORZADO exige `False` con explicación o
+`None` con salvedad — y **prohíbe** el éxito inventado en ambos.

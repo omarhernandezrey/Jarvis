@@ -122,6 +122,141 @@ def _shutil_which(cmd: str) -> str | None:
     return shutil.which(cmd)
 
 
+# ── VERIFY de apertura (PLAN_EJECUCION FASE D · D1) ───────────────────────────
+# Arrancar una app no es instantáneo (sondeo con tope, no sleep fijo). Y "el
+# proceso existe" NO es "la ventana abrió": un proceso que arranca y muere a
+# los 2 s pasa un chequeo por PID sin haber abierto nada. En Wayland todavía
+# no se pueden listar ventanas (llega en la FASE F): si solo se puede
+# comprobar el proceso, el desenlace es None (con salvedad), no True.
+
+def _session_is_wayland() -> bool:
+    if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+        return True
+    return bool(os.environ.get("WAYLAND_DISPLAY")) and not os.environ.get("DISPLAY")
+
+
+def _active_window_title() -> str | None:
+    """Título de la ventana activa en X11 (best-effort). None si no se puede."""
+    xdotool = _shutil_which("xdotool")
+    if not xdotool:
+        return None
+    try:
+        r = subprocess.run([xdotool, "getactivewindow", "getwindowname"],
+                           capture_output=True, text=True, timeout=3)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _window_presente(cands: list[str]):
+    """True si se ve una ventana que casa con la app; None si no se puede
+    saber (Wayland puro, o sin wmctrl/X11). NUNCA devuelve False: que un
+    título no aparezca no prueba que no haya ventana."""
+    if IS_WINDOWS or _session_is_wayland():
+        return None
+    wmctrl = _shutil_which("wmctrl")
+    if not wmctrl:
+        return None
+    try:
+        r = subprocess.run([wmctrl, "-l"], capture_output=True, text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    titulos = r.stdout.lower()
+    for c in cands:
+        c = (c or "").lower().removesuffix(".exe").removesuffix(".desktop")
+        if len(c) >= 3 and c in titulos:
+            return True
+    return None
+
+
+def _verify_lanzamiento(cands: list[str]):
+    """Comprueba que una app RECIÉN lanzada de verdad arrancó.
+
+    Devuelve un `verify.VerifyOutcome`:
+      - False: el proceso no apareció en 3 s, o apareció y murió enseguida.
+      - True:  proceso vivo Y ventana visible (solo comprobable en X11+wmctrl).
+      - None:  proceso vivo pero la ventana no se puede confirmar (Wayland;
+               llega en la FASE F). Se reporta con salvedad, no como éxito.
+    """
+    from jarvis_local.tools import verify as _v
+
+    aparecio = _v.wait_until(lambda: _ya_esta_abierta(cands), timeout=3.0, interval=0.2)
+    if not aparecio:
+        return _v.VerifyOutcome(False, "el proceso no apareció tras 3 s", "psutil")
+    # ¿sobrevivió? un spawn que muere en el acto no ha abierto nada
+    _v.grace(0.4)
+    if not _ya_esta_abierta(cands):
+        return _v.VerifyOutcome(False, "el proceso arrancó y murió enseguida", "psutil")
+    if _window_presente(cands) is True:
+        return _v.VerifyOutcome(True, "proceso vivo y ventana visible", "wmctrl -l")
+    return _v.VerifyOutcome(
+        None,
+        "el proceso está vivo, pero no puedo confirmar que la ventana abrió "
+        "(introspección de ventanas en Wayland: FASE F)",
+        "psutil")
+
+
+def _verify_foco(cands: list[str]):
+    """Para el caso "ya estaba abierta": lo que hay que comprobar NO es que el
+    proceso exista (ya existía), sino que la app quedó ENFOCADA."""
+    from jarvis_local.tools import verify as _v
+
+    if IS_WINDOWS or _session_is_wayland() or not _shutil_which("wmctrl"):
+        return _v.VerifyOutcome(
+            None, "no puedo confirmar el foco en Wayland (gestión de ventanas: "
+            "FASE F)", "-")
+    titulo = _active_window_title()
+    if titulo is None:
+        return _v.VerifyOutcome(None, "no pude leer la ventana activa", "-")
+    for c in cands:
+        c = (c or "").lower().removesuffix(".exe").removesuffix(".desktop")
+        if len(c) >= 3 and c in titulo.lower():
+            return _v.VerifyOutcome(True, f"ventana activa: {titulo!r}", "xdotool")
+    return _v.VerifyOutcome(None, f"ventana activa: {titulo!r} (no casa con la app)",
+                            "xdotool")
+
+
+def _finish_ya_abierta(plan: ActionPlan, display: str, cands: list[str]) -> ActionPlan:
+    """La app ya estaba abierta: se pide enfocarla y se COMPRUEBA el foco."""
+    from jarvis_local.tools import verify as _v
+
+    _try_focus(display)
+    return _v.finish(
+        plan, _verify_foco(cands),
+        ok_msg=f"{display} ya estaba abierta, la traje al frente.",
+        fail_msg=f"{display} ya estaba abierta, pero no pude traerla al frente, senor.")
+
+
+def _finish_lanzada(plan: ActionPlan, display: str, cands: list[str],
+                    estrategias: list) -> ActionPlan:
+    """Lanza la app con una o más estrategias y COMPRUEBA que arrancó. Cada
+    `estrategia` es un callable que lanza y devuelve una etiqueta corta, o
+    lanza excepción."""
+    from jarvis_local.tools import verify as _v
+
+    tried: list[str] = []
+    outcome = _v.VerifyOutcome(None, "no se intentó nada", "")
+    for i, lanzar in enumerate(estrategias):
+        try:
+            metodo = lanzar()
+        except Exception as e:
+            tried.append(f"{getattr(lanzar, '__name__', 'estrategia')}: {e}")
+            outcome = _v.VerifyOutcome(False, str(e), "lanzar")
+            continue
+        outcome = _verify_lanzamiento(cands)
+        tried.append(f"{metodo} -> {outcome.detail}")
+        if outcome.ok is not False:
+            break
+        if i == 0 and len(estrategias) > 1:
+            plan.reason += " (reintento con vía alterna)"
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"{display} abierto correctamente.",
+        fail_msg=f"No pude abrir {display}, senor.")
+
+
 def _register_opened(name: str, display: str, pid: int | None = None,
                      procnames: list[str] | None = None) -> None:
     """Anota un programa abierto por JARVIS para poder cerrarlo despues."""
@@ -171,37 +306,43 @@ def open_app(name: str) -> ActionPlan:
         reason=f"Abrir {name}",
     )
 
-    # Ya abierta: NO lanzar un duplicado (era el bug: "abre VS Code" dos veces
-    # abria dos ventanas). Se intenta enfocar la existente; si no se puede
-    # (Wayland), se dice con claridad.
+    # FOTO PREVIA (D1): sin saber qué había ANTES no se puede distinguir "lo
+    # abrí yo" de "ya estaba". Ya abierta -> NO lanzar un duplicado (era el
+    # bug: "abre VS Code" dos veces abría dos ventanas): enfocar la existente
+    # y comprobar el FOCO, no el proceso (que ya existía).
     _cands = [Path(path).name, name_lower, *_CLOSE_PROC_MAP.get(name_lower, [])]
     if _ya_esta_abierta(_cands):
         _register_opened(name_lower, name, procnames=[Path(path).name])
-        enfocada = _try_focus(name)
-        plan.result = (f"{name} ya estaba abierta, la traje al frente."
-                       if enfocada else f"{name} ya esta abierta, senor.")
-        plan.status = ActionStatus.EXECUTED
-        return plan
+        return _finish_ya_abierta(plan, name, _cands)
 
-    try:
+    def _exec_directo() -> str:
         if IS_WINDOWS and name_lower == "configuracion":
             subprocess.Popen(["start", "ms-settings:"], shell=True)
             _register_opened(name_lower, name, procnames=["SystemSettings.exe"])
-        elif IS_WINDOWS and name_lower == "wsl":
+            return "start ms-settings:"
+        if IS_WINDOWS and name_lower == "wsl":
             proc = _launch_wsl(path)
             _register_opened(name_lower, name, pid=proc.pid,
                              procnames=[Path(path).name])
-        else:
-            proc = subprocess.Popen([path], shell=False)
-            _register_opened(name_lower, name, pid=proc.pid,
-                             procnames=[Path(path).name])
-        plan.result = f"{name} abierto correctamente."
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No se pudo abrir {name}: {e}"
-    return plan
+            return "lanzar WSL"
+        proc = subprocess.Popen([path], shell=False)
+        _register_opened(name_lower, name, pid=proc.pid,
+                         procnames=[Path(path).name])
+        return f"exec {Path(path).name}"
+
+    def _exec_desktop() -> str:
+        # Estrategia DISTINTA: activación por archivo .desktop (gtk-launch) en
+        # vez de exec directo del binario.
+        from jarvis_local.tools.app_index import find_app, launch_app
+        matches = find_app(name)
+        if not matches:
+            raise RuntimeError("sin entrada .desktop para activar")
+        launch_app(matches[0]["appid"])
+        _register_opened(name_lower, name, procnames=[Path(path).name])
+        return f"gtk-launch {matches[0]['appid']}"
+
+    estrategias = [_exec_directo] if IS_WINDOWS else [_exec_directo, _exec_desktop]
+    return _finish_lanzada(plan, name, _cands, estrategias)
 
 
 def _open_installed_app(name: str) -> ActionPlan:
@@ -226,31 +367,34 @@ def _open_installed_app(name: str) -> ActionPlan:
         reason=f"Abrir {best['name']} (app instalada)",
     )
 
-    # Ya abierta -> no duplicar
+    # Ya abierta -> no duplicar; comprobar el FOCO (D1)
     _stem = str(best["appid"]).split("/")[-1]
     _cands = [_stem, best["norm"], best["norm"].split()[0],
               *_CLOSE_PROC_MAP.get(_norm(name), [])]
     if _ya_esta_abierta(_cands):
         _register_opened(best["norm"], best["name"])
-        enfocada = _try_focus(best["name"])
-        plan.result = (f"{best['name']} ya estaba abierta, la traje al frente."
-                       if enfocada else f"{best['name']} ya esta abierta, senor.")
-        plan.status = ActionStatus.EXECUTED
-        return plan
+        return _finish_ya_abierta(plan, best["name"], _cands)
 
-    try:
+    def _via_desktop() -> str:
         launch_app(best["appid"])
         _register_opened(best["norm"], best["name"])
-        plan.result = f"{best['name']} abierto correctamente."
-        if len(matches) > 1:
-            otros = ", ".join(m["name"] for m in matches[1:4])
-            plan.result += f" (Tambien encontre: {otros})"
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-        plan.result = f"No se pudo abrir {best['name']}: {e}"
-    return plan
+        return f"gtk-launch {best['appid']}"
+
+    def _via_binario() -> str:
+        # Estrategia DISTINTA: ejecutar el binario directo si está en el PATH.
+        exe = _shutil_which(_stem.removesuffix(".desktop")) or \
+            _shutil_which(best["norm"].split()[0])
+        if not exe:
+            raise RuntimeError("sin binario en el PATH para exec directo")
+        proc = subprocess.Popen([exe], shell=False)
+        _register_opened(best["norm"], best["name"], pid=proc.pid)
+        return f"exec {exe}"
+
+    resultado = _finish_lanzada(plan, best["name"], _cands, [_via_desktop, _via_binario])
+    if resultado.status == ActionStatus.EXECUTED and len(matches) > 1:
+        otros = ", ".join(m["name"] for m in matches[1:4])
+        resultado.result += f" (Tambien encontre: {otros})"
+    return resultado
 
 
 def list_apps() -> ActionPlan:
@@ -282,27 +426,21 @@ def execute_open_app(name: str) -> ActionPlan:
         risk=RiskLevel.EXECUTE,
         status=ActionStatus.CONFIRMED,
     )
-    if _ya_esta_abierta([Path(path).name, name_lower,
-                         *_CLOSE_PROC_MAP.get(name_lower, [])]):
+    _cands = [Path(path).name, name_lower, *_CLOSE_PROC_MAP.get(name_lower, [])]
+    if _ya_esta_abierta(_cands):
         _register_opened(name_lower, name, procnames=[Path(path).name])
-        enfocada = _try_focus(name)
-        plan.result = (f"{name} ya estaba abierta, la traje al frente"
-                       if enfocada else f"{name} ya esta abierta, senor")
-        plan.status = ActionStatus.EXECUTED
-        return plan
-    try:
+        return _finish_ya_abierta(plan, name, _cands)
+
+    def _exec_directo() -> str:
         if IS_WINDOWS and name_lower == "wsl":
             proc = _launch_wsl(path)
         else:
             proc = subprocess.Popen([path], shell=False)
         _register_opened(name_lower, name, pid=proc.pid,
                          procnames=[Path(path).name])
-        plan.result = f"{name} abierto correctamente"
-        plan.status = ActionStatus.EXECUTED
-    except Exception as e:
-        plan.status = ActionStatus.ERROR
-        plan.error = str(e)
-    return plan
+        return f"exec {Path(path).name}"
+
+    return _finish_lanzada(plan, name, _cands, [_exec_directo])
 
 
 def _find_target_procs(candidates: set[str], procnames: list[str],

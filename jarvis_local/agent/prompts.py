@@ -49,6 +49,17 @@ JARVIS: Es un tema de gustos, senor. No tengo una opinion informada al respecto.
 CONTEXT_HINT = """El usuario se refiere a algo mencionado en los mensajes anteriores. Resuelve la referencia (que ciudad, que oferta, que aplicacion) usando esa conversacion antes de llamar a la herramienta."""
 
 
+# PLAN_EJECUCION FASE D · D3 — salida estructurada. Reemplaza el marco de
+# "llama a la herramienta" (tool calling nativo) por "emite este JSON".
+STRUCTURED_SYSTEM_SUFFIX = """
+
+FORMATO DE RESPUESTA (OBLIGATORIO): responde SOLO con un objeto JSON, sin texto alrededor, con una de estas dos formas:
+  {"accion": "usar_herramienta", "herramienta": "<nombre exacto de la lista>", "argumentos": {<clave>: <valor>, ...}}
+  {"accion": "responder", "respuesta": "<tu texto para el usuario>"}
+
+Usa "usar_herramienta" cuando una herramienta resuelva la peticion. Usa "responder" para conversacion, para negarte con honestidad cuando no puedas hacer algo, o para pedir que aclare una peticion vaga. Las reglas 3, 4 y 5 de arriba se cumplen con {"accion": "responder", ...}."""
+
+
 # Mensaje de correccion cuando el modelo devuelve algo invalido
 def correccion_herramienta_invalida(nombre: str, disponibles: list[str]) -> str:
     return (f"La herramienta '{nombre}' no existe. Las disponibles son: "

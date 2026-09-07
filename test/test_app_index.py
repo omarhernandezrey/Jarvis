@@ -123,11 +123,25 @@ def test_synonyms_off_falls_back_to_raw_name():
     _with_fake_index(check)
 
 
-def test_real_index_builds():
-    """El escaneo real debe encontrar apps en este equipo (solo lectura)."""
-    apps = app_index.get_index()
-    assert len(apps) > 10
-    assert all("name" in a and "appid" in a and "norm" in a for a in apps)
+def test_real_scan_devuelve_entradas_bien_formadas():
+    """El escaneo real de .desktop / Get-StartApps NO debe reventar y cada
+    entrada que devuelva tiene que estar bien formada.
+
+    Antes exigía `len(apps) > 10`: un umbral arbitrario que fallaba en un
+    runner con pocas apps (mismo problema de entorno que barrió D0). Lo que
+    importa es que el indexado funcione y produzca la forma correcta, no que
+    la máquina tenga muchas apps.
+    """
+    apps = app_index.scan_installed_apps()
+    assert isinstance(apps, list)
+    for a in apps:
+        assert set(a) >= {"name", "appid", "norm"}
+        assert a["name"] and isinstance(a["name"], str)
+        assert a["appid"] and isinstance(a["appid"], str)
+        assert a["norm"] == app_index._normalize(a["name"])
+    # sin duplicados por nombre normalizado (lo que el indexador promete)
+    norms = [a["norm"] for a in apps]
+    assert len(norms) == len(set(norms))
 
 
 if __name__ == "__main__":
@@ -137,7 +151,7 @@ if __name__ == "__main__":
     test_find_partial()
     test_find_fuzzy()
     test_find_nothing()
-    test_real_index_builds()
+    test_real_scan_devuelve_entradas_bien_formadas()
     print("OK: Todos los tests del indice de apps pasaron.")
 
 

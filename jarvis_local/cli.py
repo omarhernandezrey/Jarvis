@@ -238,6 +238,7 @@ def _set_voice(jarvis, enabled: bool):
 
 
 def handle_confirm(jarvis=None):
+    from jarvis_local.tools._utils import describe_outcome
     plan = policy.confirm()
     if not plan:
         print("No hay ningun plan pendiente para confirmar.")
@@ -253,11 +254,11 @@ def handle_confirm(jarvis=None):
             from jarvis_local.tools.email_sender import execute_send
             plan = execute_send(plan.params["to"], plan.params["subject"],
                                 plan.params["body"])
-            print(plan.result or plan)
+            print(describe_outcome(plan, tool="enviar_correo"))
         elif plan.action in ("ocultar_archivos", "mostrar_archivos"):
             from jarvis_local.tools.hidden_files import execute_hide
             plan = execute_hide(plan.params["path"], plan.params["hide"])
-            print(plan.result or plan)
+            print(describe_outcome(plan, tool="ocultar_archivos"))
         elif plan.action in ("crear_archivo", "crear_carpeta"):
             print(plan)
             print("[INFO] Creacion confirmada pero no ejecutada en esta fase (solo simulacion).")
@@ -289,6 +290,10 @@ def handle_confirm(jarvis=None):
             print("[OK] Todas las memorias borradas.")
         else:
             print(plan)
+        # D2: la acción se ejecutó tras confirmación explícita del usuario.
+        from jarvis_local.safety.audit import audit
+        if hasattr(plan, "status"):
+            audit.record_plan(plan, source="confirmacion", confirmed=True)
     else:
         print(plan)
 

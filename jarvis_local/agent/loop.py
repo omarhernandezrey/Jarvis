@@ -41,6 +41,7 @@ from jarvis_local.agent.decision_log import log_decision
 from jarvis_local.agent.prompts import (
     AGENT_SYSTEM_PROMPT,
     CONTEXT_HINT,
+    STRUCTURED_SYSTEM_SUFFIX,
     correccion_argumentos,
     correccion_herramienta_invalida,
 )
@@ -263,6 +264,109 @@ def _clean_text(text: str) -> str:
     return t
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAN_EJECUCION FASE D · D3 — salida estructurada (JSON Schema de Ollama).
+#
+# En vez del tool calling nativo (`tools=[...]` + canal `tool_calls`, que el 3B
+# a veces escribe como texto y hay que RESCATAR — ver _salvage_tool_calls), se
+# restringe la generación con `format=<schema>`: el modelo SOLO puede emitir un
+# JSON que lo cumple. La decisión "¿herramienta o texto?" queda en una sola
+# llamada, sin rescate ni reintento por formato.
+#
+# Se mide si de verdad baja rescates/reintentos (jarvis_local/eval/
+# measure_structured.py). Si no mejora, se deja apagado y se dice.
+
+def _es_conmutable(tools: list[dict]) -> list[str]:
+    return [t.get("function", {}).get("name", "") for t in tools
+            if t.get("function", {}).get("name")]
+
+
+def _schema_decision(tools: list[dict]) -> dict:
+    """JSON Schema de la decisión del router: usar una herramienta (de la lista
+    acotada por el retriever) o responder en texto."""
+    return {
+        "type": "object",
+        "properties": {
+            "accion": {"type": "string", "enum": ["usar_herramienta", "responder"]},
+            "herramienta": {"type": "string", "enum": _es_conmutable(tools)},
+            "argumentos": {"type": "object"},
+            "respuesta": {"type": "string"},
+        },
+        "required": ["accion"],
+    }
+
+
+def _decidir_estructurado(client, messages: list[dict], tools: list[dict],
+                          model: str | None = None) -> dict:
+    """Una llamada con `format`. Devuelve el MISMO shape que
+    `client.chat_with_tools` ({role, content, tool_calls}) para que el resto de
+    `_run_simple` no cambie."""
+    msg = client.chat_structured(messages, _schema_decision(tools), model=model) or {}
+    raw = msg.get("content", "") or ""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        # El modelo no devolvió JSON pese al `format`: se trata como texto.
+        return {"role": "assistant", "content": raw, "tool_calls": []}
+    if not isinstance(data, dict):
+        return {"role": "assistant", "content": raw, "tool_calls": []}
+
+    accion = str(data.get("accion", "")).strip().lower()
+    nombre = data.get("herramienta")
+    args = data.get("argumentos")
+    args = args if isinstance(args, dict) else {}
+    validos = set(_es_conmutable(tools))
+    if accion == "usar_herramienta" and nombre in validos:
+        return {"role": "assistant", "content": "",
+                "tool_calls": [{"function": {"name": nombre, "arguments": args}}]}
+    # "responder", o eligió una herramienta que no está en la lista -> texto.
+    return {"role": "assistant",
+            "content": str(data.get("respuesta", "") or ""),
+            "tool_calls": []}
+
+
+def _salida_estructurada_activa() -> bool:
+    from jarvis_local.config import get_config
+    return bool(get_config().get("agent", {}).get("structured_output", False))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAN_EJECUCION FASE D · D4 — fallback de modelo del router.
+#
+# `ollama.router_fallback` estaba en config y sin cablear. Si el modelo
+# principal del router falla TÉCNICAMENTE —no responde (timeout/conexión) o no
+# está descargado (Ollama 404)— se reintenta UNA vez la MISMA petición con el
+# modelo de fallback. NO cubre el fallo de una herramienta: eso no es cosa del
+# modelo.
+
+def _router_fallback() -> str:
+    from jarvis_local.config import get_config
+    return str(get_config().get("ollama", {}).get("router_fallback", "") or "").strip()
+
+
+def _llamar_modelo(client, messages: list[dict], tools: list[dict],
+                   structured: bool) -> tuple[dict, bool]:
+    """Llama al router. Devuelve (msg, uso_fallback). Reintenta con
+    `router_fallback` si el principal falla técnicamente."""
+    def _do(model):
+        if structured:
+            return _decidir_estructurado(client, messages, tools, model=model)
+        return client.chat_with_tools(messages, tools, model=model)
+
+    try:
+        return _do(None), False
+    except Exception as e_primario:
+        fb = _router_fallback()
+        if not fb:
+            raise
+        try:
+            return _do(fb), True
+        except Exception:
+            # El error del principal suele ser más informativo que el del
+            # fallback (que puede fallar por otra causa).
+            raise e_primario from None
+
+
 def _validar(name: str, args: dict) -> tuple[bool, str]:
     """Valida la llamada contra el esquema. (valida, mensaje_de_correccion)."""
     tool = get_tool(name)
@@ -287,23 +391,29 @@ def _limpiar_args(name: str, args: dict) -> dict:
 
 
 def run_agent(client, user_message: str, history: list[dict] | None = None,
-              max_steps: int = MAX_STEPS) -> AgentResult:
+              max_steps: int = MAX_STEPS, *, structured: bool | None = None) -> AgentResult:
     """Decide y ejecuta. Texto vacio y sin herramientas = que responda el chat.
 
     Si la peticion pide varias acciones, se resuelve clausula por clausula: el
     modelo de 3B no encadena por su cuenta (medido: 0/2), asi que confiar en que
     pida la segunda herramienta tras la primera perderia la mitad de la orden.
+
+    `structured` (D3): None = lo decide config `agent.structured_output`;
+    True/False = fuerza salida estructurada o tool calling (lo usa el
+    medidor jarvis_local/eval/measure_structured.py).
     """
     from jarvis_local.intent.parser import dividir_acciones
 
+    if structured is None:
+        structured = _salida_estructurada_activa()
     clausulas = dividir_acciones(user_message)
     if len(clausulas) > 1:
-        return _run_encadenado(client, clausulas, history)
-    return _run_simple(client, user_message, history, max_steps)
+        return _run_encadenado(client, clausulas, history, structured=structured)
+    return _run_simple(client, user_message, history, max_steps, structured=structured)
 
 
 def _run_encadenado(client, clausulas: list[str],
-                    history: list[dict] | None) -> AgentResult:
+                    history: list[dict] | None, *, structured: bool = False) -> AgentResult:
     """Ejecuta cada accion de la peticion, en orden."""
     from jarvis_local.intent.parser import es_anaforica
 
@@ -318,7 +428,8 @@ def _run_encadenado(client, clausulas: list[str],
         # el modelo pequeno se distrae con el resultado anterior (el parte del
         # clima) y deja de llamar a la herramienta.
         necesita_ctx = es_anaforica(clausula)
-        r = _run_simple(client, clausula, ctx if necesita_ctx else None, MAX_STEPS)
+        r = _run_simple(client, clausula, ctx if necesita_ctx else None, MAX_STEPS,
+                        structured=structured)
 
         if r.pending_confirmation:
             # Una accion de riesgo corta la cadena: el usuario debe decidir
@@ -338,7 +449,7 @@ def _run_encadenado(client, clausulas: list[str],
 
 
 def _run_simple(client, user_message: str, history: list[dict] | None,
-                max_steps: int) -> AgentResult:
+                max_steps: int, *, structured: bool = False) -> AgentResult:
     # Para RECUPERAR herramientas, una frase anaforica no se sostiene sola:
     # "y en Bogota?" no se parece a ninguna herramienta, asi que el retriever
     # devolvia lista vacia y la peticion moria en conversacion. Se recupera con
@@ -398,6 +509,8 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
                     pending_confirmation=pendiente, confidence=conf)
 
     system = AGENT_SYSTEM_PROMPT
+    if structured:
+        system += STRUCTURED_SYSTEM_SUFFIX
     if history and _ANAFORA.search(user_message):
         # "y en Bogota?", "abreme la segunda": sin esta pista el modelo pierde
         # el referente y llama a la herramienta con argumentos vacios.
@@ -419,21 +532,28 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     _llm_calls = 0
     _llm_secs = 0.0
 
+    _fallback_usado = False
     for _paso in range(max_steps + MAX_REINTENTOS):
         try:
             _t0 = _time.perf_counter()
-            msg = client.chat_with_tools(messages, tools)
+            msg, _fb = _llamar_modelo(client, messages, tools, structured)
             _llm_calls += 1
             _llm_secs += _time.perf_counter() - _t0
+            if _fb and not _fallback_usado:
+                _fallback_usado = True
+                log_decision(user_message, conf, usadas, resultados,
+                             f"fallback_de_modelo:{_router_fallback()}",
+                             llm_calls=_llm_calls, llm_secs=_llm_secs)
         except Exception as e:
             # Timeout o error de conexión: devolver error claro
             error_msg = str(e).lower()
+            _suf = " (con fallback)" if _router_fallback() else ""
             if "timeout" in error_msg or "timed out" in error_msg:
-                log_decision(user_message, conf, usadas, resultados, "timeout_llm", llm_calls=_llm_calls, llm_secs=_llm_secs)
+                log_decision(user_message, conf, usadas, resultados, f"timeout_llm{_suf}", llm_calls=_llm_calls, llm_secs=_llm_secs)
                 return AgentResult(
                     text="El modelo tardo demasiado en responder, senor. Intente de nuevo.",
                     confidence=conf)
-            log_decision(user_message, conf, usadas, resultados, f"error_llm:{e}", llm_calls=_llm_calls, llm_secs=_llm_secs)
+            log_decision(user_message, conf, usadas, resultados, f"error_llm{_suf}:{e}", llm_calls=_llm_calls, llm_secs=_llm_secs)
             return AgentResult(
                 text="Tuve un inconveniente al comunicarme con el modelo, senor.",
                 confidence=conf)

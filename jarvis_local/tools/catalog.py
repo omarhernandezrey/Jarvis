@@ -359,13 +359,58 @@ def _close_browser():
     return close_browser()
 
 
+def _audit_query(dia: str = "hoy"):
+    from jarvis_local.tools.audit_query import query_audit
+    return query_audit(dia)
+
+
 def _remember(text: str):
+    """Guarda un dato en la memoria permanente, COMPROBANDO que quedó escrito.
+
+    D1 · VERIFY: no se confía en el retorno de `MemoryStore.add`; se abre un
+    store nuevo (relee memory.json) y se comprueba que el dato está. El fallo
+    de una memoria no se percibe hasta que JARVIS no la recuerda, días después.
+    """
     from jarvis_local.config import BASE_DIR
-    from jarvis_local.storage.memory import MemoryStore
+    from jarvis_local.safety.policy import ActionPlan
+    from jarvis_local.storage.memory import MAX_MEMORY_LENGTH, MemoryStore
+    from jarvis_local.tools import verify as _v
+
+    plan = ActionPlan(action="recordar", params={"texto": str(text)[:80]},
+                      risk=RiskLevel.CREATE, reason="Guardar en memoria permanente")
+    clean = str(text)[:MAX_MEMORY_LENGTH].strip()
+    if not clean:
+        plan.status = ActionStatus.ERROR
+        plan.error = "texto vacío"
+        plan.result = "No me dijo qué recordar, senor."
+        return plan
+
     mem = MemoryStore(BASE_DIR / "data")
-    item = mem.add(text)
-    return (f"Lo recordare, senor: {text}" if item
-            else "No pude guardar la memoria (limite alcanzado).")
+    item = mem.add(clean)
+    if item is None:
+        plan.status = ActionStatus.ERROR
+        plan.error = "límite de memorias alcanzado"
+        plan.result = "No pude guardar la memoria (limite alcanzado), senor."
+        return plan
+
+    outcome = _v.memory_saved(clean, base_dir=BASE_DIR)
+    tried = [f"MemoryStore.add -> {outcome.detail}"]
+    if outcome.ok is False:
+        plan.reason += " (reintento sobre store nuevo)"
+        try:
+            mem2 = MemoryStore(BASE_DIR / "data")
+            if not any(it.get("text") == clean for it in mem2.list()):
+                mem2.add(clean)
+        except Exception as e:  # noqa: BLE001
+            tried.append(f"reintento falló ({e})")
+        else:
+            outcome = _v.memory_saved(clean, base_dir=BASE_DIR)
+            tried.append(f"reintento -> {outcome.detail}")
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Lo recordare, senor: {clean}",
+        fail_msg="Intenté guardarlo en memoria pero al releer no aparece, senor.")
 
 
 # =============================================================================
@@ -554,7 +599,10 @@ CONTRACTS: list[ToolContract] = [
         "Usar cuando el usuario pida abrir, lanzar o iniciar un programa.",
         _obj({"app": _str("Nombre de la aplicacion, ej: 'whatsapp', 'chrome', 'word'")}),
         _open_app, RiskLevel.EXECUTE,
-        verify="El proceso de la app aparece en la lista de procesos tras lanzarla.",
+        verify="EJECUTABLE (D1): sondeo con tope tras lanzar. Proceso que no "
+               "aparece o muere -> ERROR. Proceso vivo pero sin poder listar "
+               "ventanas (Wayland) -> EXECUTED con salvedad, no un 'hecho' liso. "
+               "Reintento por gtk-launch (.desktop) vs exec directo.",
         revert="Cerrar la app (cerrar_aplicacion).",
         plan_capable=True, parser_intents=("open_app",)),
 
@@ -593,7 +641,8 @@ CONTRACTS: list[ToolContract] = [
                              ["subir", "bajar", "silenciar", "activar", "nivel"]),
               "nivel": _int("Nivel 0-100, solo si accion=nivel")}, ["accion"]),
         _volume_control, RiskLevel.EXECUTE,
-        verify="`wpctl get-volume` devuelve el nivel/estado esperado.",
+        verify="EJECUTABLE (D1): tras aplicar se lee el volumen/estado real; si no "
+               "cuadra se reintenta por vía alterna (pactl) y, sin verde, ERROR.",
         revert="Fijar el volumen anterior (controlar_volumen accion=nivel)."),
 
     ToolContract(
@@ -603,42 +652,56 @@ CONTRACTS: list[ToolContract] = [
         _obj({"accion": _str("Una de: pausar, siguiente, anterior",
                              ["pausar", "siguiente", "anterior"])}),
         _media_control, RiskLevel.EXECUTE,
-        verify="`playerctl status`/`metadata` refleja el cambio de pista o pausa.",
+        verify="EJECUTABLE (D1): sin reproductor MPRIS -> ERROR (no un 'hecho' "
+               "vacío). Con reproductor, se comprueba que el estado (pausa) o la "
+               "pista (siguiente/anterior) cambió; reintento con --all-players.",
         revert="Acción inversa (anterior/pausar); no siempre exacta."),
 
     ToolContract("volume_up", "Sube el volumen un paso.", _obj({}, []),
                  _volume_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` subió.", revert="volume_down.",
+                 verify="EJECUTABLE (D1): se comprueba que el volumen subió; si no, "
+                        "reintento por pactl y, sin verde, ERROR.",
+                 revert="volume_down.",
                  parser_intents=("volume_up",), parser_fixed={"accion": "subir"}),
     ToolContract("volume_down", "Baja el volumen un paso.", _obj({}, []),
                  _volume_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` bajó.", revert="volume_up.",
+                 verify="EJECUTABLE (D1): se comprueba que el volumen bajó; si no, "
+                        "reintento por pactl y, sin verde, ERROR.",
+                 revert="volume_up.",
                  parser_intents=("volume_down",), parser_fixed={"accion": "bajar"}),
     ToolContract("volume_set", "Fija el volumen a un nivel exacto (0-100).",
                  _obj({"level": _int("Nivel 0-100")}),
                  _volume_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` == nivel pedido.",
+                 verify="EJECUTABLE (D1): se lee el volumen real y se compara con el "
+                        "pedido (tol. redondeo); si no, reintento por pactl y, sin "
+                        "verde, ERROR.",
                  revert="Fijar el nivel anterior.",
                  parser_intents=("volume_set",), parser_fixed={"accion": "nivel"},
                  parser_argmap={"level": "nivel"}),
     ToolContract("volume_mute", "Silencia o reactiva el sonido.",
                  _obj({"mute": _bool("true=silenciar, false=activar")}, []),
                  _volume_mute_bool, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`wpctl get-volume` muestra [MUTED] o no.",
+                 verify="EJECUTABLE (D1): se lee el estado real de silencio y se "
+                        "compara con el pedido; si no, reintento por pactl y, sin "
+                        "verde, ERROR.",
                  revert="volume_mute con el valor inverso.",
                  parser_intents=("volume_mute",)),
     ToolContract("media_play_pause", "Pausa o reanuda la reproduccion.", _obj({}, []),
                  _media_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`playerctl status`.", revert="Volver a pulsar.",
+                 verify="EJECUTABLE (D1): sin reproductor -> ERROR; con él, el "
+                        "`playerctl status` tiene que haber cambiado.",
+                 revert="Volver a pulsar.",
                  parser_intents=("media_play_pause",), parser_fixed={"accion": "pausar"}),
     ToolContract("media_next", "Salta a la siguiente pista.", _obj({}, []),
                  _media_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`playerctl metadata` cambió de título.",
+                 verify="EJECUTABLE (D1): sin reproductor -> ERROR; con él, la "
+                        "huella de la pista (`playerctl metadata`) tiene que cambiar.",
                  revert="media_previous.",
                  parser_intents=("media_next",), parser_fixed={"accion": "siguiente"}),
     ToolContract("media_previous", "Vuelve a la pista anterior.", _obj({}, []),
                  _media_control, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="`playerctl metadata` cambió de título.",
+                 verify="EJECUTABLE (D1): sin reproductor -> ERROR; con él, la "
+                        "huella de la pista (`playerctl metadata`) tiene que cambiar.",
                  revert="media_next.",
                  parser_intents=("media_previous",), parser_fixed={"accion": "anterior"}),
 
@@ -653,7 +716,9 @@ CONTRACTS: list[ToolContract] = [
               "hora": _str("Hora exacta en formato 24h HH:MM, ej '15:30'. Vacio si se usan minutos")},
              ["texto"]),
         _set_reminder, RiskLevel.CREATE,
-        verify="El recordatorio aparece en listar_recordatorios con la hora dada.",
+        verify="EJECUTABLE (D1): se RELEE reminders.json de disco y se comprueba "
+               "id + texto + hora (tol. 60 s); reintento con escritura atómica. "
+               "Sin verde -> ERROR.",
         revert="cancelar_recordatorio.",
         parser_intents=("set_reminder",),
         parser_argmap={"text": "texto", "minutes": "minutos", "at": "hora"}),
@@ -739,6 +804,15 @@ CONTRACTS: list[ToolContract] = [
                  _obj({}, []), _read_clipboard, RiskLevel.READ,
                  verify=_V_LECTURA, revert="n/a",
                  parser_intents=("read_clipboard",)),
+
+    ToolContract("consultar_auditoria",
+                 "Dice qué acciones de escritura/sistema hizo JARVIS hoy o ayer, "
+                 "con su resultado, si se verificaron y si el usuario las "
+                 "confirmó. Solo lectura de la auditoría append-only (D2).",
+                 _obj({"dia": _str("'hoy' o 'ayer'", ["hoy", "ayer"])}, []),
+                 _audit_query, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("audit_query",)),
 
     ToolContract("leer_archivo",
                  "Lee en voz alta el contenido de un archivo de texto (txt, md, "
@@ -828,7 +902,8 @@ CONTRACTS: list[ToolContract] = [
     ToolContract("crear_carpeta", "Crea una carpeta nueva en una ruta permitida.",
                  _obj({"path": _str("Ruta completa de la carpeta a crear")}),
                  _create_directory, RiskLevel.CREATE,
-                 verify="`os.path.isdir(path)` es True tras la operación.",
+                 verify="EJECUTABLE (D1): os.path.isdir tras crear; reintento con "
+                        "os.makedirs. Sin verde -> ERROR.",
                  revert="Borrar la carpeta creada.",
                  plan_capable=True, parser_intents=("create_directory",)),
 
@@ -836,21 +911,26 @@ CONTRACTS: list[ToolContract] = [
                  _obj({"path": _str("Ruta completa del archivo"),
                        "content": _str("Contenido del archivo")}, ["path"]),
                  _create_file, RiskLevel.CREATE,
-                 verify="`os.path.isfile(path)` y el tamaño coincide con el contenido.",
+                 verify="EJECUTABLE (D1): existe + TAMAÑO + CONTENIDO byte a byte "
+                        "(un fichero vacío no pasa); reintento con escritura cruda "
+                        "+ fsync. Sin verde -> ERROR.",
                  revert="Borrar el archivo creado.",
                  plan_capable=True, parser_intents=("create_file",)),
 
     ToolContract("copiar_archivo", "Copia un archivo de una ruta permitida a otra.",
                  _obj({"src": _str("Ruta origen"), "dst": _str("Ruta destino")}),
                  _copy_file, RiskLevel.CREATE, llm_visible=False,
-                 verify="El archivo destino existe y su tamaño == origen.",
+                 verify="EJECUTABLE (D1): destino existe y tamaño == origen; "
+                        "reintento con copyfileobj + fsync. Sin verde -> ERROR.",
                  revert="Borrar la copia.",
                  plan_capable=True, parser_intents=("copy_file",)),
 
     ToolContract("mover_archivo", "Mueve o renombra un archivo entre rutas permitidas.",
                  _obj({"src": _str("Ruta origen"), "dst": _str("Ruta destino")}),
                  _move_file, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="El destino existe y el origen ya no.",
+                 verify="EJECUTABLE (D1): destino existe Y origen ya no (si el "
+                        "origen sigue, fue copia, no move -> ERROR); reintento "
+                        "copy2 + remove.",
                  revert="Mover de vuelta (mover_archivo con src/dst invertidos).",
                  plan_capable=True, parser_intents=("move_file",)),
 
@@ -858,7 +938,8 @@ CONTRACTS: list[ToolContract] = [
                  _obj({"path": _str("Ruta del archivo"),
                        "new_name": _str("Nuevo nombre (sin carpeta)")}),
                  _rename_file, RiskLevel.EXECUTE, llm_visible=False,
-                 verify="Existe un archivo con el nombre nuevo y no con el viejo.",
+                 verify="EJECUTABLE (D1): existe el nombre nuevo y no el viejo; "
+                        "reintento con shutil.move. Sin verde -> ERROR.",
                  revert="Renombrar de vuelta al nombre anterior.",
                  plan_capable=True, parser_intents=("rename_file",)),
 
@@ -1043,7 +1124,9 @@ CONTRACTS: list[ToolContract] = [
                  "Bloc de notas.",
                  _obj({"text": _str("El texto de la nota")}),
                  _take_note, RiskLevel.CREATE,
-                 verify="El archivo de notas contiene el texto nuevo con marca de tiempo.",
+                 verify="EJECUTABLE (D1): se RELEE el archivo de notas y se "
+                        "comprueba que la línea escrita está; reintento con "
+                        "append + fsync. Sin verde -> ERROR.",
                  revert="Editar/borrar la línea en el archivo de notas.",
                  parser_intents=("take_note",)),
 
@@ -1078,7 +1161,9 @@ CONTRACTS: list[ToolContract] = [
                  "personales, gustos).",
                  _obj({"text": _str("El dato a recordar")}),
                  _remember, RiskLevel.CREATE,
-                 verify="El dato aparece en el store de memoria (MemoryStore).",
+                 verify="EJECUTABLE (D1): se abre un MemoryStore NUEVO (relee "
+                        "memory.json) y se comprueba que el dato está; reintento "
+                        "sobre store nuevo. Sin verde -> ERROR.",
                  revert="Borrar la entrada del store de memoria.",
                  # FASE C · C6: antes era la única de las 5 herramientas
                  # solo-agente sin NINGÚN intent de parser (a diferencia de

@@ -11,6 +11,7 @@ import contextlib
 import json
 import os
 import re
+import tempfile
 import threading
 from datetime import datetime, timedelta
 
@@ -41,6 +42,24 @@ def _save_store(items: list[dict]) -> None:
     os.makedirs(os.path.dirname(REMINDERS_PATH), exist_ok=True)
     with open(REMINDERS_PATH, "w", encoding="utf-8") as f:
         json.dump(items, f, ensure_ascii=False, indent=1)
+
+
+def _save_store_atomic(items: list[dict]) -> None:
+    """Escritura atómica con fsync — la vía DISTINTA para el reintento de
+    VERIFY (D1) si `_save_store` no dejó el recordatorio en disco."""
+    d = os.path.dirname(REMINDERS_PATH)
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=1)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, REMINDERS_PATH)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+        raise
 
 
 def _notify(message: str) -> None:
@@ -144,16 +163,39 @@ def set_reminder(text: str, minutes: float = 0, at: str = "") -> ActionPlan:
             items.append({"id": rid, "text": text, "when": when.isoformat()})
             _save_store(items)
         _arm(rid, when)
-        hora_txt = when.strftime("%I:%M %p").lstrip("0").lower()
-        plan.params["id"] = rid
-        plan.result = (f"Entendido, senor. Le recordare '{text}' "
-                       f"a las {hora_txt}.")
-        plan.status = ActionStatus.EXECUTED
     except Exception as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)
         plan.result = f"No pude crear el recordatorio: {e}"
-    return plan
+        return plan
+
+    # D1 · VERIFY: releer reminders.json de disco — no confiar en que el save
+    # cuajó. El fallo de un recordatorio no se percibe hasta que no suena.
+    from jarvis_local.tools import verify as _v
+
+    hora_txt = when.strftime("%I:%M %p").lstrip("0").lower()
+    plan.params["id"] = rid
+    outcome = _v.reminder_saved(rid, text, when)
+    tried = [f"_save_store -> {outcome.detail}"]
+    if outcome.ok is False:
+        plan.reason += " (reintento con escritura atómica)"
+        try:
+            with _LOCK:
+                items = _load_store()
+                if not any(i.get("id") == rid for i in items):
+                    items.append({"id": rid, "text": text, "when": when.isoformat()})
+                _save_store_atomic(items)
+        except Exception as e:  # noqa: BLE001
+            tried.append(f"escritura atómica falló ({e})")
+        else:
+            outcome = _v.reminder_saved(rid, text, when)
+            tried.append(f"escritura atómica -> {outcome.detail}")
+
+    return _v.finish(
+        plan, outcome, tried=tried,
+        ok_msg=f"Entendido, senor. Le recordare '{text}' a las {hora_txt}.",
+        fail_msg="Programé el recordatorio pero no lo veo guardado en disco, senor. "
+                 "Vuelva a intentarlo.")
 
 
 def list_reminders() -> ActionPlan:
