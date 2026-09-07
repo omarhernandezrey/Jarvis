@@ -296,11 +296,12 @@ def _schema_decision(tools: list[dict]) -> dict:
     }
 
 
-def _decidir_estructurado(client, messages: list[dict], tools: list[dict]) -> dict:
+def _decidir_estructurado(client, messages: list[dict], tools: list[dict],
+                          model: str | None = None) -> dict:
     """Una llamada con `format`. Devuelve el MISMO shape que
     `client.chat_with_tools` ({role, content, tool_calls}) para que el resto de
     `_run_simple` no cambie."""
-    msg = client.chat_structured(messages, _schema_decision(tools)) or {}
+    msg = client.chat_structured(messages, _schema_decision(tools), model=model) or {}
     raw = msg.get("content", "") or ""
     try:
         data = json.loads(raw)
@@ -327,6 +328,43 @@ def _decidir_estructurado(client, messages: list[dict], tools: list[dict]) -> di
 def _salida_estructurada_activa() -> bool:
     from jarvis_local.config import get_config
     return bool(get_config().get("agent", {}).get("structured_output", False))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAN_EJECUCION FASE D · D4 — fallback de modelo del router.
+#
+# `ollama.router_fallback` estaba en config y sin cablear. Si el modelo
+# principal del router falla TÉCNICAMENTE —no responde (timeout/conexión) o no
+# está descargado (Ollama 404)— se reintenta UNA vez la MISMA petición con el
+# modelo de fallback. NO cubre el fallo de una herramienta: eso no es cosa del
+# modelo.
+
+def _router_fallback() -> str:
+    from jarvis_local.config import get_config
+    return str(get_config().get("ollama", {}).get("router_fallback", "") or "").strip()
+
+
+def _llamar_modelo(client, messages: list[dict], tools: list[dict],
+                   structured: bool) -> tuple[dict, bool]:
+    """Llama al router. Devuelve (msg, uso_fallback). Reintenta con
+    `router_fallback` si el principal falla técnicamente."""
+    def _do(model):
+        if structured:
+            return _decidir_estructurado(client, messages, tools, model=model)
+        return client.chat_with_tools(messages, tools, model=model)
+
+    try:
+        return _do(None), False
+    except Exception as e_primario:
+        fb = _router_fallback()
+        if not fb:
+            raise
+        try:
+            return _do(fb), True
+        except Exception:
+            # El error del principal suele ser más informativo que el del
+            # fallback (que puede fallar por otra causa).
+            raise e_primario from None
 
 
 def _validar(name: str, args: dict) -> tuple[bool, str]:
@@ -494,22 +532,28 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     _llm_calls = 0
     _llm_secs = 0.0
 
+    _fallback_usado = False
     for _paso in range(max_steps + MAX_REINTENTOS):
         try:
             _t0 = _time.perf_counter()
-            msg = (_decidir_estructurado(client, messages, tools) if structured
-                   else client.chat_with_tools(messages, tools))
+            msg, _fb = _llamar_modelo(client, messages, tools, structured)
             _llm_calls += 1
             _llm_secs += _time.perf_counter() - _t0
+            if _fb and not _fallback_usado:
+                _fallback_usado = True
+                log_decision(user_message, conf, usadas, resultados,
+                             f"fallback_de_modelo:{_router_fallback()}",
+                             llm_calls=_llm_calls, llm_secs=_llm_secs)
         except Exception as e:
             # Timeout o error de conexión: devolver error claro
             error_msg = str(e).lower()
+            _suf = " (con fallback)" if _router_fallback() else ""
             if "timeout" in error_msg or "timed out" in error_msg:
-                log_decision(user_message, conf, usadas, resultados, "timeout_llm", llm_calls=_llm_calls, llm_secs=_llm_secs)
+                log_decision(user_message, conf, usadas, resultados, f"timeout_llm{_suf}", llm_calls=_llm_calls, llm_secs=_llm_secs)
                 return AgentResult(
                     text="El modelo tardo demasiado en responder, senor. Intente de nuevo.",
                     confidence=conf)
-            log_decision(user_message, conf, usadas, resultados, f"error_llm:{e}", llm_calls=_llm_calls, llm_secs=_llm_secs)
+            log_decision(user_message, conf, usadas, resultados, f"error_llm{_suf}:{e}", llm_calls=_llm_calls, llm_secs=_llm_secs)
             return AgentResult(
                 text="Tuve un inconveniente al comunicarme con el modelo, senor.",
                 confidence=conf)
