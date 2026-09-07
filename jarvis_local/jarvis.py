@@ -472,28 +472,38 @@ class Jarvis:
             logger.log_error("agente", str(e))
             return None  # si el agente falla, seguimos con el chat normal
 
+        # PLAN_EJECUCION FASE E · E0 — si el equipo está en swap, el turno del
+        # agente tarda minutos. Se lo decimos, en vez de solo tardar.
+        from jarvis_local.agent import memory_guard
+        aviso = memory_guard.aviso_degradado()
+
+        def _con_aviso(texto: str) -> str:
+            return f"{aviso}\n\n{texto}" if aviso else texto
+
         # El agente pide aclaracion: esa ES la respuesta correcta. Mandarla al
         # chat haria que el modelo divague o invente en vez de preguntar.
         if result.needs_clarification and result.text:
+            texto = _con_aviso(result.text)
             self.history.add_user(safe_input)
-            self.history.add_assistant(result.text)
+            self.history.add_assistant(texto)
             self._persist_message("user", safe_input)
-            self._persist_message("assistant", result.text)
+            self._persist_message("assistant", texto)
             logger.log_action(instruction=instruction,
                               result=f"[aclaracion] {result.text[:120]}")
-            return result.text
+            return texto
 
         if not result.tools_used or not result.text:
             return None
 
+        texto = _con_aviso(result.text)
         self.history.add_user(safe_input)
-        self.history.add_assistant(result.text)
+        self.history.add_assistant(texto)
         self._persist_message("user", safe_input)
-        self._persist_message("assistant", result.text)
+        self._persist_message("assistant", texto)
         logger.log_action(instruction=instruction,
                           result=f"[agente:{','.join(result.tools_used)}] "
                                  f"{result.text[:120]}")
-        return result.text
+        return texto
 
     def get_status(self) -> str:
         try:

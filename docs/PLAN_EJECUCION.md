@@ -537,16 +537,49 @@ merge a main.
       "Operacion completada" (por agente y por parser) y el `verify None`
       reportado CON salvedad (exigido, no tolerado).
 
-## FASE E — Control de máquina, oleada 1: procesos y sistema
+## FASE E — Control de máquina, oleada 1: procesos y sistema  🚧 EN CURSO (rama `feature/fase-e-procesos-sistema`)
 
 Modelo de permisos primero, para todas las oleadas: lectura sin preguntar;
 escritura se ejecuta y se verifica; destructivo/sistema exige confirmación
 explícita mostrando qué va a hacer, con cancelación. Nada de sudo implícito: si
 hace falta, documentar la regla sudoers y pedirla. Todo pasa por auditoría.
-- Capacidades: listar procesos por consumo, matar por nombre/PID con
-  confirmación, servicios systemd, notificaciones `notify-send`.
-- Detección de disponibilidad en runtime: si falta la herramienta del sistema,
-  se dice; nunca se falla en silencio.
+Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
+
+- [x] **E0 — Presupuesto de memoria (bloqueante)** (`jarvis_local/agent/
+      memory_guard.py`): implementa `docs/OPERACION_MEMORIA.md`, sin `psutil`
+      (una lectura de `/proc/meminfo`).
+      - `ajustado()` = `MemAvailable < 800 MB` → en `loop._run_simple`, tras
+        `select_tools()` (última vez que el turno toca bge-m3), se suelta
+        bge-m3 de RAM (`/api/embed` con `keep_alive: 0`) antes de la llamada a
+        llama. Verificado en vivo: descarga bge-m3 de `/api/ps`.
+      - `degradado()` = hay swap en uso **Y** `MemAvailable < 2 GB` (swap
+        ocupado con RAM holgada = páginas frías, NO es thrashing — caso real
+        observado). `jarvis._try_agent` antepone *"Voy a ir lento, senor: la
+        RAM está al límite… en swap…"* a la respuesta, en vez de solo tardar.
+      - `estado_del_sistema` gana una línea con MB disponibles, swap y
+        veredicto (holgada / ajustada / páginas frías / DEGRADADO).
+      - En un SO sin `/proc/meminfo` todo es no-op.
+- [ ] **E1 — Lista de intocables (bloqueante)**: procesos/servicios que NUNCA
+      se tocan, ni a petición explícita (gnome-shell + compositor, systemd/
+      logind/dbus, NetworkManager, sshd, ollama sirviendo, el propio JARVIS y
+      sus hijos). Guardia duro: si se pide, explica por qué no y ofrece la
+      alternativa. Ampliar con lo crítico del sistema del usuario, proponérselo
+      antes de fijar.
+- [ ] **E2 — Modelo de permisos**: lectura sin preguntar; escritura ejecuta +
+      verifica (D1); destructivo/sistema exige confirmación mostrando qué y
+      sobre qué, con cancelación. Sin sudo implícito (regla sudoers
+      documentada y pedida). Todo a la auditoría de D2.
+- [ ] **E3 — Procesos**: listar por CPU y RAM; matar por nombre/PID con
+      confirmación que muestra PID+nombre+comando+usuario; SIGTERM con espera,
+      SIGKILL solo tras 2º aviso; varios matches → preguntar, no elegir;
+      VERIFY que el proceso murió de verdad.
+- [ ] **E4 — Servicios systemd**: estado/iniciar/parar/reiniciar; user por
+      defecto, system exige sudo→confirmación+regla; intocables de E1;
+      VERIFY releyendo el estado.
+- [ ] **E5 — Notificaciones**: `notify-send` con detección de disponibilidad.
+- [ ] **Cierre**: banco EFECTO + FALLO FORZADO para lo nuevo (matar proceso de
+      prueba y comprobar; intentar matar gnome-shell y comprobar el bloqueo).
+      Suite, ruff, CI, merge.
 
 ## FASE F — Control de máquina, oleada 2: escritorio
 

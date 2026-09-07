@@ -32,6 +32,9 @@ def system_status() -> ActionPlan:
             lines.append(f"Bateria: {bat.percent:.0f} por ciento ({estado})")
         else:
             lines.append("Bateria: no detectada (equipo de escritorio)")
+        # FASE E · E0 — señal de degradación por memoria, consultable
+        from jarvis_local.agent.memory_guard import linea_estado
+        lines.append(linea_estado())
         plan.result = "Estado del sistema, senor:\n  " + "\n  ".join(lines)
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
