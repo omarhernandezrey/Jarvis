@@ -785,11 +785,19 @@ Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
       defecto → Ctrl+Alt+F3 arranca `getty`).
       **Pendiente de confirmación FÍSICA del usuario:** pulsar Ctrl+Alt+F3 y
       ver el `login:` (paso 0 del doc). Si no aparece, la fase se replantea.
-- [ ] **F4.1 — INVESTIGACIÓN** (sin código): GNOME 50.1 / Shell 50.1.
-      Evaluar extensión propia por D-Bus vs. extensiones existentes
-      mantenidas vs. sin-extensión (`gdbus`/`busctl` contra `org.gnome.Shell`,
-      Xwayland + `wmctrl`/`xdotool` para apps X11, portales). Recomendar y
-      esperar visto bueno.
+- [x] **F4.1 — INVESTIGACIÓN** (sin código). `docs/F4_INVESTIGACION_VENTANAS.md`.
+      Probado en vivo: `org.gnome.Shell.Eval` **desactivado**;
+      `org.gnome.Shell.Introspect.GetWindows` → **`AccessDenied`** (allowlist
+      fijo); ninguna otra vía D-Bus de ventanas. Xwayland solo ve apps X11
+      (hoy: solo WhatsApp) — inútil como capacidad general. No hay portal de
+      ventanas. **Conclusión: en Wayland, listar/cerrar ventanas nativas
+      requiere código en el compositor.**
+      **Recomendación:** partir de **Window Calls / Window Calls Extended**
+      (extensión de terceros que ya expone `List`/`Details`/`Activate`/`Close`
+      por D-Bus), *vendored* bajo UUID propio `ventanas-jarvis@local` y
+      recortada a esos 4 métodos (quitar Move/Resize/Max/Min). Plan B:
+      extensión propia mínima (~150 líneas). **Esperando visto bueno del
+      usuario para F4.2.**
 - [ ] **F4.2 — IMPLEMENTACIÓN** (solo con OK sobre F4.1). Alcance mínimo:
       listar ventanas, enfocar una, cerrarla (mover/organizar FUERA).
       Probar en usuario/sesión aparte, nunca en la de trabajo. Interruptor
