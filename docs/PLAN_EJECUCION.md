@@ -28,7 +28,7 @@
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `ed26f56`) |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `8dcb8de`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
-| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `<pendiente>`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
+| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `85873e4`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
 | G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
 | I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
@@ -767,7 +767,7 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         recurso físico no hay camino de escritura que ejercitar. Cubiertos por
         `test_bluetooth.py` (15) con `bluetoothctl` simulado.
 
-### Segunda mitad — ventanas en Wayland  ✅ CÓDIGO CERRADO (merge `<pendiente>`) · falta F4.3 (instalar en la sesión de `omar`)
+### Segunda mitad — ventanas en Wayland  ✅ CÓDIGO CERRADO 2026-09-08 (merge `85873e4`) · falta F4.3 (instalar en la sesión de `omar`, paso manual)
 
 La tarea de más riesgo del plan: una extensión de GNOME corre DENTRO de
 `gnome-shell` (el compositor blindado en E1). Un fallo tumba la sesión.
