@@ -871,6 +871,13 @@ Portapapeles de escritura, teclado y ratón sintéticos con `ydotool`. La más
 peligrosa: confirmación siempre, límite de velocidad, interruptor global para
 desactivarla.
 
+- [x] **G0 — ANÁLISIS** (sin código). `docs/G0_ANALISIS_TECLADO.md`.
+      Recomendación entregada: (1) portapapeles de escritura ya, pieza
+      propia y pequeña; (2) teclado sintético — solo atajos allowlistados si
+      hay caso concreto, **nunca** `escribir(texto)` libre; por defecto
+      aplazarlo; (3) ratón fuera del roadmap. **Esperando que el usuario
+      fije el alcance.**
+
 > **Prerrequisito de entorno — resolver ANTES de escribir código, no a mitad.**
 > `ydotool` no funciona a secas: necesita el demonio **`ydotoold`** corriendo
 > y que el usuario pertenezca a un grupo con acceso a `/dev/uinput` (grupo
