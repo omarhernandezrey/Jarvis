@@ -669,15 +669,21 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
 >
 > | Punto | Lectura en vivo | Escritura en vivo | Motivo |
 > |---|---|---|---|
-> | F1 brillo | ✅ (se lee `intel_backlight` 287/937) | ❌ **implementado sin verificación en vivo** | `brightnessctl` no instalado. El portátil **sí** expone control por software (`/sys/class/backlight/intel_backlight`, panel eDP). Ejercitable en cuanto se instale `brightnessctl` (está en `universe`). |
-> | F2 red/WiFi | ✅ (`net_status`/`wifi_list` responden) | ⚠️ escrituras probadas solo con el guardia E1·c mockeado | **No hay WiFi operativo y no lo habrá en esta máquina**: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`. `nmcli WIFI-HW: missing`. Las escrituras (`connection up/down`, `radio`) son sobre `nmcli` genérico y quedan **sin verificación en vivo** por falta de hardware. |
-> | F3 Bluetooth | ✅ (`bt_status`/`bt_list`, controlador `hci0` activo) | ❌ **implementado sin verificación en vivo** | Adaptador presente y funcional, pero **0 dispositivos emparejados**. `bt_connect`/`bt_disconnect` solo operan sobre emparejados. Ejercitable en cuanto haya UN dispositivo emparejado (cualquiera). |
+> | Punto | Lectura en vivo | Escritura en vivo | Motivo |
+> |---|---|---|---|
+> | F1 brillo — lectura | ✅ `get_brightness()` devuelve 31% (287/937) con `brightnessctl` real | — | — |
+> | F1 brillo — escritura | — | ❌ **sin verificar el camino de ÉXITO**; ✅ FALLO FORZADO en vivo | `brightnessctl` instalado (2026-09-07). `set` da *Permission denied* sin sudo (udev rule → sysfs en grupo `video` + `g+w`; `omar` **no está en `video`**). Con el binario real, `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté: brightnessctl set 50% → …" — **no finge éxito** (esto sí queda probado en vivo). Falta el camino de éxito: `sudo usermod -aG video omar` + re-login. |
+> | F2 red/WiFi — lectura | ✅ `net_status`/`wifi_list` responden ("no hay hardware WiFi") | — | — |
+> | F2 red/WiFi — escritura | — | ❌ **implementado sin verificación en vivo — límite PERMANENTE** | No hay WiFi operativo ni lo habrá: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`, `nmcli WIFI-HW: missing`. `connection up/down` y `radio` quedan sin ejercitar por falta de hardware. |
+> | F3 Bluetooth — lectura | ✅ `bt_status`/`bt_list`, controlador `hci0` activo | — | — |
+> | F3 Bluetooth — escritura | — | ❌ **implementado sin verificación en vivo** | Adaptador presente y funcional, **0 dispositivos emparejados**. `bt_connect`/`bt_disconnect` solo operan sobre emparejados. Pendiente: emparejar cualquier dispositivo y ejercitar con VERIFY real. |
 >
 > Acciones para cerrar la brecha (requieren al usuario):
-> - **F1:** `sudo apt install brightnessctl` → JARVIS ejercita leer/fijar/releer.
+> - **F1:** `sudo usermod -aG video omar` y cerrar/abrir sesión → JARVIS
+>   ejercita leer/fijar/releer y el límite inferior. (El paquete ya está.)
 > - **F3:** emparejar cualquier dispositivo desde Configuración > Bluetooth →
 >   JARVIS ejercita conectar/desconectar con VERIFY real.
-> - **F2:** nada que hacer sin hardware WiFi. Marcado como límite permanente.
+> - **F2:** nada que hacer sin hardware WiFi. Límite permanente.
 
 - [x] **F1 — Brillo** (`jarvis_local/tools/brightness.py`; parser
       `_parse_brillo`; contratos `controlar_brillo` + `brightness_up`/`down`/
@@ -690,11 +696,17 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
       - VERIFY: se relee `brightnessctl get`; cuadra → True; no cuadra →
         reintento y luego ERROR con "Intenté"; no se puede leer → EXECUTED con
         salvedad.
-      - **Implementado SIN verificación en vivo (escritura).** `brightnessctl`
-        no instalado; escribir en `/sys/class/backlight/intel_backlight` a pelo
-        necesita root (mi usuario no está en `video`, no hay udev rule). El
-        hardware SÍ soporta control por software. Pendiente: `sudo apt install
-        brightnessctl` y ejercitar.
+      - **En vivo (2026-09-07):** `brightnessctl` instalado.
+        `_hay_brightnessctl()` → True; `get_brightness()` → 31% real (lectura y
+        detección en runtime, PROBADAS). `set_brightness(50)` con el binario
+        real → `ERROR` + `verify.ok=False` + "Intenté: brightnessctl set 50%
+        → Permission denied" — **no finge éxito** (FALLO FORZADO real, PROBADO).
+      - **Falta el camino de ÉXITO de escritura.** `set` da *Permission
+        denied* sin sudo: udev rule de `brightness-udev` deja el sysfs en
+        grupo `video`+`g+w`, pero `omar` no está en `video`. Pendiente: `sudo
+        usermod -aG video omar` + re-login → ejercitar fijar/releer + límite
+        inferior. (Al volver a este código: el mensaje de ERROR repite el
+        stderr 3× por el bucle de reintento — pulir entonces.)
 - [x] **F2 — Red y WiFi** (`jarvis_local/tools/network.py`; parser
       `_parse_red`; contratos `estado_red`/`listar_wifi` (READ),
       `conectar_wifi` (EXECUTE), `wifi_encender`/`wifi_apagar`/`desconectar_red`
