@@ -619,6 +619,38 @@ def _parse_notificacion(m: str) -> IntentResult | None:
                         reason="Mostrar notificación de escritorio")
 
 
+# PLAN_EJECUCION FASE F · F1 — brillo de pantalla.
+_TRIGGER_BRILLO = re.compile(
+    r'\bbrillo\b'
+    r'|\bpantalla\b[^.?!]{0,25}\b(?:mas\s+)?(?:oscur\w+|clar\w+|brillante|tenue|atenu\w+)\b'
+    r'|\b(?:atenua|oscurece|aclara|ilumina)\b[^.?!]{0,15}\bpantalla\b',
+    re.IGNORECASE)
+
+
+def _parse_brillo(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_BRILLO.search(mm):
+        return None
+    m_nivel = re.search(r'\b(?:al|a|en)\s+(\d{1,3})\b', mm)
+    if m_nivel:
+        n = max(0, min(int(m_nivel.group(1)), 100))
+        return IntentResult(kind="tool_execute", tool="brightness_set",
+                            arguments={"level": n}, reason=f"Brillo al {n}%")
+    baja = re.search(r'\b(baja|bajame|bajale|reduce|reduceme|atenua|oscurece|'
+                     r'menos\s+brillo|mas\s+oscur\w+|mas\s+tenue)\b', mm)
+    sube = re.search(r'\b(sube|subeme|subele|aumenta|aumentame|aclara|ilumina|'
+                     r'mas\s+brillo|mas\s+clar\w+|mas\s+brillante)\b', mm)
+    if baja and not sube:
+        return IntentResult(kind="tool_execute", tool="brightness_down",
+                            reason="Bajar el brillo")
+    if sube and not baja:
+        return IntentResult(kind="tool_execute", tool="brightness_up",
+                            reason="Subir el brillo")
+    return IntentResult(kind="ambiguous",
+                        clarification="¿Subo o bajo el brillo, senor? ¿O lo pongo "
+                        "a un nivel exacto?")
+
+
 def _parse_media(low: str) -> IntentResult | None:
     """Volumen y control multimedia. Corre ANTES de fase4: 'quita el
     silencio' caeria en el patron de BORRAR ('quita...') si no."""
@@ -1201,6 +1233,11 @@ def parse_intent(message: str) -> IntentResult:
     auditoria = _parse_auditoria(m)
     if auditoria is not None:
         return auditoria
+
+    # --- BRILLO (FASE F · F1): antes de volumen, "sube el brillo" no es "sube" ---
+    brillo = _parse_brillo(m)
+    if brillo is not None:
+        return brillo
 
     # --- VOLUMEN Y MULTIMEDIA (antes de fase4: "quita el silencio"
     #     caeria en el patron de BORRAR) ---

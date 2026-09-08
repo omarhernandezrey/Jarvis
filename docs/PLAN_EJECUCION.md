@@ -657,6 +657,35 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
 Ventanas en Wayland (extensión GNOME + D-Bus: listar, enfocar, mover, cerrar),
 brillo `brightnessctl`, red/WiFi `nmcli`, Bluetooth.
 
+### Primera mitad — brillo, red/WiFi, Bluetooth  🚧 EN CURSO (rama `feature/fase-f-brillo-red-bt`)
+
+Ventanas Wayland van APARTE por su riesgo (no en esta sesión). Todas: ruta
+del parser (`llm_visible=False` si son delicadas), detección de disponibilidad
+en runtime con error claro, VERIFY con los tres desenlaces, auditoría D2,
+banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
+
+- [x] **F1 — Brillo** (`jarvis_local/tools/brightness.py`; parser
+      `_parse_brillo`; contratos `controlar_brillo` + `brightness_up`/`down`/
+      `set`, `llm_visible=False`).
+      - Detección en runtime: sin `brightnessctl` → ERROR ("instala
+        `brightnessctl`").
+      - **Límite inferior DURO** `MIN_BRILLO_PCT = 5`: nunca por debajo — que
+        la pantalla quede a 0 sin poder corregirlo es un fallo del que no se
+        sale hablándole a JARVIS. Al recortar, lo dice.
+      - VERIFY: se relee `brightnessctl get`; cuadra → True; no cuadra →
+        reintento y luego ERROR con "Intenté"; no se puede leer → EXECUTED con
+        salvedad.
+      - No ejercitado en vivo: `brightnessctl` no está instalado en esta
+        máquina (límite documentado).
+- [ ] **F2 — Red y WiFi** (`nmcli`): lectura sin preguntar (estado, red
+      actual, disponibles, IP); conectar a red conocida = escritura + VERIFY;
+      desconectar / apagar WiFi / cambiar de red = confirmación. Contraseñas
+      NUNCA en auditoría ni en el prompt (verificar la capa 0). Bloqueado si
+      hay transacción de paquetes en curso (guardia E1·c).
+- [ ] **F3 — Bluetooth** (`bluetoothctl`): estado, emparejados, conectar /
+      desconectar. Emparejar nuevos: evaluar (probablemente fuera por
+      interacción).
+
 ## FASE G — Control de máquina, oleada 3: interacción
 
 Portapapeles de escritura, teclado y ratón sintéticos con `ydotool`. La más

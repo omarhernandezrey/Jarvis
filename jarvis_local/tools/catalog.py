@@ -268,6 +268,16 @@ def _notify(mensaje: str, titulo: str = "JARVIS", urgencia: str = "normal"):
     return send_notification(mensaje, titulo, urgencia)
 
 
+def _brightness(accion: str, nivel: int = 50):
+    from jarvis_local.tools import brightness as b
+    accion = (accion or "").lower()
+    if accion in ("subir", "sube", "mas"):
+        return b.brightness_up()
+    if accion in ("bajar", "baja", "menos"):
+        return b.brightness_down()
+    return b.set_brightness(int(nivel))
+
+
 def _untouchables_list():
     from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
     from jarvis_local.safety.untouchables import explicar
@@ -954,6 +964,35 @@ CONTRACTS: list[ToolContract] = [
                  _obj({}, []), _untouchables_list, RiskLevel.READ, llm_visible=False,
                  verify=_V_LECTURA, revert="n/a",
                  parser_intents=("untouchables",)),
+
+    # ---- Brillo de pantalla (FASE F · F1) ----
+    ToolContract("controlar_brillo",
+                 "Sube, baja o fija el brillo de la pantalla (0-100).",
+                 _obj({"accion": _str("subir | bajar | nivel", ["subir", "bajar", "nivel"]),
+                       "nivel": _int("Nivel 0-100, solo si accion=nivel")}, ["accion"]),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1/D1): se relee `brightnessctl get`; si no "
+                        "cuadra, reintento y luego ERROR. Nunca por debajo del "
+                        "mínimo utilizable. Sin brightnessctl -> ERROR claro.",
+                 revert="Fijar el brillo anterior.",
+                 parser_intents=("brightness_ctl",)),
+    ToolContract("brightness_up", "Sube el brillo un paso.", _obj({}, []),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1): se comprueba que el brillo subió.",
+                 revert="brightness_down.",
+                 parser_intents=("brightness_up",), parser_fixed={"accion": "subir"}),
+    ToolContract("brightness_down", "Baja el brillo un paso.", _obj({}, []),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1): se comprueba que el brillo bajó.",
+                 revert="brightness_up.",
+                 parser_intents=("brightness_down",), parser_fixed={"accion": "bajar"}),
+    ToolContract("brightness_set", "Fija el brillo a un nivel exacto (0-100).",
+                 _obj({"level": _int("Nivel 0-100")}),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1): se relee el brillo real y se compara.",
+                 revert="Fijar el nivel anterior.",
+                 parser_intents=("brightness_set",), parser_fixed={"accion": "nivel"},
+                 parser_argmap={"level": "nivel"}),
 
     # ---- Notificaciones (FASE E · E5) ----
     ToolContract("enviar_notificacion",
