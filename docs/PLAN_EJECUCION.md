@@ -677,11 +677,30 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         salvedad.
       - No ejercitado en vivo: `brightnessctl` no está instalado en esta
         máquina (límite documentado).
-- [ ] **F2 — Red y WiFi** (`nmcli`): lectura sin preguntar (estado, red
-      actual, disponibles, IP); conectar a red conocida = escritura + VERIFY;
-      desconectar / apagar WiFi / cambiar de red = confirmación. Contraseñas
-      NUNCA en auditoría ni en el prompt (verificar la capa 0). Bloqueado si
-      hay transacción de paquetes en curso (guardia E1·c).
+- [x] **F2 — Red y WiFi** (`jarvis_local/tools/network.py`; parser
+      `_parse_red`; contratos `estado_red`/`listar_wifi` (READ),
+      `conectar_wifi` (EXECUTE), `wifi_encender`/`wifi_apagar`/`desconectar_red`
+      (DELETE, confirmación); `llm_visible=False`).
+      - Lectura sin preguntar: `net_status` (interfaces, conexión activa, IP,
+        estado WiFi), `wifi_list` (SSID/señal/seguridad). Sin `nmcli` → ERROR.
+        Sin hardware WiFi → lo dice.
+      - `wifi_connect(red)`: **solo a redes YA GUARDADAS** (`nmcli connection
+        up <nombre>`, que usa las credenciales de NetworkManager). Red no
+        guardada → BLOQUEADO, lista las que hay. VERIFY: se comprueba que la
+        conexión quedó `activated`, no el rc.
+      - `wifi_apagar`/`desconectar_red`: **confirmación** (`texto_confirmacion`
+        con el aviso de que puede dejar sin conexión). `execute_*` releen el
+        estado real (VERIFY).
+      - **Contraseñas**: JARVIS nunca maneja una — no hay ninguna en params,
+        auditoría ni prompt. Además la **capa 0 ahora redacta `psk` /
+        `802-11-wireless-security.psk`** (antes solo `password`): añadido a
+        `safety/secrets.py`.
+      - **Guardia E1·c**: `wifi_connect`/`wifi_radio`/`disconnect` → BLOQUEADO
+        si hay transacción de paquetes en curso.
+      - En vivo: `net_status`/`wifi_list` OK; el equipo no tiene hardware WiFi
+        (límite) y hay un `unattended-upgrade` corriendo, así que el guardia
+        E1·c bloqueó las escrituras — comportamiento correcto, cubierto por
+        tests con la transacción mockeada.
 - [ ] **F3 — Bluetooth** (`bluetoothctl`): estado, emparejados, conectar /
       desconectar. Emparejar nuevos: evaluar (probablemente fuera por
       interacción).

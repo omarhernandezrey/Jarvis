@@ -619,6 +619,62 @@ def _parse_notificacion(m: str) -> IntentResult | None:
                         reason="Mostrar notificación de escritorio")
 
 
+# PLAN_EJECUCION FASE F · F2 — red y WiFi.
+_TRIGGER_RED = re.compile(
+    r'\bwifi\b|\bwi-fi\b|\bred\b|\bconexion\b|\bconectad[oa]\b|\binternet\b|'
+    r'\bnmcli\b|\bethernet\b|\bdesconect\w+', re.IGNORECASE)
+# el nombre de la red se saca del texto ORIGINAL (los SSID distinguen mayúsculas)
+_RED_NOMBRE = re.compile(
+    r'\b(?:conect\w+|desconect\w+)(?:me)?\s+(?:a\s+|al\s+|de\s+|del\s+)?'
+    r'(?:la\s+red\s+|el\s+wifi\s+|wifi\s+|red\s+)?["\']?([\w .\-]+?)["\']?\s*[.!?]*\s*$',
+    re.IGNORECASE)
+_RED_GENERICO = {"", "la red", "el wifi", "la", "el", "de", "internet", "wifi", "eso"}
+
+
+def _parse_red(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_RED.search(mm):
+        return None
+    hay_wifi = re.search(r'\bwi-?fi\b', mm)
+
+    def _nombre() -> str:
+        g = _RED_NOMBRE.search(m.strip())          # ORIGINAL, con mayúsculas
+        n = g.group(1).strip() if g else ""
+        return "" if n.lower() in _RED_GENERICO else n
+
+    # encender / apagar WiFi
+    if hay_wifi and re.search(r'\b(apaga|apagame|desactiva|desactivame|quita)\b', mm):
+        return IntentResult(kind="tool_plan", tool="wifi_off", reason="Apagar el WiFi")
+    if hay_wifi and re.search(r'\b(enciende|encendeme|activa|activame|pon)\b', mm):
+        return IntentResult(kind="tool_plan", tool="wifi_on", reason="Encender el WiFi")
+
+    # desconectar
+    if re.search(r'\bdesconect\w+', mm):
+        return IntentResult(kind="tool_plan", tool="net_disconnect",
+                            arguments={"objetivo": _nombre()},
+                            reason="Desconectar la red")
+
+    # conectar a una red
+    if re.search(r'\bconect\w+', mm) and not re.search(r'\bestoy\s+conect', mm):
+        red = _nombre()
+        if red:
+            return IntentResult(kind="tool_execute", tool="wifi_connect",
+                                arguments={"red": red}, reason=f"Conectar a {red}")
+
+    # listar redes wifi
+    if hay_wifi and re.search(r'\b(que\s+redes|redes\s+(?:hay|disponibles|visibles)|'
+                              r'lista\s+de|escanea|busca\s+redes|muestrame\s+las\s+redes)\b', mm):
+        return IntentResult(kind="tool_read", tool="wifi_list",
+                            reason="Listar redes WiFi")
+
+    # estado de la red (por defecto)
+    if re.search(r'\b(estado|como\s+esta|que\s+red|cual\s+es\s+mi|estoy\s+conectad|'
+                 r'tengo\s+(?:red|internet|conexion)|hay\s+internet|mi\s+conexion)\b', mm):
+        return IntentResult(kind="tool_read", tool="net_status",
+                            reason="Estado de la red")
+    return None
+
+
 # PLAN_EJECUCION FASE F · F1 — brillo de pantalla.
 _TRIGGER_BRILLO = re.compile(
     r'\bbrillo\b'
@@ -1233,6 +1289,11 @@ def parse_intent(message: str) -> IntentResult:
     auditoria = _parse_auditoria(m)
     if auditoria is not None:
         return auditoria
+
+    # --- RED / WIFI (FASE F · F2) ---
+    red = _parse_red(m)
+    if red is not None:
+        return red
 
     # --- BRILLO (FASE F · F1): antes de volumen, "sube el brillo" no es "sube" ---
     brillo = _parse_brillo(m)

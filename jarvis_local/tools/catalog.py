@@ -268,6 +268,31 @@ def _notify(mensaje: str, titulo: str = "JARVIS", urgencia: str = "normal"):
     return send_notification(mensaje, titulo, urgencia)
 
 
+def _net_status():
+    from jarvis_local.tools.network import net_status
+    return net_status()
+
+
+def _wifi_list():
+    from jarvis_local.tools.network import wifi_list
+    return wifi_list()
+
+
+def _wifi_connect(red: str):
+    from jarvis_local.tools.network import wifi_connect
+    return wifi_connect(red)
+
+
+def _wifi_radio(encender: bool = True):
+    from jarvis_local.tools.network import plan_wifi_radio
+    return plan_wifi_radio(bool(encender))
+
+
+def _net_disconnect(objetivo: str = ""):
+    from jarvis_local.tools.network import plan_disconnect
+    return plan_disconnect(objetivo)
+
+
 def _brightness(accion: str, nivel: int = 50):
     from jarvis_local.tools import brightness as b
     accion = (accion or "").lower()
@@ -993,6 +1018,53 @@ CONTRACTS: list[ToolContract] = [
                  revert="Fijar el nivel anterior.",
                  parser_intents=("brightness_set",), parser_fixed={"accion": "nivel"},
                  parser_argmap={"level": "nivel"}),
+
+    # ---- Red y WiFi (FASE F · F2) ----
+    ToolContract("estado_red",
+                 "Dice el estado de la red: interfaces, conexión activa, IP y "
+                 "si el WiFi está encendido.",
+                 _obj({}, []), _net_status, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("net_status",)),
+    ToolContract("listar_wifi",
+                 "Lista las redes WiFi visibles con su señal y seguridad.",
+                 _obj({}, []), _wifi_list, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("wifi_list",)),
+    ToolContract("conectar_wifi",
+                 "Conecta a una red WiFi YA GUARDADA (usa la contraseña que "
+                 "NetworkManager tiene; JARVIS no maneja contraseñas).",
+                 _obj({"red": _str("Nombre de la red guardada")}),
+                 _wifi_connect, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): tras `nmcli connection up` se "
+                        "comprueba que la conexión está 'activated', no el rc. "
+                        "Red no guardada -> BLOQUEADO. Transacción de paquetes "
+                        "en curso -> BLOQUEADO.",
+                 revert="desconectar_red.",
+                 parser_intents=("wifi_connect",)),
+    ToolContract("wifi_encender", "Enciende la radio WiFi (con confirmación).",
+                 _obj({}, []), _wifi_radio, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): se relee `nmcli radio wifi`.",
+                 revert="wifi_apagar.",
+                 plan_capable=True, plan_run=_wifi_radio,
+                 parser_intents=("wifi_on",), parser_fixed={"encender": True}),
+    ToolContract("wifi_apagar",
+                 "Apaga la radio WiFi. Confirmación: puede dejarte sin conexión.",
+                 _obj({}, []), _wifi_radio, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): se relee `nmcli radio wifi`.",
+                 revert="wifi_encender.",
+                 plan_capable=True, plan_run=_wifi_radio,
+                 parser_intents=("wifi_off",), parser_fixed={"encender": False}),
+    ToolContract("desconectar_red",
+                 "Desconecta una conexión de red. Confirmación: si es la única, "
+                 "JARVIS pierde acceso a todo lo que no sea local.",
+                 _obj({"objetivo": _str("Nombre de la conexión. Vacío = la de WiFi")}, []),
+                 _net_disconnect, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): se comprueba que la conexión ya no "
+                        "está activa.",
+                 revert="Volver a conectar (conectar_wifi / nmcli connection up).",
+                 plan_capable=True, plan_run=_net_disconnect,
+                 parser_intents=("net_disconnect",)),
 
     # ---- Notificaciones (FASE E · E5) ----
     ToolContract("enviar_notificacion",
