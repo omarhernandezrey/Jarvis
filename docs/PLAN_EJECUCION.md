@@ -767,6 +767,36 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         recurso físico no hay camino de escritura que ejercitar. Cubiertos por
         `test_bluetooth.py` (15) con `bluetoothctl` simulado.
 
+### Segunda mitad — ventanas en Wayland  🚧 EN CURSO (rama `feature/fase-f-ventanas-wayland`)
+
+La tarea de más riesgo del plan: una extensión de GNOME corre DENTRO de
+`gnome-shell` (el compositor blindado en E1). Un fallo tumba la sesión.
+Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
+
+- [x] **F4.0 — RECUPERACIÓN** (bloqueante). `docs/RECUPERACION_GNOME.md`:
+      runbook literal, legible desde el móvil con la pantalla en negro.
+      Cubre escenario A (cambio de TTY posible), B (bucle de caída), C (nada
+      responde → recovery mode de GRUB). Comandos de rescate verificados en
+      vivo (2026-09-07) como `omar` **sin sudo**:
+      `dconf write /org/gnome/shell/disable-user-extensions true` y
+      `gsettings set` escriben y revierten; `journalctl -b 0 _COMM=gnome-shell`
+      se lee sin sudo. Entorno: GNOME Shell 50.1, Wayland, GDM3; sesión en
+      tty2, GDM en tty1, tty3–tty6 libres para login (`NAutoVTs=6` por
+      defecto → Ctrl+Alt+F3 arranca `getty`).
+      **Pendiente de confirmación FÍSICA del usuario:** pulsar Ctrl+Alt+F3 y
+      ver el `login:` (paso 0 del doc). Si no aparece, la fase se replantea.
+- [ ] **F4.1 — INVESTIGACIÓN** (sin código): GNOME 50.1 / Shell 50.1.
+      Evaluar extensión propia por D-Bus vs. extensiones existentes
+      mantenidas vs. sin-extensión (`gdbus`/`busctl` contra `org.gnome.Shell`,
+      Xwayland + `wmctrl`/`xdotool` para apps X11, portales). Recomendar y
+      esperar visto bueno.
+- [ ] **F4.2 — IMPLEMENTACIÓN** (solo con OK sobre F4.1). Alcance mínimo:
+      listar ventanas, enfocar una, cerrarla (mover/organizar FUERA).
+      Probar en usuario/sesión aparte, nunca en la de trabajo. Interruptor
+      para desactivar la extensión sin tocar el compositor. Cerrar ventana =
+      destructivo (E2): confirmación mostrando qué ventana. Intocables de E1
+      nunca se tocan. VERIFY real: la ventana desapareció, el foco cambió.
+
 ## FASE G — Control de máquina, oleada 3: interacción
 
 Portapapeles de escritura, teclado y ratón sintéticos con `ydotool`. La más
