@@ -669,22 +669,17 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
 >
 > | Punto | Lectura en vivo | Escritura en vivo | Motivo |
 > |---|---|---|---|
-> | F1 brillo — lectura | ✅ `get_brightness()` → 31% real (287/937) con `brightnessctl` instalado | — | — |
-> | F1 brillo — FALLO FORZADO | — | ✅ probado en vivo | Con el binario real y sin permiso de escritura: `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté: brightnessctl set 50% → Permission denied". **No finge éxito.** |
-> | F1 brillo — camino de ÉXITO (fijar/releer, recorte a 5%) | — | ❌ **sin verificar** | `brightnessctl set` exige pertenecer al grupo `video` (udev rule de `brightness-udev` → sysfs `video`+`g+w`). `sudo usermod -aG video omar` hecho (2026-09-07 20:24) y `omar` ya figura en `/etc/group`, **pero el proceso de Claude Code precede al `usermod`**: sus grupos son los de antes (`4 24 27 30 46 100 111 114 115 973 1000`, sin `44`) y `newgrp`/`sg` no están en el sistema para recargarlos. Requiere **reiniciar Claude Code** (`claude --continue`) para heredar el grupo y ejercitar. |
+> | **F1 brillo** | ✅ **PROBADO** | ✅ **PROBADO** | Sesión con grupo `video` (2026-09-07). `get_brightness()` → 31%. `set_brightness(60)` → `EXECUTED`, `verify.ok=True` (`método: brightnessctl get`, `detalle: brillo=60%`), relectura = 60%. `set_brightness(25)` → 25%, `verify.ok=True`. `set_brightness(0)` → **recorte a 5%**, `EXECUTED`, `verify.ok=True`, mensaje "no bajo del 5%…", relectura = 5%. `brightness_up`/`down` relativos ±10% OK. Restaurado al valor original. **VERIFY True real, no None.** |
+> | F1 brillo — FALLO FORZADO | ✅ probado (sesión anterior) | — | Con el binario real y sin permiso de escritura: `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté: brightnessctl set 50% → Permission denied". No finge éxito. |
 > | F2 red/WiFi — lectura | ✅ `net_status`/`wifi_list` responden ("no hay hardware WiFi") | — | — |
-> | F2 red/WiFi — escritura | — | ❌ **límite PERMANENTE de hardware** | No hay WiFi operativo ni lo habrá: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`, `nmcli WIFI-HW: missing`. `connection up/down` y `radio` quedan sin ejercitar. |
+> | F2 red/WiFi — escritura | — | ❌ **límite PERMANENTE de hardware — NO VERIFICABLE en esta máquina** | No hay WiFi operativo ni lo habrá: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`, `nmcli WIFI-HW: missing`. `connection up/down` y `radio` quedan sin ejercitar. Cubierto solo por tests con `nmcli` simulado. |
 > | F3 Bluetooth — lectura | ✅ `bt_status`/`bt_list`, controlador `hci0` activo | — | — |
-> | F3 Bluetooth — escritura | — | ❌ **sin verificar** | Adaptador presente y funcional. Tras el intento de emparejamiento del usuario (2026-09-07 20:22) BlueZ sigue con **0 dispositivos vinculados**: `/var/lib/bluetooth/B8:86:87:BE:8D:70/` no tiene ninguna carpeta `<MAC>/`, `bluetoothctl devices Paired` vacío (posible dispositivo BLE que conecta sin *bond*, o el emparejado no persistió). `bt_connect`/`bt_disconnect` operan solo sobre vinculados. Pendiente: un dispositivo **realmente vinculado** (que aparezca en `bluetoothctl devices Paired`). |
+> | F3 Bluetooth — escritura | — | ❌ **sin verificar** | Adaptador presente y funcional. Tras dos intentos de emparejamiento del usuario, `bluetoothctl devices Paired` sigue **vacío** — el dispositivo no queda vinculado (*bonded*) a nivel de BlueZ. `bt_connect`/`bt_disconnect` operan solo sobre vinculados. Pendiente decidir con el usuario: dispositivo BLE que no hace *bond* → marcar NO VERIFICABLE con este hardware; o vincular uno clásico que persista. |
 >
 > Acciones para cerrar la brecha (requieren al usuario):
-> - **F1:** reiniciar Claude Code (`claude --continue`) — el `usermod -aG video`
->   ya está hecho, solo falta que el proceso herede el grupo. Luego JARVIS
->   ejercita fijar/releer y el recorte a 5%.
-> - **F3:** vincular un dispositivo que persista en `bluetoothctl devices
->   Paired` (comprobar en Configuración > Bluetooth que quede como
->   "emparejado", no solo "conectado"). Luego JARVIS ejercita
->   conectar/desconectar con VERIFY real.
+> - **F1:** ✅ nada — verificado en vivo.
+> - **F3:** confirmar qué dispositivo se emparejó y si es BLE. Si no persiste
+>   como *bonded* en `bluetoothctl devices Paired`, se marca NO VERIFICABLE.
 > - **F2:** nada que hacer sin hardware WiFi. Límite permanente.
 
 - [x] **F1 — Brillo** (`jarvis_local/tools/brightness.py`; parser
@@ -698,17 +693,21 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
       - VERIFY: se relee `brightnessctl get`; cuadra → True; no cuadra →
         reintento y luego ERROR con "Intenté"; no se puede leer → EXECUTED con
         salvedad.
-      - **En vivo (2026-09-07):** `brightnessctl` instalado.
-        `_hay_brightnessctl()` → True; `get_brightness()` → 31% real (lectura y
-        detección en runtime, PROBADAS). `set_brightness(50)` con el binario
-        real → `ERROR` + `verify.ok=False` + "Intenté: brightnessctl set 50%
-        → Permission denied" — **no finge éxito** (FALLO FORZADO real, PROBADO).
-      - **Falta el camino de ÉXITO de escritura.** `set` da *Permission
-        denied* sin sudo: udev rule de `brightness-udev` deja el sysfs en
-        grupo `video`+`g+w`, pero `omar` no está en `video`. Pendiente: `sudo
-        usermod -aG video omar` + re-login → ejercitar fijar/releer + límite
-        inferior. (Al volver a este código: el mensaje de ERROR repite el
-        stderr 3× por el bucle de reintento — pulir entonces.)
+      - **EJERCITADO EN VIVO Y VERIFICADO (2026-09-07)**, con `brightnessctl`
+        instalado y el usuario en el grupo `video`:
+        - lectura: `get_brightness()` → 31% real;
+        - fijar: `set_brightness(60)` → `EXECUTED`, `verify.ok=True`
+          (`brightnessctl get` → `brillo=60%`), relectura = 60%; ídem a 25%;
+        - recorte: `set_brightness(0)` → queda en **5%** (`MIN_BRILLO_PCT`),
+          `EXECUTED`, `verify.ok=True`, mensaje "no bajo del 5%…";
+        - relativos: `brightness_up`/`brightness_down` ±10% OK;
+        - valor original restaurado al terminar.
+        **VERIFY True real (no None).**
+      - FALLO FORZADO (sesión previa, sin permiso de escritura):
+        `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté:
+        brightnessctl set 50% → Permission denied" — no finge éxito.
+      - Deuda menor: cuando falla, el mensaje de `ERROR` repite el stderr 3×
+        por el bucle de reintento. Pulir al volver a este módulo.
 - [x] **F2 — Red y WiFi** (`jarvis_local/tools/network.py`; parser
       `_parse_red`; contratos `estado_red`/`listar_wifi` (READ),
       `conectar_wifi` (EXECUTE), `wifi_encender`/`wifi_apagar`/`desconectar_red`
