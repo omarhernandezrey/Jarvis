@@ -293,6 +293,26 @@ def _net_disconnect(objetivo: str = ""):
     return plan_disconnect(objetivo)
 
 
+def _bt_status():
+    from jarvis_local.tools.bluetooth import bt_status
+    return bt_status()
+
+
+def _bt_list():
+    from jarvis_local.tools.bluetooth import bt_list
+    return bt_list()
+
+
+def _bt_connect(objetivo: str = ""):
+    from jarvis_local.tools.bluetooth import bt_connect
+    return bt_connect(objetivo)
+
+
+def _bt_disconnect(objetivo: str = ""):
+    from jarvis_local.tools.bluetooth import bt_disconnect
+    return bt_disconnect(objetivo)
+
+
 def _brightness(accion: str, nivel: int = 50):
     from jarvis_local.tools import brightness as b
     accion = (accion or "").lower()
@@ -1065,6 +1085,40 @@ CONTRACTS: list[ToolContract] = [
                  revert="Volver a conectar (conectar_wifi / nmcli connection up).",
                  plan_capable=True, plan_run=_net_disconnect,
                  parser_intents=("net_disconnect",)),
+
+    # ---- Bluetooth (FASE F · F3) ----
+    ToolContract("estado_bluetooth",
+                 "Dice el estado del Bluetooth: encendido, cuántos dispositivos "
+                 "emparejados y cuántos conectados.",
+                 _obj({}, []), _bt_status, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("bt_status",)),
+    ToolContract("listar_bluetooth",
+                 "Lista los dispositivos Bluetooth emparejados y marca los "
+                 "conectados.",
+                 _obj({}, []), _bt_list, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("bt_list",)),
+    ToolContract("conectar_bluetooth",
+                 "Conecta a un dispositivo Bluetooth YA EMPAREJADO (por nombre o "
+                 "MAC). Emparejar uno nuevo no: pide un PIN interactivo.",
+                 _obj({"objetivo": _str("Nombre o MAC del dispositivo emparejado; "
+                                        "vacío = el único emparejado")}, []),
+                 _bt_connect, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F3/D1): tras `bluetoothctl connect` se lee "
+                        "`Connected:` de `bluetoothctl info` — yes/no/ilegible "
+                        "(los tres desenlaces). No emparejado -> BLOQUEADO.",
+                 revert="desconectar_bluetooth.",
+                 parser_intents=("bt_connect",)),
+    ToolContract("desconectar_bluetooth",
+                 "Desconecta un dispositivo Bluetooth (por nombre o MAC; vacío = "
+                 "el único conectado). No pide confirmación: no te deja sin red.",
+                 _obj({"objetivo": _str("Nombre o MAC; vacío = el único conectado")}, []),
+                 _bt_disconnect, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F3/D1): se comprueba que `Connected: no` en "
+                        "`bluetoothctl info`.",
+                 revert="conectar_bluetooth.",
+                 parser_intents=("bt_disconnect",)),
 
     # ---- Notificaciones (FASE E · E5) ----
     ToolContract("enviar_notificacion",

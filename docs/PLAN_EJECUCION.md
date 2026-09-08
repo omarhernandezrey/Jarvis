@@ -701,9 +701,30 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         (límite) y hay un `unattended-upgrade` corriendo, así que el guardia
         E1·c bloqueó las escrituras — comportamiento correcto, cubierto por
         tests con la transacción mockeada.
-- [ ] **F3 — Bluetooth** (`bluetoothctl`): estado, emparejados, conectar /
-      desconectar. Emparejar nuevos: evaluar (probablemente fuera por
-      interacción).
+- [x] **F3 — Bluetooth** (`jarvis_local/tools/bluetooth.py`; parser
+      `_parse_bluetooth`; contratos `estado_bluetooth`/`listar_bluetooth`
+      (READ), `conectar_bluetooth`/`desconectar_bluetooth` (EXECUTE);
+      `llm_visible=False`).
+      - Lectura sin preguntar: `bt_status` (encendido, nº emparejados/
+        conectados), `bt_list` (emparejados, `*` = conectado). Sin
+        `bluetoothctl` → ERROR ("instala `bluez`"). Sin controlador → ERROR.
+      - `bt_connect`/`bt_disconnect`: **solo dispositivos YA EMPAREJADOS**
+        (por nombre o MAC; objetivo vacío = el único). No emparejado →
+        BLOQUEADO, lista los que hay. VARIAS coincidencias → BLOQUEADO, pide
+        el nombre exacto. VERIFY real: se lee `Connected:` de `bluetoothctl
+        info` — yes → True / no → ERROR con "Intenté" / ilegible → EXECUTED
+        con salvedad.
+      - Desconectar **no** pide confirmación: no deja a JARVIS sin red (a
+        diferencia del WiFi en F2).
+      - **Emparejar dispositivos nuevos: FUERA.** Pide un PIN/passkey
+        interactivo que JARVIS no puede teclear. El parser lo detecta y lo
+        explica ("empareja desde Configuración > Bluetooth"); no se finge.
+        Encender/apagar el adaptador también queda fuera de F3 y se dice.
+      - En vivo: `bt_status`/`bt_list` OK (controlador
+        `B8:86:87:BE:8D:70` encendido, 0 emparejados). `bt_connect`/
+        `bt_disconnect` no ejercitados en vivo: no hay ningún dispositivo
+        emparejado en esta máquina (límite documentado); cubiertos por tests
+        con `bluetoothctl` simulado.
 
 ## FASE G — Control de máquina, oleada 3: interacción
 
