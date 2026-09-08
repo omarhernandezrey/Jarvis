@@ -664,6 +664,21 @@ del parser (`llm_visible=False` si son delicadas), detección de disponibilidad
 en runtime con error claro, VERIFY con los tres desenlaces, auditoría D2,
 banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
 
+> **ESTADO DE VERIFICACIÓN EN VIVO (los tests NO son evidencia de
+> funcionamiento — criterio D0).** A fecha de cierre de esta media fase:
+>
+> | Punto | Lectura en vivo | Escritura en vivo | Motivo |
+> |---|---|---|---|
+> | F1 brillo | ✅ (se lee `intel_backlight` 287/937) | ❌ **implementado sin verificación en vivo** | `brightnessctl` no instalado. El portátil **sí** expone control por software (`/sys/class/backlight/intel_backlight`, panel eDP). Ejercitable en cuanto se instale `brightnessctl` (está en `universe`). |
+> | F2 red/WiFi | ✅ (`net_status`/`wifi_list` responden) | ⚠️ escrituras probadas solo con el guardia E1·c mockeado | **No hay WiFi operativo y no lo habrá en esta máquina**: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`. `nmcli WIFI-HW: missing`. Las escrituras (`connection up/down`, `radio`) son sobre `nmcli` genérico y quedan **sin verificación en vivo** por falta de hardware. |
+> | F3 Bluetooth | ✅ (`bt_status`/`bt_list`, controlador `hci0` activo) | ❌ **implementado sin verificación en vivo** | Adaptador presente y funcional, pero **0 dispositivos emparejados**. `bt_connect`/`bt_disconnect` solo operan sobre emparejados. Ejercitable en cuanto haya UN dispositivo emparejado (cualquiera). |
+>
+> Acciones para cerrar la brecha (requieren al usuario):
+> - **F1:** `sudo apt install brightnessctl` → JARVIS ejercita leer/fijar/releer.
+> - **F3:** emparejar cualquier dispositivo desde Configuración > Bluetooth →
+>   JARVIS ejercita conectar/desconectar con VERIFY real.
+> - **F2:** nada que hacer sin hardware WiFi. Marcado como límite permanente.
+
 - [x] **F1 — Brillo** (`jarvis_local/tools/brightness.py`; parser
       `_parse_brillo`; contratos `controlar_brillo` + `brightness_up`/`down`/
       `set`, `llm_visible=False`).
@@ -675,8 +690,11 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
       - VERIFY: se relee `brightnessctl get`; cuadra → True; no cuadra →
         reintento y luego ERROR con "Intenté"; no se puede leer → EXECUTED con
         salvedad.
-      - No ejercitado en vivo: `brightnessctl` no está instalado en esta
-        máquina (límite documentado).
+      - **Implementado SIN verificación en vivo (escritura).** `brightnessctl`
+        no instalado; escribir en `/sys/class/backlight/intel_backlight` a pelo
+        necesita root (mi usuario no está en `video`, no hay udev rule). El
+        hardware SÍ soporta control por software. Pendiente: `sudo apt install
+        brightnessctl` y ejercitar.
 - [x] **F2 — Red y WiFi** (`jarvis_local/tools/network.py`; parser
       `_parse_red`; contratos `estado_red`/`listar_wifi` (READ),
       `conectar_wifi` (EXECUTE), `wifi_encender`/`wifi_apagar`/`desconectar_red`
@@ -697,10 +715,12 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         `safety/secrets.py`.
       - **Guardia E1·c**: `wifi_connect`/`wifi_radio`/`disconnect` → BLOQUEADO
         si hay transacción de paquetes en curso.
-      - En vivo: `net_status`/`wifi_list` OK; el equipo no tiene hardware WiFi
-        (límite) y hay un `unattended-upgrade` corriendo, así que el guardia
-        E1·c bloqueó las escrituras — comportamiento correcto, cubierto por
-        tests con la transacción mockeada.
+      - **En vivo:** `net_status`/`wifi_list` OK (responden "no hay hardware
+        WiFi"). Escrituras (`connection up/down`, `radio`) **sin verificación
+        en vivo**: no hay interfaz WiFi (Broadcom BCM43228 sin driver `wl`,
+        límite permanente de esta máquina). El guardia E1·c además bloqueó las
+        pruebas por un `unattended-upgrade` real — cubierto por tests con la
+        transacción mockeada.
 - [x] **F3 — Bluetooth** (`jarvis_local/tools/bluetooth.py`; parser
       `_parse_bluetooth`; contratos `estado_bluetooth`/`listar_bluetooth`
       (READ), `conectar_bluetooth`/`desconectar_bluetooth` (EXECUTE);
@@ -720,11 +740,12 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         interactivo que JARVIS no puede teclear. El parser lo detecta y lo
         explica ("empareja desde Configuración > Bluetooth"); no se finge.
         Encender/apagar el adaptador también queda fuera de F3 y se dice.
-      - En vivo: `bt_status`/`bt_list` OK (controlador
+      - **En vivo:** `bt_status`/`bt_list` OK (controlador `hci0` /
         `B8:86:87:BE:8D:70` encendido, 0 emparejados). `bt_connect`/
-        `bt_disconnect` no ejercitados en vivo: no hay ningún dispositivo
-        emparejado en esta máquina (límite documentado); cubiertos por tests
-        con `bluetoothctl` simulado.
+        `bt_disconnect` **implementados SIN verificación en vivo**: no hay
+        ningún dispositivo emparejado. El adaptador funciona; basta emparejar
+        cualquier dispositivo para poder ejercitarlo. Cubiertos por tests con
+        `bluetoothctl` simulado.
 
 ## FASE G — Control de máquina, oleada 3: interacción
 
