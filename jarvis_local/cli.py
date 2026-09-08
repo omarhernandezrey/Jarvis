@@ -280,6 +280,10 @@ def handle_confirm(jarvis=None):
             from jarvis_local.tools.network import execute_disconnect
             plan = execute_disconnect(plan.params["objetivo"])
             print(describe_outcome(plan, tool="desconectar_red"))
+        elif plan.action == "cerrar_ventana":
+            from jarvis_local.tools.ventanas import execute_close_window
+            plan = execute_close_window(int(plan.params["id"]))
+            print(describe_outcome(plan, tool="cerrar_ventana"))
         elif plan.action in ("crear_archivo", "crear_carpeta"):
             print(plan)
             print("[INFO] Creacion confirmada pero no ejecutada en esta fase (solo simulacion).")

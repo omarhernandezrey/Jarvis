@@ -14,7 +14,11 @@ sobrevive a los errores.** Detalle abajo.
 ```sh
 # 1. Crear el usuario de pruebas (cuenta local desechable)
 sudo useradd -m -s /bin/bash -c "JARVIS F4 window-extension test account" jarvistest
-printf 'jarvistest:pruebaF4segura99\n' | sudo chpasswd     # contraseña de usar y tirar
+# El ciclo de prueba usa `sudo -u jarvistest ...`, que NO pide contraseña.
+# Si quieres poder iniciar sesión gráfica con esta cuenta, ponle una:
+#   sudo passwd jarvistest
+# Si no, déjala bloqueada:
+#   sudo passwd -l jarvistest
 
 # 2. Linger: crea /run/user/1001 y arranca systemd --user sin login gráfico
 sudo loginctl enable-linger jarvistest
@@ -33,6 +37,10 @@ sudo -u jarvistest env XDG_RUNTIME_DIR=/run/user/1001 \
 
 > El UID de `jarvistest` aquí es **1001**. Si en otra máquina es distinto,
 > cambia `/run/user/1001` en todo lo que sigue por `/run/user/$(id -u jarvistest)`.
+>
+> **Si `/run/user/1001` desaparece** (pasa si se hace `terminate-user` y el
+> linger se cae): reponlo antes de nada con
+> `sudo loginctl enable-linger jarvistest && sudo systemctl start user@1001.service`.
 
 **Qué necesita tener dentro el usuario de pruebas:**
 - la extensión en `~/.local/share/gnome-shell/extensions/ventanas-jarvis@local/`
@@ -127,16 +135,37 @@ Ahora mismo: sesión de `jarvistest` terminada (0 procesos), cuenta + extensión
 
 ---
 
-## Siguiente (paso 3, NO hecho — para tras el 2)
+## Paso 3 — cableado en JARVIS (hecho 2026-09-08)
 
-Cablear en JARVIS `listar_ventanas` / `enfocar_ventana` / `cerrar_ventana`
-(`llm_visible=False`), contra esta misma interfaz D-Bus:
-- `cerrar_ventana` = destructivo (modelo de permisos E2): confirmación
-  mostrando **qué** ventana (título + wm_class + pid);
-- guardia de intocables (E1): nunca cerrar/enfocar una ventana cuyo `pid` o
-  `wm_class` esté en la lista;
-- VERIFY real: tras `Close`, releer `List()` y confirmar que la ventana ya no
-  está; tras `Activate`, confirmar `has_focus:true`;
-- interruptor: `gnome-extensions disable ventanas-jarvis@local` /
-  `dconf write /org/gnome/shell/disable-user-extensions true`, sin matar el
-  compositor.
+`jarvis_local/tools/ventanas.py` + parser `_parse_ventanas` + contratos
+`listar_ventanas` / `enfocar_ventana` / `cerrar_ventana` /
+`integracion_ventanas_on` / `integracion_ventanas_off` (todos
+`llm_visible=False`; cerrar una ventana es demasiado delicado para el 3B).
+
+- `listar_ventanas`: READ.
+- `enfocar_ventana`: EXECUTE + VERIFY (tras `Activate`, se relee `List()` y se
+  comprueba `has_focus` en esa ventana).
+- `cerrar_ventana`: DELETE, pasa por `/confirmar` (`cli.handle_confirm`).
+  Confirmación con **título + `wm_class` + `pid`** (`permisos.texto_confirmacion`).
+  VERIFY: tras `Close` se relee `List()`; si la ventana ya no está → `True`;
+  si sigue → `EXECUTED` con `verify None` y salvedad ("está preguntando si
+  guardar"), nunca ERROR ni éxito inventado.
+- Guardia de intocables (E1) por `wm_class` **y** por `pid` (`pid ∈
+  own_pids()` → "ventana del propio JARVIS"; `is_untouchable_process` sobre el
+  `wm_class` y sobre el nombre real del proceso). Se re-comprueba en
+  `execute_close_window` antes de ejecutar.
+- Varias coincidencias → se listan y se pide el id exacto (como E3).
+- Detección en runtime: sin `gdbus` → ERROR ("`sudo apt install
+  libglib2.0-bin`"); sin la extensión → ERROR con el comando de instalación.
+- Interruptor: `data/ventanas_integracion.json` → `{"activa": bool}`.
+  `integracion_ventanas_off` deja a JARVIS sin tocar ventanas **sin tocar el
+  compositor ni la extensión**. Persiste entre reinicios.
+
+Cobertura: `test/test_ventanas.py` (16, capa D-Bus simulada) +
+`test/test_banco_efecto_fallo.py` §F4.2 (6). **Contrato de cable verificado
+en vivo** contra la extensión real en el `gnome-shell --headless` de
+`jarvistest` (script `/home/jarvistest/wire_test.py`): `_unwrap`+`json.loads`
+parsean la salida de `gdbus call List`; `Activate`/`Close` mueven el foco y
+quitan la ventana; `Close(<id inexistente>)` → error D-Bus, el shell no cae.
+
+La extensión **NO** se instala en la sesión de `omar`. Esa decisión va aparte.

@@ -821,12 +821,22 @@ Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
         shell NO cae**. Sesión de `omar` intacta (verificado). Comandos
         exactos de montaje/ciclo/limpieza en el doc, repetibles sin depender
         del asistente. Nota de licencia GPL-2.0 llevada también al README raíz.
-  - [ ] Paso 3 — herramientas `listar_ventanas`/`enfocar_ventana`/
-        `cerrar_ventana` (`llm_visible=False`). Cerrar = destructivo (E2):
-        confirmación mostrando qué ventana. Intocables de E1 nunca se tocan.
-        VERIFY real: la ventana desapareció, el foco cambió. Interruptor para
-        desactivar la extensión sin tocar el compositor. **PARA aquí hasta
-        revisión del usuario.**
+  - [x] **Paso 3 — cableado.** `jarvis_local/tools/ventanas.py` (habla por
+        `gdbus` con la extensión), parser `_parse_ventanas`, contratos
+        `listar_ventanas` (READ) / `enfocar_ventana` (EXECUTE+VERIFY) /
+        `cerrar_ventana` (DELETE, `/confirmar`) / `integracion_ventanas_on|off`
+        — todos `llm_visible=False`. Confirmación de cierre con título +
+        `wm_class` + `pid`. Guardia E1 por `wm_class` y por `pid` (nunca
+        `gnome-shell` ni la ventana del propio JARVIS), re-comprobado antes de
+        ejecutar. Varias coincidencias → se pregunta (como E3). VERIFY:
+        `has_focus` releído / ventana ausente de `List()`; si sigue tras
+        `Close` → `verify None` + salvedad. Detección en runtime: sin `gdbus`
+        o sin la extensión → ERROR con cómo instalarla. Interruptor
+        `data/ventanas_integracion.json`. Tests: `test_ventanas.py` (16) +
+        banco §F4.2 (6). **Contrato de cable verificado en vivo** contra la
+        extensión real en el `gnome-shell --headless` de `jarvistest`.
+        `docs/F4_2_PRUEBA_USUARIO_APARTE.md` §"Paso 3".
+        La extensión **NO** se instala en la sesión de `omar` (decisión aparte).
 
 ## FASE G — Control de máquina, oleada 3: interacción
 

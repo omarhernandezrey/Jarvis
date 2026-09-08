@@ -759,6 +759,67 @@ def _parse_bluetooth(m: str) -> IntentResult | None:
                         reason="Estado del Bluetooth")
 
 
+# PLAN_EJECUCION FASE F · F4.2 — ventanas en Wayland.
+_TRIGGER_VENTANA = re.compile(r'\bventanas?\b', re.IGNORECASE)
+# el nombre/objetivo sale del texto ORIGINAL (títulos con mayúsculas)
+_VENTANA_OBJ = re.compile(
+    r'\b(?:enfoca\w*|activa\w*|cierra\w*|cerrar|trae\w*|cambia\w*|pon\w*|muestra\w*)\b'
+    r'[\w\s]{0,24}?\bventana\s+'
+    r'(?:de\s+la\s+|de\s+|del\s+|con\s+|a\s+la\s+|titulada\s+|llamada\s+)?'
+    r'["\']?(.+?)["\']?\s*[.!?]*\s*$',
+    re.IGNORECASE)
+_VENTANA_GENERICO = {"", "actual", "esta", "esa", "de aqui", "activa", "de delante"}
+
+
+def _parse_ventanas(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    hay_integr = re.search(r'\bintegraci\w+\s+de\s+ventanas\b', mm) or \
+        re.search(r'\b(deja|para)\s+de\s+tocar\s+(mis\s+)?ventanas\b', mm)
+    if hay_integr:
+        if re.search(r'\b(desactiva\w*|apaga\w*|para\w*|deja\s+de|no\s+toques)\b', mm):
+            return IntentResult(kind="tool_execute", tool="win_integ_off",
+                                reason="Desactivar integración de ventanas")
+        if re.search(r'\b(activa\w*|enciende\w*|reactiva\w*|vuelve\s+a)\b', mm):
+            return IntentResult(kind="tool_execute", tool="win_integ_on",
+                                reason="Activar integración de ventanas")
+    if not _TRIGGER_VENTANA.search(mm):
+        return None
+    # No robar los comandos existentes de acomodar / cambiar / (min|max)imizar
+    # ventana (snap_window / switch_window / minimize_all): esos NO son F4.2.
+    if re.search(r'\b(izquierda|derecha|arriba|abajo|maximiz\w+|minimiz\w+|'
+                 r'acomod\w+|mosaico|a\s+la\s+mitad|pantalla\s+completa|'
+                 r'cambia\w*\s+(?:de\s+)?ventana|siguiente\s+ventana|alt\s*tab|'
+                 r'muestra\w*\s+el\s+escritorio)\b', mm):
+        return None
+
+    def _obj() -> str:
+        g = _VENTANA_OBJ.search(m.strip())          # ORIGINAL
+        n = g.group(1).strip() if g else ""
+        n = re.sub(r'\b(al\s+frente|al\s+primer\s+plano|delante)\b', '', n,
+                   flags=re.IGNORECASE).strip(" .,-")
+        return "" if _sin_tildes(n).lower() in _VENTANA_GENERICO else n
+
+    # cerrar (destructivo -> tool_plan)
+    if re.search(r'\bcierra\w*|cerrar\b', mm):
+        return IntentResult(kind="tool_plan", tool="win_close",
+                            arguments={"objetivo": _obj()},
+                            reason="Cerrar una ventana")
+    # enfocar / traer al frente
+    if re.search(r'\benfoca\w*|activa\s+la\s+ventana|trae\w*|cambia\s+a\s+la\s+ventana|'
+                 r'\bpon\s+(?:la\s+)?ventana\b|al\s+frente\b|primer\s+plano\b', mm):
+        obj = _obj()
+        if obj:
+            return IntentResult(kind="tool_execute", tool="win_focus",
+                                arguments={"objetivo": obj},
+                                reason=f"Enfocar la ventana de {obj}")
+    # listar (por defecto cuando se mencionan "ventanas")
+    if re.search(r'\b(que\s+ventanas|ventanas\s+(?:hay|abiertas|tengo)|lista\w*\s+'
+                 r'(?:de\s+)?ventanas|muestrame\s+las\s+ventanas|cuantas\s+ventanas)\b', mm):
+        return IntentResult(kind="tool_read", tool="win_list",
+                            reason="Listar ventanas abiertas")
+    return None
+
+
 # PLAN_EJECUCION FASE F · F1 — brillo de pantalla.
 _TRIGGER_BRILLO = re.compile(
     r'\bbrillo\b'
@@ -1379,6 +1440,12 @@ def parse_intent(message: str) -> IntentResult:
     bt = _parse_bluetooth(m)
     if bt is not None:
         return bt
+
+    # --- VENTANAS EN WAYLAND (FASE F · F4.2): antes de apps/media, "cierra la
+    #     ventana de firefox" no es close_app ni control de volumen ---
+    ventanas = _parse_ventanas(m)
+    if ventanas is not None:
+        return ventanas
 
     # --- RED / WIFI (FASE F · F2) ---
     red = _parse_red(m)
