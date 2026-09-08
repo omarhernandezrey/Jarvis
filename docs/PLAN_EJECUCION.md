@@ -28,7 +28,7 @@
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `ed26f56`) |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `8dcb8de`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
-| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ⬜ pendiente |
+| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | 🔶 primera mitad (brillo/red/BT) ✅ 2026-09-07 (merge `ed6da4a`); ventanas Wayland pendientes |
 | G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
 | I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
@@ -657,7 +657,12 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
 Ventanas en Wayland (extensión GNOME + D-Bus: listar, enfocar, mover, cerrar),
 brillo `brightnessctl`, red/WiFi `nmcli`, Bluetooth.
 
-### Primera mitad — brillo, red/WiFi, Bluetooth  ✅ F1-F3 + banco (rama `feature/fase-f-brillo-red-bt`, pendiente merge)
+### Primera mitad — brillo, red/WiFi, Bluetooth  ✅ CERRADA 2026-09-07 (merge `ed6da4a`)
+
+F1 verificado en vivo; F2 y F3 NO VERIFICABLES por hardware (sin WiFi, sin
+dispositivo BT que persista vinculado) — motivo en la tabla de estado de
+verificación en vivo más abajo. Ventanas Wayland (segunda mitad) siguen
+pendientes, aparte por su riesgo.
 
 Ventanas Wayland van APARTE por su riesgo (no en esta sesión). Todas: ruta
 del parser (`llm_visible=False` si son delicadas), detección de disponibilidad
