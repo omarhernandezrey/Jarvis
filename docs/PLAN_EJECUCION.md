@@ -28,7 +28,7 @@
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `ed26f56`) |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `8dcb8de`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
-| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | 🔶 primera mitad (brillo/red/BT) ✅ 2026-09-07 (merge `ed6da4a`); ventanas Wayland pendientes |
+| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `<pendiente>`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
 | G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
 | I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
@@ -767,7 +767,7 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         recurso físico no hay camino de escritura que ejercitar. Cubiertos por
         `test_bluetooth.py` (15) con `bluetoothctl` simulado.
 
-### Segunda mitad — ventanas en Wayland  🚧 EN CURSO (rama `feature/fase-f-ventanas-wayland`)
+### Segunda mitad — ventanas en Wayland  ✅ CÓDIGO CERRADO (merge `<pendiente>`) · falta F4.3 (instalar en la sesión de `omar`)
 
 La tarea de más riesgo del plan: una extensión de GNOME corre DENTRO de
 `gnome-shell` (el compositor blindado en E1). Un fallo tumba la sesión.
@@ -836,7 +836,34 @@ Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
         banco §F4.2 (6). **Contrato de cable verificado en vivo** contra la
         extensión real en el `gnome-shell --headless` de `jarvistest`.
         `docs/F4_2_PRUEBA_USUARIO_APARTE.md` §"Paso 3".
-        La extensión **NO** se instala en la sesión de `omar` (decisión aparte).
+
+- [ ] **F4.3 — INSTALAR la extensión en la sesión de trabajo (`omar`).**
+      **Pendiente y explícito.** El código está mergeado pero las
+      herramientas de ventanas devuelven ERROR ("la extensión no responde")
+      hasta que se haga esto. Decisión del usuario por su riesgo (corre
+      dentro de `gnome-shell`). Antes: tener a mano `docs/RECUPERACION_GNOME.md`
+      y comprobar el TTY de rescate (Ctrl+Alt+F3 → `login:`).
+
+      Instalar:
+      ```sh
+      cp -r "$(git rev-parse --show-toplevel)/gnome-extension/ventanas-jarvis@local" \
+            ~/.local/share/gnome-shell/extensions/
+      # cerrar sesión y volver a entrar (Wayland no recarga el shell en caliente)
+      gnome-extensions enable ventanas-jarvis@local
+      gnome-extensions info ventanas-jarvis@local   # debe decir: Estado: ACTIVE
+      ```
+
+      Quitar (cualquiera de las dos vías):
+      ```sh
+      gnome-extensions disable ventanas-jarvis@local            # desde la sesión
+      rm -rf ~/.local/share/gnome-shell/extensions/ventanas-jarvis@local
+      # o, si el shell no responde, desde un TTY (Ctrl+Alt+F3):
+      dconf write /org/gnome/shell/disable-user-extensions true
+      ```
+
+      Sin instalarla (o con la integración apagada por
+      `data/ventanas_integracion.json`), el resto de JARVIS funciona igual;
+      solo `listar/enfocar/cerrar_ventana` quedan inertes con error claro.
 
 ## FASE G — Control de máquina, oleada 3: interacción
 
