@@ -810,12 +810,23 @@ Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
         (`_get_window_by_wid` usaba una variable inexistente). 16 métodos
         fuera de alcance **borrados**, no comentados. **No instalado, no
         cableado. Pendiente de revisión del usuario.**
-  - [ ] Paso 2 — usuario de pruebas + ejercitar la extensión ahí.
+  - [x] **Paso 2 — usuario de pruebas + ejercitar la extensión ahí.**
+        `docs/F4_2_PRUEBA_USUARIO_APARTE.md`. Usuario `jarvistest` + `linger`
+        + extensión instalada en su home; `gnome-shell --headless
+        --virtual-monitor` anidado (mutter 50.1, render por software).
+        Ejercitado 2026-09-08: `List` (`[]` → 1 → 2 ventanas), `Details`
+        (payload completo), `Activate` (el foco cambia de verdad, `has_focus`
+        se mueve), `Close` (la ventana desaparece de `List`, el proceso
+        termina), error path `id` inexistente → error D-Bus limpio, **el
+        shell NO cae**. Sesión de `omar` intacta (verificado). Comandos
+        exactos de montaje/ciclo/limpieza en el doc, repetibles sin depender
+        del asistente. Nota de licencia GPL-2.0 llevada también al README raíz.
   - [ ] Paso 3 — herramientas `listar_ventanas`/`enfocar_ventana`/
         `cerrar_ventana` (`llm_visible=False`). Cerrar = destructivo (E2):
         confirmación mostrando qué ventana. Intocables de E1 nunca se tocan.
         VERIFY real: la ventana desapareció, el foco cambió. Interruptor para
-        desactivar la extensión sin tocar el compositor.
+        desactivar la extensión sin tocar el compositor. **PARA aquí hasta
+        revisión del usuario.**
 
 ## FASE G — Control de máquina, oleada 3: interacción
 
