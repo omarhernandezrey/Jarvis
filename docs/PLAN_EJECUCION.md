@@ -674,13 +674,13 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
 > | F2 red/WiFi — lectura | ✅ `net_status`/`wifi_list` responden ("no hay hardware WiFi") | — | — |
 > | F2 red/WiFi — escritura | — | ❌ **límite PERMANENTE de hardware — NO VERIFICABLE en esta máquina** | No hay WiFi operativo ni lo habrá: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`, `nmcli WIFI-HW: missing`. `connection up/down` y `radio` quedan sin ejercitar. Cubierto solo por tests con `nmcli` simulado. |
 > | F3 Bluetooth — lectura | ✅ `bt_status`/`bt_list`, controlador `hci0` activo | — | — |
-> | F3 Bluetooth — escritura | — | ❌ **sin verificar** | Adaptador presente y funcional. Tras dos intentos de emparejamiento del usuario, `bluetoothctl devices Paired` sigue **vacío** — el dispositivo no queda vinculado (*bonded*) a nivel de BlueZ. `bt_connect`/`bt_disconnect` operan solo sobre vinculados. Pendiente decidir con el usuario: dispositivo BLE que no hace *bond* → marcar NO VERIFICABLE con este hardware; o vincular uno clásico que persista. |
+> | F3 Bluetooth — escritura | — | ❌ **NO VERIFICABLE en vivo con este hardware** | Adaptador presente y funcional, pero `bluetoothctl devices Paired` queda **vacío** tras varios intentos de emparejamiento: ningún dispositivo llega a vincularse (*bonded*) a nivel de BlueZ, y `bt_connect`/`bt_disconnect` operan solo sobre vinculados. Sin un dispositivo BT que persista como emparejado no hay forma de ejercitar el camino de escritura aquí. Cubierto solo por tests con `bluetoothctl` simulado (`test_bluetooth.py`, 15). |
 >
-> Acciones para cerrar la brecha (requieren al usuario):
+> Acciones para cerrar la brecha:
 > - **F1:** ✅ nada — verificado en vivo.
-> - **F3:** confirmar qué dispositivo se emparejó y si es BLE. Si no persiste
->   como *bonded* en `bluetoothctl devices Paired`, se marca NO VERIFICABLE.
-> - **F2:** nada que hacer sin hardware WiFi. Límite permanente.
+> - **F2:** ❌ nada posible — sin hardware WiFi. Límite permanente.
+> - **F3:** ❌ nada posible ahora — sin un dispositivo que persista vinculado.
+>   Si en el futuro hay uno, ejercitar `bt_connect`/`bt_disconnect` con VERIFY.
 
 - [x] **F1 — Brillo** (`jarvis_local/tools/brightness.py`; parser
       `_parse_brillo`; contratos `controlar_brillo` + `brightness_up`/`down`/
@@ -755,10 +755,12 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         Encender/apagar el adaptador también queda fuera de F3 y se dice.
       - **En vivo:** `bt_status`/`bt_list` OK (controlador `hci0` /
         `B8:86:87:BE:8D:70` encendido, 0 emparejados). `bt_connect`/
-        `bt_disconnect` **implementados SIN verificación en vivo**: no hay
-        ningún dispositivo emparejado. El adaptador funciona; basta emparejar
-        cualquier dispositivo para poder ejercitarlo. Cubiertos por tests con
-        `bluetoothctl` simulado.
+        `bt_disconnect` **NO VERIFICABLES en vivo con este hardware**: tras
+        varios intentos, `bluetoothctl devices Paired` queda vacío — ningún
+        dispositivo llega a vincularse (*bonded*) a nivel de BlueZ, y esas dos
+        herramientas operan solo sobre vinculados. Igual que F2 (WiFi): sin el
+        recurso físico no hay camino de escritura que ejercitar. Cubiertos por
+        `test_bluetooth.py` (15) con `bluetoothctl` simulado.
 
 ## FASE G — Control de máquina, oleada 3: interacción
 
