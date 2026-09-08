@@ -97,3 +97,39 @@ un monitor de recursos):
   "modelos en RAM" y "en swap: sí/no" para que el aviso sea consultable.
 
 Nada de esto entra en FASE D (cierra con D5). Queda anotado como entrada de E.
+
+---
+
+## Operativa de permisos y demonios (hallazgos de FASE F, entrada para G)
+
+### 5. Un cambio de grupo/permisos exige reiniciar Claude Code (particularidad de esta máquina)
+
+El proceso de Claude Code **hereda los grupos de cuando arrancó** y no los
+recarga. En FASE F, `sudo usermod -aG video omar` (necesario para que
+`brightnessctl` escriba sin sudo) no tuvo efecto hasta **reiniciar el propio
+proceso** de Claude Code — reiniciar la sesión de escritorio no basta, y
+`newgrp`/`sg` no están instalados en este equipo para forzar la recarga.
+
+Regla: cualquier `usermod -aG`, cambio de `sudoers`, o ajuste de permisos que
+afecte a lo que JARVIS/Claude Code puede hacer → **salir y volver a entrar en
+Claude Code** (`claude --continue`) antes de dar por buena la verificación en
+vivo. Comprobación: `id -nG` debe incluir el grupo nuevo.
+
+Va a repetirse en **FASE G**: `ydotool` necesita el grupo `input` (ver §6).
+Mismo procedimiento: `usermod -aG input omar` → reiniciar Claude Code →
+comprobar `id -nG`.
+
+### 6. FASE G — `ydotool` necesita `ydotoold` + grupo `input` ANTES de codificar
+
+`ydotool` (teclado/ratón sintéticos de G) no funciona a secas:
+
+- requiere el demonio **`ydotoold`** corriendo (normalmente como servicio de
+  usuario o de sistema; sin él, todo comando de `ydotool` falla);
+- el usuario debe pertenecer al grupo **`input`** (acceso a `/dev/uinput`),
+  o hace falta una udev rule que lo conceda.
+
+Resolver esto **antes** de escribir el código de G (instalar, arrancar
+`ydotoold`, `usermod -aG input omar`, reiniciar Claude Code por el punto 5),
+no a mitad de la implementación. Si no se puede dejar operativo, G se
+implementa igual pero se marca NO VERIFICABLE en vivo desde el principio, como
+F2/F3.

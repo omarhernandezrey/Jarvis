@@ -268,6 +268,61 @@ def _notify(mensaje: str, titulo: str = "JARVIS", urgencia: str = "normal"):
     return send_notification(mensaje, titulo, urgencia)
 
 
+def _net_status():
+    from jarvis_local.tools.network import net_status
+    return net_status()
+
+
+def _wifi_list():
+    from jarvis_local.tools.network import wifi_list
+    return wifi_list()
+
+
+def _wifi_connect(red: str):
+    from jarvis_local.tools.network import wifi_connect
+    return wifi_connect(red)
+
+
+def _wifi_radio(encender: bool = True):
+    from jarvis_local.tools.network import plan_wifi_radio
+    return plan_wifi_radio(bool(encender))
+
+
+def _net_disconnect(objetivo: str = ""):
+    from jarvis_local.tools.network import plan_disconnect
+    return plan_disconnect(objetivo)
+
+
+def _bt_status():
+    from jarvis_local.tools.bluetooth import bt_status
+    return bt_status()
+
+
+def _bt_list():
+    from jarvis_local.tools.bluetooth import bt_list
+    return bt_list()
+
+
+def _bt_connect(objetivo: str = ""):
+    from jarvis_local.tools.bluetooth import bt_connect
+    return bt_connect(objetivo)
+
+
+def _bt_disconnect(objetivo: str = ""):
+    from jarvis_local.tools.bluetooth import bt_disconnect
+    return bt_disconnect(objetivo)
+
+
+def _brightness(accion: str, nivel: int = 50):
+    from jarvis_local.tools import brightness as b
+    accion = (accion or "").lower()
+    if accion in ("subir", "sube", "mas"):
+        return b.brightness_up()
+    if accion in ("bajar", "baja", "menos"):
+        return b.brightness_down()
+    return b.set_brightness(int(nivel))
+
+
 def _untouchables_list():
     from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
     from jarvis_local.safety.untouchables import explicar
@@ -954,6 +1009,116 @@ CONTRACTS: list[ToolContract] = [
                  _obj({}, []), _untouchables_list, RiskLevel.READ, llm_visible=False,
                  verify=_V_LECTURA, revert="n/a",
                  parser_intents=("untouchables",)),
+
+    # ---- Brillo de pantalla (FASE F · F1) ----
+    ToolContract("controlar_brillo",
+                 "Sube, baja o fija el brillo de la pantalla (0-100).",
+                 _obj({"accion": _str("subir | bajar | nivel", ["subir", "bajar", "nivel"]),
+                       "nivel": _int("Nivel 0-100, solo si accion=nivel")}, ["accion"]),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1/D1): se relee `brightnessctl get`; si no "
+                        "cuadra, reintento y luego ERROR. Nunca por debajo del "
+                        "mínimo utilizable. Sin brightnessctl -> ERROR claro.",
+                 revert="Fijar el brillo anterior.",
+                 parser_intents=("brightness_ctl",)),
+    ToolContract("brightness_up", "Sube el brillo un paso.", _obj({}, []),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1): se comprueba que el brillo subió.",
+                 revert="brightness_down.",
+                 parser_intents=("brightness_up",), parser_fixed={"accion": "subir"}),
+    ToolContract("brightness_down", "Baja el brillo un paso.", _obj({}, []),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1): se comprueba que el brillo bajó.",
+                 revert="brightness_up.",
+                 parser_intents=("brightness_down",), parser_fixed={"accion": "bajar"}),
+    ToolContract("brightness_set", "Fija el brillo a un nivel exacto (0-100).",
+                 _obj({"level": _int("Nivel 0-100")}),
+                 _brightness, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F1): se relee el brillo real y se compara.",
+                 revert="Fijar el nivel anterior.",
+                 parser_intents=("brightness_set",), parser_fixed={"accion": "nivel"},
+                 parser_argmap={"level": "nivel"}),
+
+    # ---- Red y WiFi (FASE F · F2) ----
+    ToolContract("estado_red",
+                 "Dice el estado de la red: interfaces, conexión activa, IP y "
+                 "si el WiFi está encendido.",
+                 _obj({}, []), _net_status, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("net_status",)),
+    ToolContract("listar_wifi",
+                 "Lista las redes WiFi visibles con su señal y seguridad.",
+                 _obj({}, []), _wifi_list, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("wifi_list",)),
+    ToolContract("conectar_wifi",
+                 "Conecta a una red WiFi YA GUARDADA (usa la contraseña que "
+                 "NetworkManager tiene; JARVIS no maneja contraseñas).",
+                 _obj({"red": _str("Nombre de la red guardada")}),
+                 _wifi_connect, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): tras `nmcli connection up` se "
+                        "comprueba que la conexión está 'activated', no el rc. "
+                        "Red no guardada -> BLOQUEADO. Transacción de paquetes "
+                        "en curso -> BLOQUEADO.",
+                 revert="desconectar_red.",
+                 parser_intents=("wifi_connect",)),
+    ToolContract("wifi_encender", "Enciende la radio WiFi (con confirmación).",
+                 _obj({}, []), _wifi_radio, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): se relee `nmcli radio wifi`.",
+                 revert="wifi_apagar.",
+                 plan_capable=True, plan_run=_wifi_radio,
+                 parser_intents=("wifi_on",), parser_fixed={"encender": True}),
+    ToolContract("wifi_apagar",
+                 "Apaga la radio WiFi. Confirmación: puede dejarte sin conexión.",
+                 _obj({}, []), _wifi_radio, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): se relee `nmcli radio wifi`.",
+                 revert="wifi_encender.",
+                 plan_capable=True, plan_run=_wifi_radio,
+                 parser_intents=("wifi_off",), parser_fixed={"encender": False}),
+    ToolContract("desconectar_red",
+                 "Desconecta una conexión de red. Confirmación: si es la única, "
+                 "JARVIS pierde acceso a todo lo que no sea local.",
+                 _obj({"objetivo": _str("Nombre de la conexión. Vacío = la de WiFi")}, []),
+                 _net_disconnect, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (F2/D1): se comprueba que la conexión ya no "
+                        "está activa.",
+                 revert="Volver a conectar (conectar_wifi / nmcli connection up).",
+                 plan_capable=True, plan_run=_net_disconnect,
+                 parser_intents=("net_disconnect",)),
+
+    # ---- Bluetooth (FASE F · F3) ----
+    ToolContract("estado_bluetooth",
+                 "Dice el estado del Bluetooth: encendido, cuántos dispositivos "
+                 "emparejados y cuántos conectados.",
+                 _obj({}, []), _bt_status, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("bt_status",)),
+    ToolContract("listar_bluetooth",
+                 "Lista los dispositivos Bluetooth emparejados y marca los "
+                 "conectados.",
+                 _obj({}, []), _bt_list, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("bt_list",)),
+    ToolContract("conectar_bluetooth",
+                 "Conecta a un dispositivo Bluetooth YA EMPAREJADO (por nombre o "
+                 "MAC). Emparejar uno nuevo no: pide un PIN interactivo.",
+                 _obj({"objetivo": _str("Nombre o MAC del dispositivo emparejado; "
+                                        "vacío = el único emparejado")}, []),
+                 _bt_connect, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F3/D1): tras `bluetoothctl connect` se lee "
+                        "`Connected:` de `bluetoothctl info` — yes/no/ilegible "
+                        "(los tres desenlaces). No emparejado -> BLOQUEADO.",
+                 revert="desconectar_bluetooth.",
+                 parser_intents=("bt_connect",)),
+    ToolContract("desconectar_bluetooth",
+                 "Desconecta un dispositivo Bluetooth (por nombre o MAC; vacío = "
+                 "el único conectado). No pide confirmación: no te deja sin red.",
+                 _obj({"objetivo": _str("Nombre o MAC; vacío = el único conectado")}, []),
+                 _bt_disconnect, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F3/D1): se comprueba que `Connected: no` en "
+                        "`bluetoothctl info`.",
+                 revert="conectar_bluetooth.",
+                 parser_intents=("bt_disconnect",)),
 
     # ---- Notificaciones (FASE E · E5) ----
     ToolContract("enviar_notificacion",

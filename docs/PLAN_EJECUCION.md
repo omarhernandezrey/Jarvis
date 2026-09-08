@@ -657,11 +657,127 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
 Ventanas en Wayland (extensión GNOME + D-Bus: listar, enfocar, mover, cerrar),
 brillo `brightnessctl`, red/WiFi `nmcli`, Bluetooth.
 
+### Primera mitad — brillo, red/WiFi, Bluetooth  ✅ F1-F3 + banco (rama `feature/fase-f-brillo-red-bt`, pendiente merge)
+
+Ventanas Wayland van APARTE por su riesgo (no en esta sesión). Todas: ruta
+del parser (`llm_visible=False` si son delicadas), detección de disponibilidad
+en runtime con error claro, VERIFY con los tres desenlaces, auditoría D2,
+banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
+
+> **ESTADO DE VERIFICACIÓN EN VIVO (los tests NO son evidencia de
+> funcionamiento — criterio D0).** A fecha de cierre de esta media fase:
+>
+> | Punto | Lectura en vivo | Escritura en vivo | Motivo |
+> |---|---|---|---|
+> | **F1 brillo** | ✅ **PROBADO** | ✅ **PROBADO** | Sesión con grupo `video` (2026-09-07). `get_brightness()` → 31%. `set_brightness(60)` → `EXECUTED`, `verify.ok=True` (`método: brightnessctl get`, `detalle: brillo=60%`), relectura = 60%. `set_brightness(25)` → 25%, `verify.ok=True`. `set_brightness(0)` → **recorte a 5%**, `EXECUTED`, `verify.ok=True`, mensaje "no bajo del 5%…", relectura = 5%. `brightness_up`/`down` relativos ±10% OK. Restaurado al valor original. **VERIFY True real, no None.** |
+> | F1 brillo — FALLO FORZADO | ✅ probado (sesión anterior) | — | Con el binario real y sin permiso de escritura: `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté: brightnessctl set 50% → Permission denied". No finge éxito. |
+> | F2 red/WiFi — lectura | ✅ `net_status`/`wifi_list` responden ("no hay hardware WiFi") | — | — |
+> | F2 red/WiFi — escritura | — | ❌ **límite PERMANENTE de hardware — NO VERIFICABLE en esta máquina** | No hay WiFi operativo ni lo habrá: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`, `nmcli WIFI-HW: missing`. `connection up/down` y `radio` quedan sin ejercitar. Cubierto solo por tests con `nmcli` simulado. |
+> | F3 Bluetooth — lectura | ✅ `bt_status`/`bt_list`, controlador `hci0` activo | — | — |
+> | F3 Bluetooth — escritura | — | ❌ **NO VERIFICABLE en vivo con este hardware** | Adaptador presente y funcional, pero `bluetoothctl devices Paired` queda **vacío** tras varios intentos de emparejamiento: ningún dispositivo llega a vincularse (*bonded*) a nivel de BlueZ, y `bt_connect`/`bt_disconnect` operan solo sobre vinculados. Sin un dispositivo BT que persista como emparejado no hay forma de ejercitar el camino de escritura aquí. Cubierto solo por tests con `bluetoothctl` simulado (`test_bluetooth.py`, 15). |
+>
+> Acciones para cerrar la brecha:
+> - **F1:** ✅ nada — verificado en vivo.
+> - **F2:** ❌ nada posible — sin hardware WiFi. Límite permanente.
+> - **F3:** ❌ nada posible ahora — sin un dispositivo que persista vinculado.
+>   Si en el futuro hay uno, ejercitar `bt_connect`/`bt_disconnect` con VERIFY.
+
+- [x] **F1 — Brillo** (`jarvis_local/tools/brightness.py`; parser
+      `_parse_brillo`; contratos `controlar_brillo` + `brightness_up`/`down`/
+      `set`, `llm_visible=False`).
+      - Detección en runtime: sin `brightnessctl` → ERROR ("instala
+        `brightnessctl`").
+      - **Límite inferior DURO** `MIN_BRILLO_PCT = 5`: nunca por debajo — que
+        la pantalla quede a 0 sin poder corregirlo es un fallo del que no se
+        sale hablándole a JARVIS. Al recortar, lo dice.
+      - VERIFY: se relee `brightnessctl get`; cuadra → True; no cuadra →
+        reintento y luego ERROR con "Intenté"; no se puede leer → EXECUTED con
+        salvedad.
+      - **EJERCITADO EN VIVO Y VERIFICADO (2026-09-07)**, con `brightnessctl`
+        instalado y el usuario en el grupo `video`:
+        - lectura: `get_brightness()` → 31% real;
+        - fijar: `set_brightness(60)` → `EXECUTED`, `verify.ok=True`
+          (`brightnessctl get` → `brillo=60%`), relectura = 60%; ídem a 25%;
+        - recorte: `set_brightness(0)` → queda en **5%** (`MIN_BRILLO_PCT`),
+          `EXECUTED`, `verify.ok=True`, mensaje "no bajo del 5%…";
+        - relativos: `brightness_up`/`brightness_down` ±10% OK;
+        - valor original restaurado al terminar.
+        **VERIFY True real (no None).**
+      - FALLO FORZADO (sesión previa, sin permiso de escritura):
+        `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté:
+        brightnessctl set 50% → Permission denied" — no finge éxito.
+      - Deuda menor: cuando falla, el mensaje de `ERROR` repite el stderr 3×
+        por el bucle de reintento. Pulir al volver a este módulo.
+- [x] **F2 — Red y WiFi** (`jarvis_local/tools/network.py`; parser
+      `_parse_red`; contratos `estado_red`/`listar_wifi` (READ),
+      `conectar_wifi` (EXECUTE), `wifi_encender`/`wifi_apagar`/`desconectar_red`
+      (DELETE, confirmación); `llm_visible=False`).
+      - Lectura sin preguntar: `net_status` (interfaces, conexión activa, IP,
+        estado WiFi), `wifi_list` (SSID/señal/seguridad). Sin `nmcli` → ERROR.
+        Sin hardware WiFi → lo dice.
+      - `wifi_connect(red)`: **solo a redes YA GUARDADAS** (`nmcli connection
+        up <nombre>`, que usa las credenciales de NetworkManager). Red no
+        guardada → BLOQUEADO, lista las que hay. VERIFY: se comprueba que la
+        conexión quedó `activated`, no el rc.
+      - `wifi_apagar`/`desconectar_red`: **confirmación** (`texto_confirmacion`
+        con el aviso de que puede dejar sin conexión). `execute_*` releen el
+        estado real (VERIFY).
+      - **Contraseñas**: JARVIS nunca maneja una — no hay ninguna en params,
+        auditoría ni prompt. Además la **capa 0 ahora redacta `psk` /
+        `802-11-wireless-security.psk`** (antes solo `password`): añadido a
+        `safety/secrets.py`.
+      - **Guardia E1·c**: `wifi_connect`/`wifi_radio`/`disconnect` → BLOQUEADO
+        si hay transacción de paquetes en curso.
+      - **En vivo:** `net_status`/`wifi_list` OK (responden "no hay hardware
+        WiFi"). Escrituras (`connection up/down`, `radio`) **sin verificación
+        en vivo**: no hay interfaz WiFi (Broadcom BCM43228 sin driver `wl`,
+        límite permanente de esta máquina). El guardia E1·c además bloqueó las
+        pruebas por un `unattended-upgrade` real — cubierto por tests con la
+        transacción mockeada.
+- [x] **F3 — Bluetooth** (`jarvis_local/tools/bluetooth.py`; parser
+      `_parse_bluetooth`; contratos `estado_bluetooth`/`listar_bluetooth`
+      (READ), `conectar_bluetooth`/`desconectar_bluetooth` (EXECUTE);
+      `llm_visible=False`).
+      - Lectura sin preguntar: `bt_status` (encendido, nº emparejados/
+        conectados), `bt_list` (emparejados, `*` = conectado). Sin
+        `bluetoothctl` → ERROR ("instala `bluez`"). Sin controlador → ERROR.
+      - `bt_connect`/`bt_disconnect`: **solo dispositivos YA EMPAREJADOS**
+        (por nombre o MAC; objetivo vacío = el único). No emparejado →
+        BLOQUEADO, lista los que hay. VARIAS coincidencias → BLOQUEADO, pide
+        el nombre exacto. VERIFY real: se lee `Connected:` de `bluetoothctl
+        info` — yes → True / no → ERROR con "Intenté" / ilegible → EXECUTED
+        con salvedad.
+      - Desconectar **no** pide confirmación: no deja a JARVIS sin red (a
+        diferencia del WiFi en F2).
+      - **Emparejar dispositivos nuevos: FUERA.** Pide un PIN/passkey
+        interactivo que JARVIS no puede teclear. El parser lo detecta y lo
+        explica ("empareja desde Configuración > Bluetooth"); no se finge.
+        Encender/apagar el adaptador también queda fuera de F3 y se dice.
+      - **En vivo:** `bt_status`/`bt_list` OK (controlador `hci0` /
+        `B8:86:87:BE:8D:70` encendido, 0 emparejados). `bt_connect`/
+        `bt_disconnect` **NO VERIFICABLES en vivo con este hardware**: tras
+        varios intentos, `bluetoothctl devices Paired` queda vacío — ningún
+        dispositivo llega a vincularse (*bonded*) a nivel de BlueZ, y esas dos
+        herramientas operan solo sobre vinculados. Igual que F2 (WiFi): sin el
+        recurso físico no hay camino de escritura que ejercitar. Cubiertos por
+        `test_bluetooth.py` (15) con `bluetoothctl` simulado.
+
 ## FASE G — Control de máquina, oleada 3: interacción
 
 Portapapeles de escritura, teclado y ratón sintéticos con `ydotool`. La más
 peligrosa: confirmación siempre, límite de velocidad, interruptor global para
 desactivarla.
+
+> **Prerrequisito de entorno — resolver ANTES de escribir código, no a mitad.**
+> `ydotool` no funciona a secas: necesita el demonio **`ydotoold`** corriendo
+> y que el usuario pertenezca a un grupo con acceso a `/dev/uinput` (grupo
+> **`input`**, o udev rule equivalente). Pasos: instalar, arrancar `ydotoold`
+> (servicio de usuario o de sistema), `sudo usermod -aG input omar`, y
+> **reiniciar Claude Code** para heredar el grupo (ver OPERACION_MEMORIA.md §5
+> — el proceso hereda los grupos de arranque; nos pasó con `video` en F1).
+> Comprobar `id -nG` antes de dar por buena la verificación en vivo. Si no se
+> puede dejar operativo, G se implementa igual pero se marca NO VERIFICABLE en
+> vivo desde el principio (como F2/F3). Detalle en OPERACION_MEMORIA.md §6.
 
 ## FASE H — Código muerto: integrar o borrar
 

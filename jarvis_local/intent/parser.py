@@ -619,6 +619,178 @@ def _parse_notificacion(m: str) -> IntentResult | None:
                         reason="Mostrar notificación de escritorio")
 
 
+# PLAN_EJECUCION FASE F · F2 — red y WiFi.
+_TRIGGER_RED = re.compile(
+    r'\bwifi\b|\bwi-fi\b|\bred\b|\bconexion\b|\bconectad[oa]\b|\binternet\b|'
+    r'\bnmcli\b|\bethernet\b|\bdesconect\w+', re.IGNORECASE)
+# el nombre de la red se saca del texto ORIGINAL (los SSID distinguen mayúsculas)
+_RED_NOMBRE = re.compile(
+    r'\b(?:conect\w+|desconect\w+)(?:me)?\s+(?:a\s+|al\s+|de\s+|del\s+)?'
+    r'(?:la\s+red\s+|el\s+wifi\s+|wifi\s+|red\s+)?["\']?([\w .\-]+?)["\']?\s*[.!?]*\s*$',
+    re.IGNORECASE)
+_RED_GENERICO = {"", "la red", "el wifi", "la", "el", "de", "internet", "wifi", "eso"}
+
+
+def _parse_red(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_RED.search(mm):
+        return None
+    hay_wifi = re.search(r'\bwi-?fi\b', mm)
+
+    def _nombre() -> str:
+        g = _RED_NOMBRE.search(m.strip())          # ORIGINAL, con mayúsculas
+        n = g.group(1).strip() if g else ""
+        return "" if n.lower() in _RED_GENERICO else n
+
+    # encender / apagar WiFi
+    if hay_wifi and re.search(r'\b(apaga|apagame|desactiva|desactivame|quita)\b', mm):
+        return IntentResult(kind="tool_plan", tool="wifi_off", reason="Apagar el WiFi")
+    if hay_wifi and re.search(r'\b(enciende|encendeme|activa|activame|pon)\b', mm):
+        return IntentResult(kind="tool_plan", tool="wifi_on", reason="Encender el WiFi")
+
+    # desconectar
+    if re.search(r'\bdesconect\w+', mm):
+        return IntentResult(kind="tool_plan", tool="net_disconnect",
+                            arguments={"objetivo": _nombre()},
+                            reason="Desconectar la red")
+
+    # conectar a una red
+    if re.search(r'\bconect\w+', mm) and not re.search(r'\bestoy\s+conect', mm):
+        red = _nombre()
+        if red:
+            return IntentResult(kind="tool_execute", tool="wifi_connect",
+                                arguments={"red": red}, reason=f"Conectar a {red}")
+
+    # listar redes wifi
+    if hay_wifi and re.search(r'\b(que\s+redes|redes\s+(?:hay|disponibles|visibles)|'
+                              r'lista\s+de|escanea|busca\s+redes|muestrame\s+las\s+redes)\b', mm):
+        return IntentResult(kind="tool_read", tool="wifi_list",
+                            reason="Listar redes WiFi")
+
+    # estado de la red (por defecto)
+    if re.search(r'\b(estado|como\s+esta|que\s+red|cual\s+es\s+mi|estoy\s+conectad|'
+                 r'tengo\s+(?:red|internet|conexion)|hay\s+internet|mi\s+conexion)\b', mm):
+        return IntentResult(kind="tool_read", tool="net_status",
+                            reason="Estado de la red")
+    return None
+
+
+# PLAN_EJECUCION FASE F · F3 — Bluetooth.
+_TRIGGER_BT = re.compile(r'\bbluetooth\b|\bbluetoothctl\b', re.IGNORECASE)
+_BT_DISPOSITIVO = re.compile(
+    r'\b(auricular\w*|cascos?|altavoz|altavoces|manos\s+libres|airpods?|'
+    r'earbuds?|barra\s+de\s+sonido)\b', re.IGNORECASE)
+# formas imperativas de "emparejar" (NO "emparejados", que es listar)
+_BT_EMPAREJAR = re.compile(
+    r'\b(empareja(?:r|me|lo|los)?|vincula(?:r|me|lo|los)?|'
+    r'parea(?:r|lo|los)?|enlaza(?:r|lo|los)?)\b', re.IGNORECASE)
+_BT_GENERICO = {"", "bluetooth", "el bluetooth", "por bluetooth", "dispositivo",
+                "el dispositivo", "un dispositivo", "los auriculares", "auriculares",
+                "los cascos", "cascos", "el altavoz", "altavoz", "los altavoces",
+                "eso", "la", "el", "nuevos", "uno nuevo"}
+
+
+def _parse_bluetooth(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    hay_bt = _TRIGGER_BT.search(mm)
+    hay_disp = _BT_DISPOSITIVO.search(mm)
+    conectar = re.search(r'\bconect\w+', mm) and not re.search(r'\bestoy\s+conect', mm)
+    desconectar = re.search(r'\bdesconect\w+', mm)
+    emparejar = _BT_EMPAREJAR.search(mm)
+    # sin "bluetooth" explícito solo entramos si hay un verbo + un dispositivo típico
+    if not hay_bt and not (hay_disp and (conectar or desconectar or emparejar)):
+        return None
+    # con dispositivo pero sin "bluetooth": podría ser otra cosa; exigimos el verbo
+    if not hay_bt and not hay_disp:
+        return None
+
+    def _nombre() -> str:
+        g = re.search(r'\b(?:conect\w+|desconect\w+|empareja\w*|vincula\w*|'
+                      r'parea\w*|enlaza\w*)(?:me|te)?\s+'
+                      r'(?:a\s+|al\s+|con\s+|de\s+|del\s+)?'
+                      r'(?:el\s+|la\s+|los\s+|las\s+|mis\s+|un\s+|unos\s+)?'
+                      r'["\']?(.+?)["\']?\s*[.!?]*\s*$', m.strip(), re.IGNORECASE)
+        if not g:
+            return ""
+        n = re.sub(r'\b(?:por|via|a)\s+bluetooth\b', '', g.group(1),
+                   flags=re.IGNORECASE)
+        n = _BT_DISPOSITIVO.sub('', n, count=1).strip(" .,-")   # quita "altavoz", "cascos"...
+        return "" if _sin_tildes(n).lower() in _BT_GENERICO else n
+
+    # encender / apagar el adaptador: fuera de alcance de F3 (solo conectar/
+    # desconectar dispositivos), pero se dice claramente en vez de fingir
+    if hay_bt and re.search(r'\b(apaga\w*|enciende\w*|activa\w*|desactiva\w*|'
+                            r'pon|quita)\b', mm) and not (conectar or desconectar):
+        return IntentResult(
+            kind="ambiguous",
+            clarification=(
+                "Encender o apagar el adaptador Bluetooth no lo tengo cableado "
+                "todavía, senor: por ahora solo conecto y desconecto dispositivos "
+                "ya emparejados. Usa el conmutador de Configuración > Bluetooth."))
+
+    # emparejar un dispositivo nuevo: fuera de alcance (F3), pero lo explicamos
+    if emparejar and not desconectar:
+        return IntentResult(
+            kind="ambiguous",
+            clarification=(
+                "Emparejar un dispositivo Bluetooth nuevo pide un PIN o un código "
+                "que hay que teclear en el momento, senor, y eso no puedo hacerlo "
+                "yo. Emparéjalo desde Configuración > Bluetooth y luego ya puedo "
+                "conectarlo y desconectarlo."))
+
+    if desconectar:
+        return IntentResult(kind="tool_execute", tool="bt_disconnect",
+                            arguments={"objetivo": _nombre()},
+                            reason="Desconectar dispositivo Bluetooth")
+    if conectar:
+        return IntentResult(kind="tool_execute", tool="bt_connect",
+                            arguments={"objetivo": _nombre()},
+                            reason="Conectar dispositivo Bluetooth")
+
+    # listar emparejados
+    if re.search(r'\b(que\s+dispositivos|dispositivos\s+(?:hay|emparejad\w+|'
+                 r'conectad\w+)|lista|listar|emparejad\w+|vinculad\w+|'
+                 r'muestrame\s+los|cuales\s+hay)\b', mm):
+        return IntentResult(kind="tool_read", tool="bt_list",
+                            reason="Listar dispositivos Bluetooth")
+
+    # estado (por defecto cuando se menciona el Bluetooth)
+    return IntentResult(kind="tool_read", tool="bt_status",
+                        reason="Estado del Bluetooth")
+
+
+# PLAN_EJECUCION FASE F · F1 — brillo de pantalla.
+_TRIGGER_BRILLO = re.compile(
+    r'\bbrillo\b'
+    r'|\bpantalla\b[^.?!]{0,25}\b(?:mas\s+)?(?:oscur\w+|clar\w+|brillante|tenue|atenu\w+)\b'
+    r'|\b(?:atenua|oscurece|aclara|ilumina)\b[^.?!]{0,15}\bpantalla\b',
+    re.IGNORECASE)
+
+
+def _parse_brillo(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_BRILLO.search(mm):
+        return None
+    m_nivel = re.search(r'\b(?:al|a|en)\s+(\d{1,3})\b', mm)
+    if m_nivel:
+        n = max(0, min(int(m_nivel.group(1)), 100))
+        return IntentResult(kind="tool_execute", tool="brightness_set",
+                            arguments={"level": n}, reason=f"Brillo al {n}%")
+    baja = re.search(r'\b(baja|bajame|bajale|reduce|reduceme|atenua|oscurece|'
+                     r'menos\s+brillo|mas\s+oscur\w+|mas\s+tenue)\b', mm)
+    sube = re.search(r'\b(sube|subeme|subele|aumenta|aumentame|aclara|ilumina|'
+                     r'mas\s+brillo|mas\s+clar\w+|mas\s+brillante)\b', mm)
+    if baja and not sube:
+        return IntentResult(kind="tool_execute", tool="brightness_down",
+                            reason="Bajar el brillo")
+    if sube and not baja:
+        return IntentResult(kind="tool_execute", tool="brightness_up",
+                            reason="Subir el brillo")
+    return IntentResult(kind="ambiguous",
+                        clarification="¿Subo o bajo el brillo, senor? ¿O lo pongo "
+                        "a un nivel exacto?")
+
+
 def _parse_media(low: str) -> IntentResult | None:
     """Volumen y control multimedia. Corre ANTES de fase4: 'quita el
     silencio' caeria en el patron de BORRAR ('quita...') si no."""
@@ -1201,6 +1373,22 @@ def parse_intent(message: str) -> IntentResult:
     auditoria = _parse_auditoria(m)
     if auditoria is not None:
         return auditoria
+
+    # --- BLUETOOTH (FASE F · F3): antes de RED (para que "desconecta los
+    #     cascos" no sea net_disconnect) y antes de media/apps ---
+    bt = _parse_bluetooth(m)
+    if bt is not None:
+        return bt
+
+    # --- RED / WIFI (FASE F · F2) ---
+    red = _parse_red(m)
+    if red is not None:
+        return red
+
+    # --- BRILLO (FASE F · F1): antes de volumen, "sube el brillo" no es "sube" ---
+    brillo = _parse_brillo(m)
+    if brillo is not None:
+        return brillo
 
     # --- VOLUMEN Y MULTIMEDIA (antes de fase4: "quita el silencio"
     #     caeria en el patron de BORRAR) ---

@@ -19,7 +19,11 @@ SECRET_PATTERNS = [
     # valor secreto -- el reemplazo `\1=[REDACTED]` solo debe reinsertar
     # la etiqueta. Antes el grupo capturaba el propio secreto y se
     # reinsertaba intacto en el "texto redactado".
-    (r'\b(password|passwd|pwd|secret|token|key|api_key)\s*[:=]\s*'
+    # `psk` y `802-11-wireless-security.psk`: la clave de un WiFi tal como la
+    # escupe `nmcli ... --show-secrets` (FASE F · F2). JARVIS no maneja
+    # contraseñas de WiFi, pero si una se colara en un log o en el prompt, se
+    # redacta aquí igual que password/token.
+    (r'\b((?:[\w.-]+\.)?psk|password|passwd|pwd|secret|token|key|api_key)\s*[:=]\s*'
      r'["\']?[^\s"\'&|<>{}\\$]{8,}["\']?',
      r'\1=[REDACTED]'),
     (r'(?:Authorization|Bearer)\s+[A-Za-z0-9_\-\.=]{20,}', "[AUTH_HEADER]"),

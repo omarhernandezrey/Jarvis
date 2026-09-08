@@ -272,6 +272,14 @@ def handle_confirm(jarvis=None):
             plan = execute_service(plan.params["accion"], plan.params["servicio"],
                                    plan.params.get("scope", "user"))
             print(describe_outcome(plan, tool="controlar_servicio"))
+        elif plan.action == "wifi_radio":
+            from jarvis_local.tools.network import execute_wifi_radio
+            plan = execute_wifi_radio(bool(plan.params["encender"]))
+            print(describe_outcome(plan, tool="wifi_radio"))
+        elif plan.action == "desconectar_red":
+            from jarvis_local.tools.network import execute_disconnect
+            plan = execute_disconnect(plan.params["objetivo"])
+            print(describe_outcome(plan, tool="desconectar_red"))
         elif plan.action in ("crear_archivo", "crear_carpeta"):
             print(plan)
             print("[INFO] Creacion confirmada pero no ejecutada en esta fase (solo simulacion).")
