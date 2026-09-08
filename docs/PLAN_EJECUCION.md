@@ -669,20 +669,22 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
 >
 > | Punto | Lectura en vivo | Escritura en vivo | Motivo |
 > |---|---|---|---|
-> | Punto | Lectura en vivo | Escritura en vivo | Motivo |
-> |---|---|---|---|
-> | F1 brillo — lectura | ✅ `get_brightness()` devuelve 31% (287/937) con `brightnessctl` real | — | — |
-> | F1 brillo — escritura | — | ❌ **sin verificar el camino de ÉXITO**; ✅ FALLO FORZADO en vivo | `brightnessctl` instalado (2026-09-07). `set` da *Permission denied* sin sudo (udev rule → sysfs en grupo `video` + `g+w`; `omar` **no está en `video`**). Con el binario real, `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté: brightnessctl set 50% → …" — **no finge éxito** (esto sí queda probado en vivo). Falta el camino de éxito: `sudo usermod -aG video omar` + re-login. |
+> | F1 brillo — lectura | ✅ `get_brightness()` → 31% real (287/937) con `brightnessctl` instalado | — | — |
+> | F1 brillo — FALLO FORZADO | — | ✅ probado en vivo | Con el binario real y sin permiso de escritura: `set_brightness(50)` → `ERROR`, `verify.ok=False`, "Intenté: brightnessctl set 50% → Permission denied". **No finge éxito.** |
+> | F1 brillo — camino de ÉXITO (fijar/releer, recorte a 5%) | — | ❌ **sin verificar** | `brightnessctl set` exige pertenecer al grupo `video` (udev rule de `brightness-udev` → sysfs `video`+`g+w`). `sudo usermod -aG video omar` hecho (2026-09-07 20:24) y `omar` ya figura en `/etc/group`, **pero el proceso de Claude Code precede al `usermod`**: sus grupos son los de antes (`4 24 27 30 46 100 111 114 115 973 1000`, sin `44`) y `newgrp`/`sg` no están en el sistema para recargarlos. Requiere **reiniciar Claude Code** (`claude --continue`) para heredar el grupo y ejercitar. |
 > | F2 red/WiFi — lectura | ✅ `net_status`/`wifi_list` responden ("no hay hardware WiFi") | — | — |
-> | F2 red/WiFi — escritura | — | ❌ **implementado sin verificación en vivo — límite PERMANENTE** | No hay WiFi operativo ni lo habrá: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`, `nmcli WIFI-HW: missing`. `connection up/down` y `radio` quedan sin ejercitar por falta de hardware. |
+> | F2 red/WiFi — escritura | — | ❌ **límite PERMANENTE de hardware** | No hay WiFi operativo ni lo habrá: Broadcom BCM43228 en PCI `02:00.0` sin driver (`wl`/`broadcom-sta`), ninguna interfaz `wl*`, `nmcli WIFI-HW: missing`. `connection up/down` y `radio` quedan sin ejercitar. |
 > | F3 Bluetooth — lectura | ✅ `bt_status`/`bt_list`, controlador `hci0` activo | — | — |
-> | F3 Bluetooth — escritura | — | ❌ **implementado sin verificación en vivo** | Adaptador presente y funcional, **0 dispositivos emparejados**. `bt_connect`/`bt_disconnect` solo operan sobre emparejados. Pendiente: emparejar cualquier dispositivo y ejercitar con VERIFY real. |
+> | F3 Bluetooth — escritura | — | ❌ **sin verificar** | Adaptador presente y funcional. Tras el intento de emparejamiento del usuario (2026-09-07 20:22) BlueZ sigue con **0 dispositivos vinculados**: `/var/lib/bluetooth/B8:86:87:BE:8D:70/` no tiene ninguna carpeta `<MAC>/`, `bluetoothctl devices Paired` vacío (posible dispositivo BLE que conecta sin *bond*, o el emparejado no persistió). `bt_connect`/`bt_disconnect` operan solo sobre vinculados. Pendiente: un dispositivo **realmente vinculado** (que aparezca en `bluetoothctl devices Paired`). |
 >
 > Acciones para cerrar la brecha (requieren al usuario):
-> - **F1:** `sudo usermod -aG video omar` y cerrar/abrir sesión → JARVIS
->   ejercita leer/fijar/releer y el límite inferior. (El paquete ya está.)
-> - **F3:** emparejar cualquier dispositivo desde Configuración > Bluetooth →
->   JARVIS ejercita conectar/desconectar con VERIFY real.
+> - **F1:** reiniciar Claude Code (`claude --continue`) — el `usermod -aG video`
+>   ya está hecho, solo falta que el proceso herede el grupo. Luego JARVIS
+>   ejercita fijar/releer y el recorte a 5%.
+> - **F3:** vincular un dispositivo que persista en `bluetoothctl devices
+>   Paired` (comprobar en Configuración > Bluetooth que quede como
+>   "emparejado", no solo "conectado"). Luego JARVIS ejercita
+>   conectar/desconectar con VERIFY real.
 > - **F2:** nada que hacer sin hardware WiFi. Límite permanente.
 
 - [x] **F1 — Brillo** (`jarvis_local/tools/brightness.py`; parser
