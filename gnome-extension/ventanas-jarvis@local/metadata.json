@@ -1,0 +1,9 @@
+{
+  "uuid": "ventanas-jarvis@local",
+  "name": "Ventanas JARVIS",
+  "description": "Expone por D-Bus (org.gnome.Shell.Extensions.VentanasJarvis) los métodos List, Details, Activate y Close para que JARVIS pueda listar, enfocar y cerrar ventanas en Wayland. Recorte de Window Calls (GPL-2.0-or-later).",
+  "shell-version": ["48", "49", "50"],
+  "version": 1,
+  "url": "https://github.com/omarhernandezrey/Jarvis",
+  "session-modes": ["user"]
+}

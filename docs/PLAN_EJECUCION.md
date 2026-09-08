@@ -798,12 +798,24 @@ Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
       recortada a esos 4 métodos (quitar Move/Resize/Max/Min). Plan B:
       extensión propia mínima (~150 líneas). **Esperando visto bueno del
       usuario para F4.2.**
-- [ ] **F4.2 — IMPLEMENTACIÓN** (solo con OK sobre F4.1). Alcance mínimo:
-      listar ventanas, enfocar una, cerrarla (mover/organizar FUERA).
-      Probar en usuario/sesión aparte, nunca en la de trabajo. Interruptor
-      para desactivar la extensión sin tocar el compositor. Cerrar ventana =
-      destructivo (E2): confirmación mostrando qué ventana. Intocables de E1
-      nunca se tocan. VERIFY real: la ventana desapareció, el foco cambió.
+- [ ] **F4.2 — IMPLEMENTACIÓN** (OK del usuario sobre F4.1 recibido; alcance:
+      listar, enfocar, cerrar — mover/organizar FUERA).
+  - [x] **Paso 1 — lectura y recorte de la extensión.**
+        `docs/F4_2_EXTENSION_LECTURA.md` (análisis) +
+        `gnome-extension/ventanas-jarvis@local/` (`extension.js` recortado a
+        `List`/`Details`/`Activate`/`Close`, `metadata.json`, `README.md`,
+        `LICENSE` GPL-2.0). Origen: Window Calls de ickyicky
+        (GPL-2.0-or-later, vendorizado permitido; JARVIS es MIT y habla con
+        la extensión solo por D-Bus). Bug del original corregido
+        (`_get_window_by_wid` usaba una variable inexistente). 16 métodos
+        fuera de alcance **borrados**, no comentados. **No instalado, no
+        cableado. Pendiente de revisión del usuario.**
+  - [ ] Paso 2 — usuario de pruebas + ejercitar la extensión ahí.
+  - [ ] Paso 3 — herramientas `listar_ventanas`/`enfocar_ventana`/
+        `cerrar_ventana` (`llm_visible=False`). Cerrar = destructivo (E2):
+        confirmación mostrando qué ventana. Intocables de E1 nunca se tocan.
+        VERIFY real: la ventana desapareció, el foco cambió. Interruptor para
+        desactivar la extensión sin tocar el compositor.
 
 ## FASE G — Control de máquina, oleada 3: interacción
 
