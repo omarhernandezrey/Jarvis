@@ -768,6 +768,17 @@ Portapapeles de escritura, teclado y ratón sintéticos con `ydotool`. La más
 peligrosa: confirmación siempre, límite de velocidad, interruptor global para
 desactivarla.
 
+> **Prerrequisito de entorno — resolver ANTES de escribir código, no a mitad.**
+> `ydotool` no funciona a secas: necesita el demonio **`ydotoold`** corriendo
+> y que el usuario pertenezca a un grupo con acceso a `/dev/uinput` (grupo
+> **`input`**, o udev rule equivalente). Pasos: instalar, arrancar `ydotoold`
+> (servicio de usuario o de sistema), `sudo usermod -aG input omar`, y
+> **reiniciar Claude Code** para heredar el grupo (ver OPERACION_MEMORIA.md §5
+> — el proceso hereda los grupos de arranque; nos pasó con `video` en F1).
+> Comprobar `id -nG` antes de dar por buena la verificación en vivo. Si no se
+> puede dejar operativo, G se implementa igual pero se marca NO VERIFICABLE en
+> vivo desde el principio (como F2/F3). Detalle en OPERACION_MEMORIA.md §6.
+
 ## FASE H — Código muerto: integrar o borrar
 
 `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py`.

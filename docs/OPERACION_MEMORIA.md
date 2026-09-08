@@ -102,18 +102,22 @@ Nada de esto entra en FASE D (cierra con D5). Queda anotado como entrada de E.
 
 ## Operativa de permisos y demonios (hallazgos de FASE F, entrada para G)
 
-### 5. Un cambio de grupo/permisos exige reiniciar Claude Code
+### 5. Un cambio de grupo/permisos exige reiniciar Claude Code (particularidad de esta máquina)
 
 El proceso de Claude Code **hereda los grupos de cuando arrancó** y no los
 recarga. En FASE F, `sudo usermod -aG video omar` (necesario para que
 `brightnessctl` escriba sin sudo) no tuvo efecto hasta **reiniciar el propio
 proceso** de Claude Code — reiniciar la sesión de escritorio no basta, y
-`newgrp`/`sg` no están instalados para forzar la recarga.
+`newgrp`/`sg` no están instalados en este equipo para forzar la recarga.
 
 Regla: cualquier `usermod -aG`, cambio de `sudoers`, o ajuste de permisos que
 afecte a lo que JARVIS/Claude Code puede hacer → **salir y volver a entrar en
 Claude Code** (`claude --continue`) antes de dar por buena la verificación en
 vivo. Comprobación: `id -nG` debe incluir el grupo nuevo.
+
+Va a repetirse en **FASE G**: `ydotool` necesita el grupo `input` (ver §6).
+Mismo procedimiento: `usermod -aG input omar` → reiniciar Claude Code →
+comprobar `id -nG`.
 
 ### 6. FASE G — `ydotool` necesita `ydotoold` + grupo `input` ANTES de codificar
 
