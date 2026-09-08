@@ -549,7 +549,7 @@ punto de la fase. `pytest test -q`: sin FAILED/ERROR en los 6 commits.
 El banco de routing (`jarvis_local/eval/cases`, 60/60 tras FASE C) mide
 **enrutado y seguridad**: qué herramienta se elige. No sabía nada de si la
 herramienta, una vez elegida, **hace lo que dice**. D5 lo añade en
-`test/test_banco_efecto_fallo.py` (12 casos, `pytest`).
+`test/test_banco_efecto_fallo.py` (29 casos tras D5 + FASE E + FASE F, `pytest`).
 
 ### 15.1 Clase EFECTO — se hace y se comprueba EN LA MÁQUINA
 
@@ -586,8 +586,8 @@ contiene ninguna frase de éxito (regex `_EXITO`:
 | Bloque | Casos | Resultado |
 |---|---|---|
 | Routing + seguridad (`eval/cases`, grupos A–H) | 60 | 60/60 (FASE C) |
-| EFECTO (`test_banco_efecto_fallo.py`) | 7 | 7/7 |
-| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 11 | 11/11 |
+| EFECTO (`test_banco_efecto_fallo.py`) | 10 | 10/10 |
+| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 19 | 19/19 |
 
 Los tres desenlaces de D1 (`True` hecho / `False` no-hecho / `None` no
 medible) quedan cubiertos por el banco: EFECTO exige `True` (o `None` con
@@ -611,3 +611,27 @@ Guardias transversales de E, cubiertos además por `test_untouchables.py` (53),
 sobre cualquier petición explícita; **E2** (sin sudo implícito) entrega la
 regla concreta y no la elude; **VERIFY** relee el efecto real (proceso muerto
 / `ActiveState` del servicio).
+
+### 15.5 FASE F (primera mitad) — brillo, red/WiFi, Bluetooth
+
+| Clase | Caso | Desenlace exigido |
+|---|---|---|
+| EFECTO | `set_brightness(42)` con `brightnessctl` simulado que muta de verdad; se relee `brightnessctl get` | `EXECUTED`, `verify.ok is True`, el valor real = 42 |
+| EFECTO | `wifi_connect` a una red guardada; se relee `connection show --active` | `EXECUTED`, `verify.ok is True`, la conexión aparece `activated` |
+| EFECTO | `bt_connect` a un emparejado; se lee `Connected:` de `bluetoothctl info` | `EXECUTED`, `verify.ok is True`, la MAC aparece en `devices Connected` |
+| FALLO FORZADO | pedir brillo `0` | recorte al mínimo `MIN_BRILLO_PCT` (nunca a oscuras) y se dice; el valor real nunca baja de ahí |
+| FALLO FORZADO | brillo sin `brightnessctl` (real en esta máquina) | `ERROR` claro ("instala `brightnessctl`"), no finge |
+| FALLO FORZADO | `wifi_connect` a una red **no guardada** | `BLOCKED` que lista las guardadas, nunca "conectado" |
+| FALLO FORZADO | invariante: `wifi_connect` — la contraseña **nunca** en `params` ni en el resultado | ni `psk` ni `password` en el plan |
+| FALLO FORZADO | conectar/desconectar/apagar la red con `dpkg`/`apt` en curso | `BLOCKED` — "espera"; un `apt` a medias sin red deja el sistema peor |
+| FALLO FORZADO | `bt_connect` a un dispositivo **no emparejado** | `BLOCKED` que lista los emparejados, nunca "conectado" |
+| FALLO FORZADO | `bt_disconnect` cuando el dispositivo sigue conectado tras el intento | `ERROR`, `verify.ok is False`, con lo que se intentó |
+| FALLO FORZADO | Bluetooth sin `bluetoothctl` | `ERROR` claro ("instala `bluez`"), no finge |
+
+Cubierto además por `test_brightness.py` (7), `test_network.py` (14),
+`test_bluetooth.py` (15): detección en runtime con error claro cuando falta la
+herramienta; **VERIFY** con los tres desenlaces (brillo releído, conexión
+`activated`, `Connected: yes/no`); "lo desconocido se reporta como
+desconocido" (verify `None` → salvedad, jamás éxito). Emparejar dispositivos
+Bluetooth nuevos y encender/apagar el adaptador quedan **fuera** de F3: el
+parser lo detecta y lo explica en vez de fingir. Ventanas Wayland van aparte.

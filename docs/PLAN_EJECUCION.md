@@ -657,7 +657,7 @@ Si falta la herramienta del sistema, se dice; nunca se falla en silencio (D0).
 Ventanas en Wayland (extensión GNOME + D-Bus: listar, enfocar, mover, cerrar),
 brillo `brightnessctl`, red/WiFi `nmcli`, Bluetooth.
 
-### Primera mitad — brillo, red/WiFi, Bluetooth  🚧 EN CURSO (rama `feature/fase-f-brillo-red-bt`)
+### Primera mitad — brillo, red/WiFi, Bluetooth  ✅ F1-F3 + banco (rama `feature/fase-f-brillo-red-bt`, pendiente merge)
 
 Ventanas Wayland van APARTE por su riesgo (no en esta sesión). Todas: ruta
 del parser (`llm_visible=False` si son delicadas), detección de disponibilidad

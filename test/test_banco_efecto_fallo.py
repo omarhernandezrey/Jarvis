@@ -390,5 +390,246 @@ def test_efecto_notificacion_rc0_se_reporta_con_salvedad(monkeypatch):
     assert "no puedo confirmar" in plan.result.lower()
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# FASE F — brillo, red/WiFi, Bluetooth
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _cp(out="", rc=0, err=""):
+    return subprocess.CompletedProcess([], rc, out, err)
+
+
+def test_efecto_brillo_se_relee_el_valor_real(monkeypatch):
+    """EFECTO: se fija el brillo y se COMPRUEBA releyendo `brightnessctl get`,
+    no el código de salida. El estado simulado cambia de verdad."""
+    from jarvis_local.tools import brightness as B
+
+    est = {"pct": 20}
+
+    def _bctl(*a):
+        if a[:2] == ("-m", "get"):
+            return _cp(str(est["pct"]))
+        if a[:2] == ("-m", "max"):
+            return _cp("100")
+        if a and a[0] == "set":
+            est["pct"] = int(a[1].rstrip("%"))
+            return _cp()
+        return _cp()
+
+    monkeypatch.setattr(B, "_hay_brightnessctl", lambda: True)
+    monkeypatch.setattr(B, "_bctl", _bctl)
+    monkeypatch.setattr("jarvis_local.tools.verify.grace", lambda *a, **k: None)
+
+    plan = B.set_brightness(42)
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+    assert est["pct"] == 42                       # comprobación independiente
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_brillo_nunca_deja_la_pantalla_a_oscuras(monkeypatch):
+    """FALLO FORZADO: pedir brillo 0 no puede dejar la pantalla negra sin
+    forma de corregirlo. Se recorta al mínimo y se dice."""
+    from jarvis_local.tools import brightness as B
+
+    est = {"pct": 80}
+
+    def _bctl(*a):
+        if a[:2] == ("-m", "get"):
+            return _cp(str(est["pct"]))
+        if a[:2] == ("-m", "max"):
+            return _cp("100")
+        if a and a[0] == "set":
+            est["pct"] = int(a[1].rstrip("%"))
+            return _cp()
+        return _cp()
+
+    monkeypatch.setattr(B, "_hay_brightnessctl", lambda: True)
+    monkeypatch.setattr(B, "_bctl", _bctl)
+    monkeypatch.setattr("jarvis_local.tools.verify.grace", lambda *a, **k: None)
+
+    plan = B.set_brightness(0)
+    assert est["pct"] == B.MIN_BRILLO_PCT
+    assert f"{B.MIN_BRILLO_PCT}%" in plan.result
+
+
+def test_fallo_brillo_sin_brightnessctl_error_claro(monkeypatch):
+    """FALLO FORZADO real en esta máquina: no hay brightnessctl instalado."""
+    from jarvis_local.tools import brightness as B
+
+    monkeypatch.setattr(B, "_hay_brightnessctl", lambda: False)
+    plan = B.set_brightness(60)
+    assert plan.status == ActionStatus.ERROR
+    assert "brightnessctl" in plan.result
+    assert not _EXITO.search(plan.result)
+
+
+class _FakeNmcli:
+    def __init__(self):
+        self.guardadas = {"CasaWifi": "802-11-wireless"}
+        self.activas = set()
+
+    def __call__(self, *a):
+        if a[:2] == ("-t", "-f") and "WIFI-HW" in a:
+            return _cp("enabled")
+        if a[:2] == ("-t", "-f") and a[2] == "WIFI":
+            return _cp("enabled")
+        if a[:2] == ("-t", "-f") and a[2] == "NAME,TYPE" and "show" in a:
+            return _cp("".join(f"{n}:{t}\n" for n, t in self.guardadas.items()))
+        if a[:2] == ("-t", "-f") and a[2].startswith("NAME,STATE"):
+            return _cp("".join(f"{n}:activated\n" for n in self.activas))
+        if a[0] == "connection" and a[1] == "up":
+            self.activas.add(a[2])
+            return _cp()
+        if a[0] == "connection" and a[1] == "down":
+            self.activas.discard(a[2])
+            return _cp()
+        return _cp()
+
+
+def _patch_nmcli(monkeypatch, fake, tx=False):
+    from jarvis_local.safety import permisos
+    from jarvis_local.tools import network as N
+    monkeypatch.setattr(N, "_hay_nmcli", lambda: True)
+    monkeypatch.setattr(N, "_nmcli", fake)
+    monkeypatch.setattr("jarvis_local.tools.verify.grace", lambda *a, **k: None)
+    monkeypatch.setattr(permisos, "transaccion_de_paquetes_en_curso", lambda: tx)
+
+
+def test_efecto_conectar_wifi_verifica_que_quedo_activada(monkeypatch):
+    """EFECTO: tras `nmcli connection up` se comprueba que la conexión está
+    'activated' (estado real), no que el comando devolviera 0."""
+    from jarvis_local.tools import network as N
+
+    fake = _FakeNmcli()
+    _patch_nmcli(monkeypatch, fake)
+    plan = N.wifi_connect("CasaWifi")
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+    assert "CasaWifi" in fake.activas                 # comprobación independiente
+
+
+def test_fallo_conectar_wifi_no_guardada_no_finge(monkeypatch):
+    """FALLO FORZADO: red que NetworkManager no tiene guardada -> BLOQUEADO
+    que lista las que sí, nunca un 'conectado'."""
+    from jarvis_local.tools import network as N
+
+    _patch_nmcli(monkeypatch, _FakeNmcli())
+    plan = N.wifi_connect("RedAjena")
+    assert plan.status == ActionStatus.BLOCKED
+    assert "CasaWifi" in plan.result
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_wifi_la_contrasena_nunca_aparece_en_el_plan(monkeypatch):
+    """Invariante F2: JARVIS no maneja contraseñas de WiFi — no hay ninguna en
+    los parámetros ni en el resultado (solo activa conexiones guardadas)."""
+    from jarvis_local.tools import network as N
+
+    _patch_nmcli(monkeypatch, _FakeNmcli())
+    plan = N.wifi_connect("CasaWifi")
+    todo = (repr(plan.params) + " " + (plan.result or "") + " "
+            + (plan.simulation_result or "")).lower()
+    assert "psk" not in todo and "password" not in todo
+
+
+def test_fallo_red_no_se_toca_con_instalacion_de_paquetes_en_curso(monkeypatch):
+    """E1·c aplicado a F2: con dpkg/apt corriendo no se conecta ni se
+    desconecta la red (un apt a medias sin red deja el sistema peor)."""
+    from jarvis_local.tools import network as N
+
+    _patch_nmcli(monkeypatch, _FakeNmcli(), tx=True)
+    for plan in (N.wifi_connect("CasaWifi"), N.plan_disconnect("CasaWifi"),
+                 N.plan_wifi_radio(False)):
+        assert plan.status == ActionStatus.BLOCKED
+        assert "instalación" in plan.result or "actualización" in plan.result
+        assert not _EXITO.search(plan.result)
+
+
+class _FakeBt:
+    def __init__(self):
+        self.paired = {"AA:AA:AA:AA:AA:01": "Sony WH-1000XM4"}
+        self.connected = set()
+        self.baja_falla = False
+
+    def __call__(self, *a):
+        if a == ("show",):
+            return _cp("Controller B8:86:87:BE:8D:70 (public)\n\tPowered: yes\n")
+        if a[:2] == ("devices", "Paired"):
+            return _cp("".join(f"Device {m} {n}\n" for m, n in self.paired.items()))
+        if a[:2] == ("devices", "Connected"):
+            return _cp("".join(f"Device {m} {self.paired[m]}\n" for m in self.connected))
+        if a[0] == "info":
+            estado = "yes" if a[1] in self.connected else "no"
+            return _cp(f"Device {a[1]}\n\tConnected: {estado}\n")
+        if a[0] == "connect":
+            self.connected.add(a[1])
+            return _cp("Connection successful\n")
+        if a[0] == "disconnect":
+            if not self.baja_falla:
+                self.connected.discard(a[1])
+            return _cp("" if self.baja_falla else "Successful disconnected\n",
+                       rc=1 if self.baja_falla else 0)
+        return _cp()
+
+
+def _patch_bt(monkeypatch, fake):
+    from jarvis_local.tools import bluetooth as BT
+    monkeypatch.setattr(BT, "_hay_bluetoothctl", lambda: True)
+    monkeypatch.setattr(BT, "_bt", fake)
+    monkeypatch.setattr("jarvis_local.tools.verify.grace", lambda *a, **k: None)
+
+
+def test_efecto_bluetooth_conectar_verifica_connected_yes(monkeypatch):
+    """EFECTO: tras `bluetoothctl connect` se lee `Connected:` de
+    `bluetoothctl info` — estado real, no el código de salida."""
+    from jarvis_local.tools import bluetooth as BT
+
+    fake = _FakeBt()
+    _patch_bt(monkeypatch, fake)
+    plan = BT.bt_connect("Sony")
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+    assert "AA:AA:AA:AA:AA:01" in fake.connected        # comprobación independiente
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_bluetooth_dispositivo_no_emparejado_no_finge(monkeypatch):
+    """FALLO FORZADO: no se conecta a algo que no está emparejado -> BLOQUEADO
+    que lista los emparejados, nunca un 'conectado'."""
+    from jarvis_local.tools import bluetooth as BT
+
+    _patch_bt(monkeypatch, _FakeBt())
+    plan = BT.bt_connect("Bose QuietComfort")
+    assert plan.status == ActionStatus.BLOCKED
+    assert "Sony WH-1000XM4" in plan.result
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_bluetooth_desconectar_que_no_cuaja_es_error(monkeypatch):
+    """FALLO FORZADO: si el dispositivo sigue conectado tras el intento, es
+    ERROR con lo que se intentó, no un 'desconectado'."""
+    from jarvis_local.tools import bluetooth as BT
+
+    fake = _FakeBt()
+    fake.connected = {"AA:AA:AA:AA:AA:01"}
+    fake.baja_falla = True
+    _patch_bt(monkeypatch, fake)
+    plan = BT.bt_disconnect("Sony")
+    assert plan.status == ActionStatus.ERROR
+    assert plan.params["verify"]["ok"] is False
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_bluetooth_sin_bluetoothctl_error_claro(monkeypatch):
+    from jarvis_local.tools import bluetooth as BT
+
+    monkeypatch.setattr(BT, "_hay_bluetoothctl", lambda: False)
+    plan = BT.bt_connect("lo que sea")
+    assert plan.status == ActionStatus.ERROR
+    assert "bluetoothctl" in plan.result
+    assert not _EXITO.search(plan.result)
+
+
 if __name__ == "__main__":
     print("usa pytest")
