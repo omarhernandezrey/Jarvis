@@ -549,7 +549,7 @@ punto de la fase. `pytest test -q`: sin FAILED/ERROR en los 6 commits.
 El banco de routing (`jarvis_local/eval/cases`, 60/60 tras FASE C) mide
 **enrutado y seguridad**: qué herramienta se elige. No sabía nada de si la
 herramienta, una vez elegida, **hace lo que dice**. D5 lo añade en
-`test/test_banco_efecto_fallo.py` (29 casos tras D5 + FASE E + FASE F, `pytest`).
+`test/test_banco_efecto_fallo.py` (35 casos tras D5 + FASE E + FASE F, `pytest`).
 
 ### 15.1 Clase EFECTO — se hace y se comprueba EN LA MÁQUINA
 
@@ -586,8 +586,8 @@ contiene ninguna frase de éxito (regex `_EXITO`:
 | Bloque | Casos | Resultado |
 |---|---|---|
 | Routing + seguridad (`eval/cases`, grupos A–H) | 60 | 60/60 (FASE C) |
-| EFECTO (`test_banco_efecto_fallo.py`) | 10 | 10/10 |
-| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 19 | 19/19 |
+| EFECTO (`test_banco_efecto_fallo.py`) | 12 | 12/12 |
+| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 23 | 23/23 |
 
 Los tres desenlaces de D1 (`True` hecho / `False` no-hecho / `None` no
 medible) quedan cubiertos por el banco: EFECTO exige `True` (o `None` con
@@ -634,4 +634,27 @@ herramienta; **VERIFY** con los tres desenlaces (brillo releído, conexión
 `activated`, `Connected: yes/no`); "lo desconocido se reporta como
 desconocido" (verify `None` → salvedad, jamás éxito). Emparejar dispositivos
 Bluetooth nuevos y encender/apagar el adaptador quedan **fuera** de F3: el
-parser lo detecta y lo explica en vez de fingir. Ventanas Wayland van aparte.
+parser lo detecta y lo explica en vez de fingir.
+
+### 15.6 FASE F (segunda mitad) — ventanas en Wayland (F4.2)
+
+| Clase | Caso | Desenlace exigido |
+|---|---|---|
+| EFECTO | `enfocar_ventana`; tras `Activate` se relee `List()` | `EXECUTED`, `verify.ok is True`, `has_focus` de esa ventana pasó a `true` |
+| EFECTO | `cerrar_ventana` (tras `/confirmar`); tras `Close` se relee `List()` | `EXECUTED`, `verify.ok is True`, la ventana ya no está en `List()` |
+| FALLO FORZADO | cerrar la ventana de `gnome-shell` (E1 por `wm_class`) | `BLOCKED`, nunca "cerrada" |
+| FALLO FORZADO | cerrar la ventana del propio JARVIS (E1 por `pid` ∈ `own_pids()`) | `BLOCKED`, "es una ventana del propio JARVIS" |
+| FALLO FORZADO | operar ventanas sin la extensión por D-Bus | `ERROR` que dice cómo instalarla (`gnome-extensions enable ventanas-jarvis@local`), nunca en silencio |
+| FALLO FORZADO | `Close` devuelve rc 0 pero la ventana sigue (diálogo "¿guardar?") | `EXECUTED` con `verify.ok is None` + salvedad ("está preguntando si guardar"), **nunca** "cerrada" |
+
+Cubierto además por `test_ventanas.py` (16), con la capa D-Bus simulada:
+lectura; `enfocar` con VERIFY real (`has_focus` releído); varias coincidencias
+→ `BLOCKED` que pide el id exacto (no elige JARVIS, como E3); `cerrar` con
+confirmación mostrando **título + `wm_class` + `pid`**; guardia de intocables
+por `wm_class` **y** por `pid`; re-guarda de intocables antes de ejecutar; el
+interruptor `data/ventanas_integracion.json` bloquea todo mientras está
+desactivado sin tocar el compositor. **Contrato de cable verificado en vivo**
+(2026-09-08, extensión real en `gnome-shell --headless` del usuario de
+pruebas): `_unwrap`+`json.loads` parsean la salida de `gdbus call List`;
+`Activate`/`Close` se comportan como asume el código; `Close(<id inexistente>)`
+→ error D-Bus, el shell no cae.

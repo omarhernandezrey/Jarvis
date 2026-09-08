@@ -313,6 +313,26 @@ def _bt_disconnect(objetivo: str = ""):
     return bt_disconnect(objetivo)
 
 
+def _win_list():
+    from jarvis_local.tools.ventanas import list_windows
+    return list_windows()
+
+
+def _win_focus(objetivo: str):
+    from jarvis_local.tools.ventanas import focus_window
+    return focus_window(objetivo)
+
+
+def _win_close(objetivo: str):
+    from jarvis_local.tools.ventanas import plan_close_window
+    return plan_close_window(objetivo)
+
+
+def _win_integracion(activa: bool = True):
+    from jarvis_local.tools.ventanas import set_integracion
+    return set_integracion(bool(activa))
+
+
 def _brightness(accion: str, nivel: int = 50):
     from jarvis_local.tools import brightness as b
     accion = (accion or "").lower()
@@ -1119,6 +1139,50 @@ CONTRACTS: list[ToolContract] = [
                         "`bluetoothctl info`.",
                  revert="conectar_bluetooth.",
                  parser_intents=("bt_disconnect",)),
+
+    # ---- Ventanas en Wayland (FASE F · F4.2) ----
+    ToolContract("listar_ventanas",
+                 "Lista las ventanas de aplicación abiertas (título, aplicación, "
+                 "pid, cuál está enfocada).",
+                 _obj({}, []), _win_list, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("win_list",)),
+    ToolContract("enfocar_ventana",
+                 "Trae una ventana al frente y le da el foco (por título o "
+                 "aplicación).",
+                 _obj({"objetivo": _str("Parte del título o de la aplicación")}),
+                 _win_focus, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (F4.2/D1): tras Activate se relee List() y se "
+                        "comprueba has_focus en esa ventana. Varias coincidencias "
+                        "-> BLOQUEADO, se pregunta.",
+                 revert="Enfocar otra ventana.",
+                 parser_intents=("win_focus",)),
+    ToolContract("cerrar_ventana",
+                 "Cierra una ventana (por título o aplicación). Destructivo: "
+                 "puede haber trabajo sin guardar. Confirmación obligatoria.",
+                 _obj({"objetivo": _str("Parte del título o de la aplicación")}),
+                 _win_close, RiskLevel.DELETE, llm_visible=False,
+                 verify="EJECUTABLE (F4.2/D1): tras Close se relee List() y se "
+                        "comprueba que la ventana ya no está; si sigue (diálogo "
+                        "de guardado) -> EXECUTED con salvedad (verify None). "
+                        "Intocables E1 por wm_class y pid -> BLOQUEADO. Varias "
+                        "coincidencias -> BLOQUEADO, se pregunta.",
+                 revert="No hay: una ventana cerrada no se reabre sola.",
+                 plan_capable=True, plan_run=_win_close,
+                 parser_intents=("win_close",)),
+    ToolContract("integracion_ventanas_on",
+                 "Reactiva la integración de ventanas (no toca el compositor).",
+                 _obj({}, []), _win_integracion, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="Se escribe data/ventanas_integracion.json.",
+                 revert="integracion_ventanas_off.",
+                 parser_intents=("win_integ_on",), parser_fixed={"activa": True}),
+    ToolContract("integracion_ventanas_off",
+                 "Desactiva la integración de ventanas: JARVIS deja de tocar "
+                 "ventanas. NO toca el compositor ni la extensión de GNOME.",
+                 _obj({}, []), _win_integracion, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="Se escribe data/ventanas_integracion.json.",
+                 revert="integracion_ventanas_on.",
+                 parser_intents=("win_integ_off",), parser_fixed={"activa": False}),
 
     # ---- Notificaciones (FASE E · E5) ----
     ToolContract("enviar_notificacion",

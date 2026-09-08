@@ -631,5 +631,126 @@ def test_fallo_bluetooth_sin_bluetoothctl_error_claro(monkeypatch):
     assert not _EXITO.search(plan.result)
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# FASE F · F4.2 — ventanas en Wayland
+# ════════════════════════════════════════════════════════════════════════════
+
+
+class _FakeShell:
+    """List/Activate/Close simulados de la extensión ventanas-jarvis@local."""
+
+    def __init__(self, wins):
+        self.wins = wins
+
+    def __call__(self, metodo, *cargs):
+        import json as _j
+        if metodo == "List":
+            return True, repr((_j.dumps(self.wins),)), ""
+        wid = int(cargs[0])
+        w = next((x for x in self.wins if x["id"] == wid), None)
+        if w is None:
+            return False, "", f"…: ventana {wid} no encontrada"
+        if metodo == "Activate":
+            for x in self.wins:
+                x["has_focus"] = x["id"] == wid
+            return True, "()", ""
+        if metodo == "Close":
+            self.wins = [x for x in self.wins if x["id"] != wid]
+            return True, "()", ""
+        return False, "", "?"
+
+
+def _w(id, title, wm_class, pid, focus=False):
+    return {"id": id, "title": title, "wm_class": wm_class,
+            "wm_class_instance": wm_class.lower(), "pid": pid, "window_type": 0,
+            "frame_type": 0, "has_focus": focus, "on_current_workspace": True}
+
+
+def _patch_win(monkeypatch, tmp_path, fake, responde=True):
+    from jarvis_local.tools import ventanas as V
+    monkeypatch.setattr(V, "_hay_gdbus", lambda: True)
+    monkeypatch.setattr(V, "_extension_responde", lambda: responde)
+    monkeypatch.setattr(V, "_call", fake)
+    monkeypatch.setattr(V, "_SWITCH", tmp_path / "win.json")
+    monkeypatch.setattr(V, "own_pids", lambda: {os.getpid()})
+    monkeypatch.setattr("jarvis_local.tools.verify.grace", lambda *a, **k: None)
+
+
+def test_efecto_enfocar_ventana_mueve_el_foco(monkeypatch, tmp_path):
+    """EFECTO: tras Activate se relee List() y se comprueba has_focus real."""
+    from jarvis_local.tools import ventanas as V
+
+    fake = _FakeShell([_w(1, "Calc", "org.gnome.Calculator", 900, focus=True),
+                       _w(2, "gedit", "org.gnome.gedit", 901)])
+    _patch_win(monkeypatch, tmp_path, fake)
+    plan = V.focus_window("gedit")
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+    assert next(w for w in fake.wins if w["id"] == 2)["has_focus"] is True
+
+
+def test_efecto_cerrar_ventana_desaparece_de_list(monkeypatch, tmp_path):
+    """EFECTO: tras Close se relee List() y la ventana ya no está."""
+    from jarvis_local.tools import ventanas as V
+
+    fake = _FakeShell([_w(2, "gedit", "org.gnome.gedit", 901)])
+    _patch_win(monkeypatch, tmp_path, fake)
+    plan = V.execute_close_window(2)
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+    assert fake.wins == []
+
+
+def test_fallo_cerrar_ventana_de_gnome_shell_se_bloquea(monkeypatch, tmp_path):
+    """FALLO FORZADO: la ventana del compositor (E1 por wm_class) no se cierra."""
+    from jarvis_local.tools import ventanas as V
+
+    fake = _FakeShell([_w(9, "", "gnome-shell", 7777)])
+    _patch_win(monkeypatch, tmp_path, fake)
+    plan = V.plan_close_window("gnome-shell")
+    assert plan.status == ActionStatus.BLOCKED
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_cerrar_ventana_del_propio_jarvis_se_bloquea_por_pid(monkeypatch, tmp_path):
+    """FALLO FORZADO: E1 por pid — nunca la ventana del propio JARVIS."""
+    from jarvis_local.tools import ventanas as V
+
+    fake = _FakeShell([_w(5, "JARVIS", "python3", os.getpid())])
+    _patch_win(monkeypatch, tmp_path, fake)
+    plan = V.plan_close_window("JARVIS")
+    assert plan.status == ActionStatus.BLOCKED
+    assert "propio JARVIS" in plan.result
+
+
+def test_fallo_ventanas_sin_extension_dice_como_instalar(monkeypatch, tmp_path):
+    """FALLO FORZADO: sin la extensión por D-Bus, ERROR claro, nunca en silencio."""
+    from jarvis_local.tools import ventanas as V
+
+    _patch_win(monkeypatch, tmp_path, _FakeShell([]), responde=False)
+    plan = V.list_windows()
+    assert plan.status == ActionStatus.ERROR
+    assert "gnome-extensions enable ventanas-jarvis@local" in plan.result
+
+
+def test_fallo_cerrar_ventana_que_sigue_abierta_es_salvedad_no_exito(monkeypatch, tmp_path):
+    """FALLO FORZADO: Close rc 0 pero la ventana sigue (diálogo de guardado) ->
+    EXECUTED con verify None y salvedad, nunca 'cerrada'."""
+    from jarvis_local.tools import ventanas as V
+
+    fake = _FakeShell([_w(2, "sin guardar", "org.gnome.gedit", 901)])
+
+    def _call(metodo, *a):
+        if metodo == "Close":
+            return True, "()", ""          # dice ok pero no quita la ventana
+        return fake(metodo, *a)
+    _patch_win(monkeypatch, tmp_path, _call)
+    plan = V.execute_close_window(2)
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is None
+    assert "guardar" in plan.result.lower()
+    assert not _EXITO.search(plan.result)
+
+
 if __name__ == "__main__":
     print("usa pytest")

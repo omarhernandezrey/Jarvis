@@ -28,7 +28,7 @@
 | C | Latencia y enrutado (cobertura parser, puerta de herramientas, charla→chat, caché de prefijo, num_ctx) | ✅ 2026-09-04 (merge `ed26f56`) |
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `8dcb8de`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
-| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | 🔶 primera mitad (brillo/red/BT) ✅ 2026-09-07 (merge `ed6da4a`); ventanas Wayland pendientes |
+| F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `<pendiente>`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
 | G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
 | I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
@@ -766,6 +766,104 @@ banco EFECTO + FALLO FORZADO al cerrar. Un commit por punto.
         herramientas operan solo sobre vinculados. Igual que F2 (WiFi): sin el
         recurso físico no hay camino de escritura que ejercitar. Cubiertos por
         `test_bluetooth.py` (15) con `bluetoothctl` simulado.
+
+### Segunda mitad — ventanas en Wayland  ✅ CÓDIGO CERRADO (merge `<pendiente>`) · falta F4.3 (instalar en la sesión de `omar`)
+
+La tarea de más riesgo del plan: una extensión de GNOME corre DENTRO de
+`gnome-shell` (el compositor blindado en E1). Un fallo tumba la sesión.
+Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
+
+- [x] **F4.0 — RECUPERACIÓN** (bloqueante). `docs/RECUPERACION_GNOME.md`:
+      runbook literal, legible desde el móvil con la pantalla en negro.
+      Cubre escenario A (cambio de TTY posible), B (bucle de caída), C (nada
+      responde → recovery mode de GRUB). Comandos de rescate verificados en
+      vivo (2026-09-07) como `omar` **sin sudo**:
+      `dconf write /org/gnome/shell/disable-user-extensions true` y
+      `gsettings set` escriben y revierten; `journalctl -b 0 _COMM=gnome-shell`
+      se lee sin sudo. Entorno: GNOME Shell 50.1, Wayland, GDM3; sesión en
+      tty2, GDM en tty1, tty3–tty6 libres para login (`NAutoVTs=6` por
+      defecto → Ctrl+Alt+F3 arranca `getty`).
+      **Pendiente de confirmación FÍSICA del usuario:** pulsar Ctrl+Alt+F3 y
+      ver el `login:` (paso 0 del doc). Si no aparece, la fase se replantea.
+- [x] **F4.1 — INVESTIGACIÓN** (sin código). `docs/F4_INVESTIGACION_VENTANAS.md`.
+      Probado en vivo: `org.gnome.Shell.Eval` **desactivado**;
+      `org.gnome.Shell.Introspect.GetWindows` → **`AccessDenied`** (allowlist
+      fijo); ninguna otra vía D-Bus de ventanas. Xwayland solo ve apps X11
+      (hoy: solo WhatsApp) — inútil como capacidad general. No hay portal de
+      ventanas. **Conclusión: en Wayland, listar/cerrar ventanas nativas
+      requiere código en el compositor.**
+      **Recomendación:** partir de **Window Calls / Window Calls Extended**
+      (extensión de terceros que ya expone `List`/`Details`/`Activate`/`Close`
+      por D-Bus), *vendored* bajo UUID propio `ventanas-jarvis@local` y
+      recortada a esos 4 métodos (quitar Move/Resize/Max/Min). Plan B:
+      extensión propia mínima (~150 líneas). **Esperando visto bueno del
+      usuario para F4.2.**
+- [ ] **F4.2 — IMPLEMENTACIÓN** (OK del usuario sobre F4.1 recibido; alcance:
+      listar, enfocar, cerrar — mover/organizar FUERA).
+  - [x] **Paso 1 — lectura y recorte de la extensión.**
+        `docs/F4_2_EXTENSION_LECTURA.md` (análisis) +
+        `gnome-extension/ventanas-jarvis@local/` (`extension.js` recortado a
+        `List`/`Details`/`Activate`/`Close`, `metadata.json`, `README.md`,
+        `LICENSE` GPL-2.0). Origen: Window Calls de ickyicky
+        (GPL-2.0-or-later, vendorizado permitido; JARVIS es MIT y habla con
+        la extensión solo por D-Bus). Bug del original corregido
+        (`_get_window_by_wid` usaba una variable inexistente). 16 métodos
+        fuera de alcance **borrados**, no comentados. **No instalado, no
+        cableado. Pendiente de revisión del usuario.**
+  - [x] **Paso 2 — usuario de pruebas + ejercitar la extensión ahí.**
+        `docs/F4_2_PRUEBA_USUARIO_APARTE.md`. Usuario `jarvistest` + `linger`
+        + extensión instalada en su home; `gnome-shell --headless
+        --virtual-monitor` anidado (mutter 50.1, render por software).
+        Ejercitado 2026-09-08: `List` (`[]` → 1 → 2 ventanas), `Details`
+        (payload completo), `Activate` (el foco cambia de verdad, `has_focus`
+        se mueve), `Close` (la ventana desaparece de `List`, el proceso
+        termina), error path `id` inexistente → error D-Bus limpio, **el
+        shell NO cae**. Sesión de `omar` intacta (verificado). Comandos
+        exactos de montaje/ciclo/limpieza en el doc, repetibles sin depender
+        del asistente. Nota de licencia GPL-2.0 llevada también al README raíz.
+  - [x] **Paso 3 — cableado.** `jarvis_local/tools/ventanas.py` (habla por
+        `gdbus` con la extensión), parser `_parse_ventanas`, contratos
+        `listar_ventanas` (READ) / `enfocar_ventana` (EXECUTE+VERIFY) /
+        `cerrar_ventana` (DELETE, `/confirmar`) / `integracion_ventanas_on|off`
+        — todos `llm_visible=False`. Confirmación de cierre con título +
+        `wm_class` + `pid`. Guardia E1 por `wm_class` y por `pid` (nunca
+        `gnome-shell` ni la ventana del propio JARVIS), re-comprobado antes de
+        ejecutar. Varias coincidencias → se pregunta (como E3). VERIFY:
+        `has_focus` releído / ventana ausente de `List()`; si sigue tras
+        `Close` → `verify None` + salvedad. Detección en runtime: sin `gdbus`
+        o sin la extensión → ERROR con cómo instalarla. Interruptor
+        `data/ventanas_integracion.json`. Tests: `test_ventanas.py` (16) +
+        banco §F4.2 (6). **Contrato de cable verificado en vivo** contra la
+        extensión real en el `gnome-shell --headless` de `jarvistest`.
+        `docs/F4_2_PRUEBA_USUARIO_APARTE.md` §"Paso 3".
+
+- [ ] **F4.3 — INSTALAR la extensión en la sesión de trabajo (`omar`).**
+      **Pendiente y explícito.** El código está mergeado pero las
+      herramientas de ventanas devuelven ERROR ("la extensión no responde")
+      hasta que se haga esto. Decisión del usuario por su riesgo (corre
+      dentro de `gnome-shell`). Antes: tener a mano `docs/RECUPERACION_GNOME.md`
+      y comprobar el TTY de rescate (Ctrl+Alt+F3 → `login:`).
+
+      Instalar:
+      ```sh
+      cp -r "$(git rev-parse --show-toplevel)/gnome-extension/ventanas-jarvis@local" \
+            ~/.local/share/gnome-shell/extensions/
+      # cerrar sesión y volver a entrar (Wayland no recarga el shell en caliente)
+      gnome-extensions enable ventanas-jarvis@local
+      gnome-extensions info ventanas-jarvis@local   # debe decir: Estado: ACTIVE
+      ```
+
+      Quitar (cualquiera de las dos vías):
+      ```sh
+      gnome-extensions disable ventanas-jarvis@local            # desde la sesión
+      rm -rf ~/.local/share/gnome-shell/extensions/ventanas-jarvis@local
+      # o, si el shell no responde, desde un TTY (Ctrl+Alt+F3):
+      dconf write /org/gnome/shell/disable-user-extensions true
+      ```
+
+      Sin instalarla (o con la integración apagada por
+      `data/ventanas_integracion.json`), el resto de JARVIS funciona igual;
+      solo `listar/enfocar/cerrar_ventana` quedan inertes con error claro.
 
 ## FASE G — Control de máquina, oleada 3: interacción
 

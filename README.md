@@ -298,6 +298,20 @@ Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `log
 - 🔄 **Fase 8 — eficacia** ([`PLAN_MAESTRO.md`](PLAN_MAESTRO.md)): auditoría funcionalidad por funcionalidad y arreglo con test que lo blinde. Fases A–D: huecos del parser (clima, notas, cálculo, ubicaciones), re-autorización accionable de Calendar/Spotify, apps que no se abren dos veces, instrumentación y poda de la latencia del agente, `jarvis doctor`, tests `live` + nocturno, prueba de voz e2e
 - ⏳ **Siguiente**: visión (que JARVIS *vea* tu pantalla), proactividad, instalador
 
+## 📄 Licencia
+
+JARVIS Local es **MIT** (ver `pyproject.toml`).
+
+**Excepción — `gnome-extension/ventanas-jarvis@local/`:** esta extensión de
+GNOME Shell (para listar/enfocar/cerrar ventanas en Wayland) es **GPL-2.0-or-later**
+(`gnome-extension/ventanas-jarvis@local/LICENSE`), por ser un recorte de
+[Window Calls](https://github.com/ickyicky/window-calls). Es la **primera
+dependencia con licencia copyleft del proyecto**. No afecta a la licencia MIT
+del resto: es un **programa aparte** que corre dentro de `gnome-shell` y se
+comunica con JARVIS **solo por D-Bus** (separación a distancia; no hay
+enlazado ni importación de código entre ambos). Detalle en
+`docs/F4_2_EXTENSION_LECTURA.md`.
+
 ---
 
 <sub>Proyecto personal de **Omar Hernández Rey**. Construido para correr en hardware real, no en una demo.</sub>
