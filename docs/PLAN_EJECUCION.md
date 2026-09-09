@@ -892,9 +892,13 @@ usuario fijó tras el análisis G0.
       - Backend: `wl-copy`/`wl-paste`; si no, `xclip` (X11 vía Xwayland — las
         apps Wayland puras pueden no verlo). Sin ninguno → ERROR claro
         (`sudo apt install wl-clipboard`).
-      - **En vivo (2026-09-09):** ejercitado con `xclip` — escribir/releer/
-        VERIFY True, confirmación para `curl … | sh`, restaurar el previo,
-        portapapeles del usuario dejado como estaba. (Bug corregido de paso:
+      - **En vivo (2026-09-09):** ejercitado con `xclip` y, tras instalar
+        `wl-clipboard`, con el **backend nativo**: `_backend()` elige
+        `wl-clipboard`; `escribir_portapapeles` → EXECUTED, `verify.ok True`;
+        **`wl-paste` (protocolo Wayland, no X11) lee lo escrito** con acentos
+        y emoji, y `xclip -o` también (Mutter unifica los dos portapapeles);
+        `restaurar_portapapeles` → EXECUTED `verify.ok True`; portapapeles del
+        usuario dejado como estaba. (Bug corregido de paso:
         `capture_output=True` colgaba `subprocess.run` esperando el EOF de la
         pipe que el hijo daemonizado de `xclip`/`wl-copy` hereda y no cierra
         → ahora `stdout/stderr=DEVNULL`.)
