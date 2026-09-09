@@ -127,40 +127,52 @@ Window {
             if (!rootItem.booted) { bootAnim.stop(); rootItem.boot = 1.0 }
         }
 
-        // ── SISTEMA DE ZONAS ─────────────────────────────────────────────
-        // El orbe se centra en un "escenario" = ventana menos la franja de
-        // identidad (arriba) y la barra de comando flotante (abajo). Los
-        // demás elementos flotan en los márgenes.
+        // ── SISTEMA DE ZONAS (Fase I · I1) ───────────────────────────────
+        //  Composición reencuadrada: el núcleo ~1,6× más grande, su centro en
+        //  el TERCIO INFERIOR IZQUIERDO (no centrado), sangrando por detrás de
+        //  la columna de conversación. La conversación va ENCIMA, sobre un
+        //  panel translúcido, anclada abajo y creciendo hacia arriba desde el
+        //  input. La columna izquierda deja de estar vacía: ActivitySpine.
         readonly property int margin: Design.sp(6)
         readonly property int topBandH: Design.sp(19)
         readonly property int cmdReserve: cmdBar.implicitHeight + Design.sp(5)
         readonly property int stageTop: margin + topBandH + Design.sp(3)
         readonly property int stageBottom: Math.max(stageTop + 120, height - cmdReserve)
         readonly property int stageH: stageBottom - stageTop
-        readonly property int stageW: Math.max(120, width - 2 * margin)
 
-        // conversación: columna lateral si CABE a la derecha del orbe sin
-        // solaparlo; si no, apilada bajo el orbe.
-        readonly property int convW: Math.round(Math.min(Design.sp(94), width * 0.28))
-        // tamaño del orbe = protagonista: 66% del lado más corto disponible,
-        // con mínimo (240) y máximo (960). Un poco menos que antes para que su
-        // halo/corona respiren y NUNCA queden bajo un elemento del HUD.
-        readonly property real _orbFactor: 0.66
-        readonly property real _orbIfSide:
-            Math.min(Math.max(240, Math.min(stageW, stageH) * _orbFactor),
-                     stageH * 0.98, stageW * 0.96, 960)
-        readonly property real _orbXIfSide: (width - _orbIfSide) / 2
-        readonly property bool stackedChat:
-            (_orbXIfSide + _orbIfSide + Design.sp(4)) > (width - convW - margin)
+        // espina de actividad (izquierda) — historial de energía + estado + reloj
+        readonly property int spineW: Math.round(Math.max(Design.sp(26),
+                                                Math.min(Design.sp(34), width * 0.11)))
+        readonly property int spineGap: Design.sp(3)
+        readonly property int stageLeft: margin + spineW + spineGap
+        readonly property int stageW: Math.max(120, width - stageLeft - margin)
 
-        // altura del escenario asignada al orbe (todo, o la parte de arriba
-        // si el chat se apila debajo)
-        readonly property real orbStageH: stackedChat ? stageH * 0.55 : stageH
+        // ventana estrecha: se colapsa a apilado (orbe arriba, chat abajo).
+        readonly property bool tightLayout: width < Design.sp(190) || stageH < 320
+
+        // conversación: panel translúcido en la mitad derecha, montado sobre el
+        // orbe. Anclado abajo (junto al input), crece hacia arriba.
+        readonly property int convLeft: tightLayout
+            ? stageLeft
+            : Math.round(stageLeft + stageW * 0.40)
+        readonly property int convRight: width - margin
+        readonly property int convBottom: Math.round(cmdBar.y - Design.sp(3))
+        readonly property int convTop: Math.round(stageTop + (tightLayout ? stageH * 0.52 : Design.sp(1)))
+
+        // tamaño del orbe = protagonista, ~1,6× lo anterior (factor 0.66 → 1.06).
+        // Se mide contra la altura del escenario (o su mitad superior si apila).
+        readonly property real _orbFactor: tightLayout ? 0.66 : 1.06
+        readonly property real orbStageH: tightLayout ? stageH * 0.50 : stageH
         readonly property real orbSize:
-            Math.min(Math.max(240, Math.min(stageW, orbStageH) * _orbFactor),
-                     orbStageH * 0.98, stageW * 0.96, 960)
-        readonly property real orbCX: width / 2
-        readonly property real orbCY: stageTop + orbStageH / 2
+            Math.min(Math.max(300, Math.min(stageW * 1.15, orbStageH) * _orbFactor),
+                     orbStageH * 1.35, 1200)
+        // centro en el tercio inferior izquierdo del escenario
+        readonly property real orbCX: tightLayout
+            ? width / 2
+            : Math.round(stageLeft + stageW * 0.32)
+        readonly property real orbCY: tightLayout
+            ? stageTop + orbStageH * 0.5
+            : Math.round(stageTop + stageH * 0.60)
 
         MouseArea {
             anchors.fill: parent
@@ -180,15 +192,29 @@ Window {
             opacity: Design.reveal(rootItem.orbCX, rootItem.orbCY)
         }
 
-        // ── HUD DE IDENTIDAD (flota arriba, centrado) ────────────────────
+        // ── ESPINA DE ACTIVIDAD (columna izquierda — I1) ─────────────────
+        ActivitySpine {
+            objectName: "activitySpine"
+            id: activitySpine
+            visible: !rootItem.tightLayout
+            opacity: Design.reveal(x + width / 2, y + height / 2)
+            coreState: Vm ? Vm.state : "idle"
+            metrics: Vm ? Vm.metrics : ({})
+            x: rootItem.margin
+            y: rootItem.stageTop
+            width: rootItem.spineW
+            height: rootItem.stageBottom - rootItem.stageTop
+        }
+
+        // ── HUD DE IDENTIDAD (flota arriba, centrado sobre el escenario) ──
         Hud {
             objectName: "hud"
             id: hud
             keys: ["sistema", "modelo", "voz", "memoria", "herramientas"]
             opacity: Design.reveal(x + width / 2, y + height / 2)
-            x: Math.round((parent.width - width) / 2)
+            x: Math.round(rootItem.stageLeft + (rootItem.stageW - width) / 2)
             y: rootItem.margin
-            width: Math.min(implicitWidth, parent.width - 2 * rootItem.margin)
+            width: Math.min(implicitWidth, rootItem.stageW)
             height: rootItem.topBandH
             clip: true
         }
@@ -217,14 +243,18 @@ Window {
             }
         }
 
-        // ── MÉTRICAS EN VIVO (flotan abajo-izquierda, junto al comando) ──
+        // ── MÉTRICAS EN VIVO ────────────────────────────────────────────
+        //  Fase I·I1: cpu/ram/latencia/tok·s se mudan a la ActivitySpine (la
+        //  columna izquierda es ahora la telemetría de actividad). En ventana
+        //  estrecha, donde la espina se oculta, se muestran aquí abajo.
         Hud {
             id: hudMetrics
+            visible: rootItem.tightLayout
             keys: ["cpu", "ram", "latencia", "tokens/s"]
             opacity: 0.9 * Design.reveal(x + width / 2, y + height / 2)
             x: rootItem.margin
             y: rootItem.stageBottom - height - Design.sp(1)
-            width: Math.min(implicitWidth, parent.width - 2 * rootItem.margin)
+            width: Math.min(implicitWidth, rootItem.width - 2 * rootItem.margin)
             height: Design.sp(19)
             clip: true
         }
@@ -256,44 +286,71 @@ Window {
             }
         }
 
-        // estado del orbe: justo debajo, centrado — "modo actual de JARVIS"
-        CoreStatus {
-            id: coreStatus
-            opacity: Design.reveal(x + width / 2, y + height / 2)
-            coreState: Vm ? Vm.state : "idle"
-            x: Math.round(rootItem.orbCX - width / 2)
-            y: Math.round(rootItem.orbCY + rootItem.orbSize * 0.5 + Design.sp(2))
-        }
+        // El estado del núcleo (palabra + acento) vive ahora en la
+        // ActivitySpine (I1). Se retira el CoreStatus suelto bajo el orbe:
+        // duplicaba la lectura y chocaba con el orbe agrandado.
 
-        // ── CONVERSACIÓN — capa flotante (columna lateral o apilada) ─────
+        // ── CONVERSACIÓN — sobre un PANEL TRANSLÚCIDO, montada sobre el orbe,
+        //    anclada abajo (junto al input) y creciendo hacia arriba (I1) ────
         Item {
             id: convZone
             objectName: "convZone"
             opacity: Design.reveal(x + width / 2, y + height / 2)
-            readonly property real _orbBottom:
-                rootItem.orbCY + rootItem.orbSize / 2
-            x: rootItem.stackedChat
-               ? rootItem.margin
-               : Math.round(rootItem.width - rootItem.convW - rootItem.margin)
-            y: rootItem.stackedChat
-               ? Math.round(Math.max(coreStatus.y + coreStatus.height + Design.sp(2),
-                                     _orbBottom + Design.sp(4)))
-               : rootItem.stageTop
-            width: rootItem.stackedChat
-                   ? rootItem.stageW
-                   : rootItem.convW
-            // apilada: deja libre la fila de métricas (abajo-izquierda)
-            height: Math.max(0, rootItem.stageBottom - y
-                    - (rootItem.stackedChat ? hudMetrics.height + Design.sp(2) : 0))
+            x: rootItem.convLeft
+            width: rootItem.convRight - rootItem.convLeft
+            y: rootItem.convTop
+            height: Math.max(0, rootItem.convBottom - rootItem.convTop)
 
-            // Sin scrim: fondo 100 % transparente. La legibilidad la da el
-            // contorno de 1px de cada glifo (Text.Outline + Design.textEdge).
+            // panel translúcido: el orbe SANGRA por detrás de su borde
+            // izquierdo. Iluminado desde arriba (lenguaje holo del sistema),
+            // borde de 1px teñido por el estado, esquina redondeada.
+            Rectangle {
+                id: convPanel
+                anchors.fill: parent
+                radius: Design.radiusSurface
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Design.holoTop }
+                    GradientStop { position: 1.0; color: Design.holoBot }
+                }
+                border.width: 1
+                border.color: Design.stateWash(Design.widgetStroke, 0.85)
+                // vela de fondo: translúcida, pero suficiente para que el ruido
+                // del orbe justo detrás no compita con el texto. Más densa en el
+                // filo izquierdo (donde el orbe está más brillante), se aclara
+                // hacia la derecha.
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    radius: parent.radius - 1
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0
+                            color: Qt.rgba(Design.surfaceColor.r, Design.surfaceColor.g,
+                                           Design.surfaceColor.b, 0.90) }
+                        GradientStop { position: 0.45
+                            color: Qt.rgba(Design.surfaceColor.r, Design.surfaceColor.g,
+                                           Design.surfaceColor.b, 0.74) }
+                        GradientStop { position: 1.0
+                            color: Qt.rgba(Design.surfaceColor.r, Design.surfaceColor.g,
+                                           Design.surfaceColor.b, 0.62) }
+                    }
+                }
+            }
+            // filo izquierdo emisivo: marca dónde el orbe pasa por detrás
+            Rectangle {
+                width: 1
+                x: 0
+                y: Design.sp(1); height: parent.height - Design.sp(2)
+                color: Design.litHairline(convZone.x, convZone.y + convZone.height / 2)
+                opacity: 0.5 + 0.4 * Design.breath()
+            }
 
             Conversation {
                 id: convo
-                anchors { left: parent.left; right: parent.right; top: parent.top
-                          bottom: parent.bottom }
-                measure: Math.min(620, width - Design.sp(8))
+                anchors { fill: parent
+                          leftMargin: Design.sp(3); rightMargin: Design.sp(3)
+                          topMargin: Design.sp(2); bottomMargin: Design.sp(2) }
+                measure: Math.min(640, width - Design.sp(10))
             }
         }
 
@@ -302,10 +359,12 @@ Window {
             id: cmdBar
             objectName: "cmdBar"
             opacity: Design.reveal(x + width / 2, y + height / 2)
-            width: Math.round(Math.min(Design.sp(170), parent.width - 2 * rootItem.margin))
-            x: Math.round((parent.width - width) / 2)
+            width: Math.round(Math.min(Design.sp(170),
+                              rootItem.width - rootItem.stageLeft - rootItem.margin))
+            x: Math.round(rootItem.stageLeft
+                          + (rootItem.width - rootItem.stageLeft - rootItem.margin - width) / 2)
             y: parent.height - height - rootItem.margin
-            showViz: rootItem.stackedChat && rootItem.stageH < 320
+            showViz: rootItem.tightLayout && rootItem.stageH < 320
         }
 
         Keys.onPressed: (e) => {

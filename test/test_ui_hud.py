@@ -673,8 +673,11 @@ def test_reduced_motion_detection_env(monkeypatch):
 
 
 def test_responsive_layout_no_overlap_no_overflow():
-    """Fase 6: en los cuatro modos, núcleo y conversación no se solapan, todo
-    queda dentro de la ventana y la barra de comando es alcanzable."""
+    """Fase I·I1: el núcleo SANGRA por detrás del panel de conversación
+    (solape intencionado). Lo que se exige: la conversación, la identidad y la
+    barra de comando quedan DENTRO de la ventana y el comando es alcanzable.
+    El `coreZone` (visual, no control) puede desbordar: su halo es enorme a
+    propósito."""
     from PySide6.QtCore import QPointF
     from PySide6.QtQuick import QQuickItem
 
@@ -695,14 +698,18 @@ def test_responsive_layout_no_overlap_no_overflow():
 
     try:
         for w, h in ((1700, 900), (1360, 820), (1000, 760), (430, 360)):
-            win.setWidth(w); win.setHeight(h)
+            win.setWidth(w)
+            win.setHeight(h)
             _app.processEvents()
-            cz, vz, cb = rect("coreZone"), rect("convZone"), rect("cmdBar")
-            assert overlap(cz, vz) == 0, f"{w}x{h}: solapan núcleo y conversación"
-            for r in (cz, vz, rect("hud")):
-                assert r[0] >= -1 and r[1] >= -1
-                assert r[0] + r[2] <= w + 1 and r[1] + r[3] <= h + 1, f"{w}x{h}: overflow"
+            vz, cb = rect("convZone"), rect("cmdBar")
+            # los CONTROLES / texto quedan dentro de la ventana
+            for name, r in (("convZone", vz), ("hud", rect("hud")), ("cmdBar", cb)):
+                assert r[0] >= -1 and r[1] >= -1, f"{w}x{h}: {name} fuera por arriba/izq"
+                assert r[0] + r[2] <= w + 1 and r[1] + r[3] <= h + 1, \
+                    f"{w}x{h}: {name} overflow"
             assert cb[1] + cb[3] <= h + 1, f"{w}x{h}: barra de comando fuera de vista"
+            # el panel de conversación no pisa la barra de comando
+            assert overlap(vz, cb) == 0, f"{w}x{h}: la conversación pisa el comando"
     finally:
         engine._metrics.stop()  # noqa: SLF001
         engine.deleteLater()

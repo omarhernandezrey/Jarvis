@@ -932,17 +932,49 @@ usuario fijó tras el análisis G0.
   reglas están activas.
 - Si algo no llega al presupuesto, borrarlo con justificación. Nada en limbo.
 
-## FASE I — Interfaz: composición y acabado (rama `rediseno-presentacion`)
+## FASE I — Interfaz: composición y acabado del HUD  🚧 EN CURSO (rama `feature/fase-i-interfaz`)
 
-Addendum 8.2–8.7: composición (núcleo agrandado que sangra tras la columna de
-conversación anclada abajo), tres frecuencias del orbe (fresnel nítido, centro
-oscuro, microdetalle, bloom solo ≥0,72), iluminación global visible (divisor y
-hairlines reciben luz del núcleo según distancia), disciplina de color (borde
-del input cyan, no verde; verde solo estado en línea), estado vacío con datos
-reales, rendimiento (bloom 1/4 res sobre el rect del núcleo, atmósfera 15 fps,
-techo 30 fps idle, ≤12% de un núcleo en HD 520). Verificar que la máscara de
-esquinas redondeadas no desaparece con la atmósfera apagada. Toda captura con
-≥6 mensajes reales dentro.
+Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentro
+(`scripts/hud_shot.py` lo siembra).
+
+> **Merge de `main` a la rama del rediseño — NADA QUE RESOLVER.** `origin/
+> rediseno-presentacion` (HEAD `505ebf3`, "Fase 13") es **ancestro estricto de
+> `main`**: `git merge-base --is-ancestor 505ebf3 main` → true, y no hay ni un
+> commit en la rama que no esté en `main`. Todo el HUD ("feat(vista): Fase
+> 4–13") lleva en `main` desde antes de la FASE D; se desarrolló en paralelo a
+> D–G sin tocar la vista, así que **no divergió y no hubo conflictos**. La
+> rama `feature/fase-i-interfaz` sale de `main` al día.
+
+- [x] **I1 — COMPOSICIÓN.** `Main.qml` reencuadrado + `ActivitySpine.qml`
+      (nuevo). Núcleo ×1,6 (factor de tamaño 0.66→1.06), centro en el **tercio
+      inferior izquierdo** del escenario (`orbCX = stageLeft + stageW·0,32`,
+      `orbCY = stageTop + stageH·0,60`), **sangrando por detrás** del panel de
+      conversación. Conversación sobre **panel translúcido** (gradiente holo +
+      vela de fondo con degradado horizontal 0,90→0,62 + filo izquierdo
+      emisivo), anclada abajo junto al input y creciendo hacia arriba. Columna
+      izquierda = **ActivitySpine**: reloj de sesión, MODO (estado + acento),
+      telemetría cpu/ram/lat/tok·s, e **historial de energía del núcleo** en
+      barras apiladas (muestreo del reloj global, sin timer). Se retira el
+      `CoreStatus` suelto (lo duplicaba la espina y chocaba con el orbe).
+      `test_ui_hud.py::test_responsive_layout…` actualizado: el solape
+      núcleo/conversación es ahora **intencionado**; se sigue exigiendo que
+      texto, identidad y comando queden dentro de la ventana.
+- [ ] **I2 — EL ORBE, TRES FRECUENCIAS.** fresnel nítido ≤2px · centro por
+      absorción (más oscuro que el borde) · 2ª octava de ruido creciente hacia
+      el limbo · bloom SOLO sobre luminancia ≥0,72 · dispersión cromática solo
+      en el limbo · barrido especular cada 7 s.
+- [ ] **I3 — ILUMINACIÓN GLOBAL VISIBLE.** divisor y hairlines reciben la luz
+      del núcleo por distancia y ángulo. Prueba: tapando el orbe, se nota que
+      habla por el cambio de luz del resto.
+- [ ] **I4 — COLOR.** borde del input a **cyan** (no verde). Auditar cada uso
+      de verde/amarillo/rojo: color = estado, nunca decoración.
+- [ ] **I5 — ESTADO VACÍO.** fuera el "consola conversacional" gris; datos
+      reales (modelo cargado, nº de recuerdos, herramientas, última sesión).
+- [ ] **I6 — RENDIMIENTO.** bloom a 1/4 de resolución sobre el rect del núcleo
+      (no la ventana) · atmósfera a 15 fps con grano tileado y viñeta horneada
+      · techo 30 fps idle / 60 en listening·thinking·speaking · ≤12% de un
+      núcleo en la HD 520, medido · la máscara de esquinas redondeadas NO
+      desaparece con la ruta de degradación.
 
 ## FASE J — Endurecer
 
