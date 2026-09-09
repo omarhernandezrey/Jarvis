@@ -29,7 +29,7 @@
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `8dcb8de`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `85873e4`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
-| G | Interacción: portapapeles de escritura (teclado sintético aplazado con motivo, ratón descartado) | ✅ 2026-09-09 (merge `<pendiente>`) |
+| G | Interacción: portapapeles de escritura (teclado sintético aplazado con motivo, ratón descartado) | ✅ 2026-09-09 (merge `9270a24`) |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
 | I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
 | J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ⬜ pendiente |
@@ -865,7 +865,7 @@ Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
       `data/ventanas_integracion.json`), el resto de JARVIS funciona igual;
       solo `listar/enfocar/cerrar_ventana` quedan inertes con error claro.
 
-## FASE G — Interacción: portapapeles de escritura  ✅ CERRADA 2026-09-09 (merge `<pendiente>`)
+## FASE G — Interacción: portapapeles de escritura  ✅ CERRADA 2026-09-09 (merge `9270a24`)
 
 Cierre: **portapapeles de escritura hecho; teclado sintético aplazado con
 motivo; ratón descartado.** No es una fase a medias — es el alcance que el
