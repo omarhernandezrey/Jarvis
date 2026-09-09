@@ -820,6 +820,63 @@ def _parse_ventanas(m: str) -> IntentResult | None:
     return None
 
 
+# PLAN_EJECUCION FASE G — escritura del portapapeles.
+_CLIP_TEXTO = re.compile(
+    r"\b(?:copia\w*|pega\w*)\b"
+    r"(?:\s+(?:esto|lo\s+siguiente|el\s+texto|(?:el\s+|este\s+|el\s+siguiente\s+)?comando|"
+    r"al\s+portapapeles|en\s+el\s+portapapeles))?"
+    r"\s*[:：]?\s*[\"“'‘’]?(.+?)[\"”'‘’]?\s*$"
+    r"|\bpon\b\s+(.+?)\s+en\s+el\s+portapapeles\s*[.!?]*\s*$",
+    re.IGNORECASE)
+
+
+def _parse_portapapeles_escritura(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    hay_clip = "portapapeles" in mm
+    # interruptor
+    if hay_clip and re.search(r'\bescritura\b|\bescribir\b|\bcopiar\b', mm):
+        if re.search(r'\b(desactiva\w*|apaga\w*|no\s+(?:copies|escribas)|deja\s+de)\b', mm):
+            return IntentResult(kind="tool_execute", tool="clip_off",
+                                reason="Desactivar escritura del portapapeles")
+        if re.search(r'\b(activa\w*|enciende\w*|reactiva\w*|vuelve\s+a)\b', mm):
+            return IntentResult(kind="tool_execute", tool="clip_on",
+                                reason="Activar escritura del portapapeles")
+    # restaurar / deshacer
+    if hay_clip and re.search(r'\b(deshaz|deshacer|restaura\w*|revierte|revert\w*|'
+                              r'vuelve\s+a\s+poner|lo\s+de\s+antes)\b', mm):
+        return IntentResult(kind="tool_execute", tool="clip_restore",
+                            reason="Restaurar el portapapeles anterior")
+    # escribir. Sin la palabra "portapapeles" hay que ser conservador para no
+    # robar "copia el archivo X a Y" ni rutas tipo "C:\...".
+    verbo = re.search(r'\b(copia\w*|pon)\b', mm)
+    if not verbo:
+        return None
+    if not hay_clip:
+        # rutas / archivos -> es copiar ficheros, no portapapeles
+        if re.search(r'\b(archivo|fichero|carpeta|directorio)\b'
+                     r'|[a-z]:[\\/]|(?:^|\s)[~./][\w./\\-]*\s+a\s+|\.\w{1,4}\s+a\s+', mm):
+            return None
+        # solo entra con: "copia/pega esto|el texto|el comando:", o el verbo
+        # seguido de ":" directo, o el verbo + una cadena entrecomillada al final
+        entra = (re.search(r'\b(?:copia\w*|pega\w*)\s*'
+                           r'(?:(?:esto|lo\s+siguiente|el\s+texto|(?:el\s+|este\s+)?comando)\s*)?[:：]\s*\S', mm)
+                 or re.search(r'\b(?:copia\w*|pega\w*)\s+[\"“\'‘’].+[\"”\'‘’]\s*$', m.strip()))
+        if not entra:
+            return None
+    g = _CLIP_TEXTO.search(m.strip())
+    texto = ""
+    if g:
+        texto = (g.group(1) or g.group(2) or "").strip().strip('.!?').strip()
+    # quita coletillas que hayan quedado dentro
+    texto = re.sub(r'\s*\b(?:al|en\s+el|en\s+mi)\s+portapapeles\b\s*$', '', texto,
+                   flags=re.IGNORECASE).strip()
+    if not texto:
+        return IntentResult(kind="ambiguous",
+                            clarification="¿Qué texto copio al portapapeles, senor?")
+    return IntentResult(kind="tool_execute", tool="clip_write",
+                        arguments={"texto": texto}, reason="Copiar al portapapeles")
+
+
 # PLAN_EJECUCION FASE F · F1 — brillo de pantalla.
 _TRIGGER_BRILLO = re.compile(
     r'\bbrillo\b'
@@ -1505,6 +1562,12 @@ def parse_intent(message: str) -> IntentResult:
             or re.search(r'\bque\s+(?:hay|tengo)\s+en\s+el\s+portapapeles\b', low_read):
         return IntentResult(kind="tool_read", tool="read_clipboard",
                             reason="Leer el portapapeles")
+
+    # --- ESCRITURA DEL PORTAPAPELES (FASE G): antes de fase4, "copia X al
+    #     portapapeles" no es copiar un archivo ---
+    clip = _parse_portapapeles_escritura(m)
+    if clip is not None:
+        return clip
     m_read = re.search(
         r'\b(?:lee(?:me)?|leer)\b\s+(?:el\s+|la\s+)?'
         r'(?:archivo|fichero|documento|nota)?\s*'

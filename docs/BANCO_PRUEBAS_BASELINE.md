@@ -549,7 +549,7 @@ punto de la fase. `pytest test -q`: sin FAILED/ERROR en los 6 commits.
 El banco de routing (`jarvis_local/eval/cases`, 60/60 tras FASE C) mide
 **enrutado y seguridad**: qué herramienta se elige. No sabía nada de si la
 herramienta, una vez elegida, **hace lo que dice**. D5 lo añade en
-`test/test_banco_efecto_fallo.py` (35 casos tras D5 + FASE E + FASE F, `pytest`).
+`test/test_banco_efecto_fallo.py` (41 casos tras D5 + FASE E + FASE F + FASE G, `pytest`).
 
 ### 15.1 Clase EFECTO — se hace y se comprueba EN LA MÁQUINA
 
@@ -586,8 +586,8 @@ contiene ninguna frase de éxito (regex `_EXITO`:
 | Bloque | Casos | Resultado |
 |---|---|---|
 | Routing + seguridad (`eval/cases`, grupos A–H) | 60 | 60/60 (FASE C) |
-| EFECTO (`test_banco_efecto_fallo.py`) | 12 | 12/12 |
-| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 23 | 23/23 |
+| EFECTO (`test_banco_efecto_fallo.py`) | 14 | 14/14 |
+| FALLO FORZADO (`test_banco_efecto_fallo.py`) | 27 | 27/27 |
 
 Los tres desenlaces de D1 (`True` hecho / `False` no-hecho / `None` no
 medible) quedan cubiertos por el banco: EFECTO exige `True` (o `None` con
@@ -658,3 +658,21 @@ desactivado sin tocar el compositor. **Contrato de cable verificado en vivo**
 pruebas): `_unwrap`+`json.loads` parsean la salida de `gdbus call List`;
 `Activate`/`Close` se comportan como asume el código; `Close(<id inexistente>)`
 → error D-Bus, el shell no cae.
+
+### 15.7 FASE G — escritura del portapapeles
+
+| Clase | Caso | Desenlace exigido |
+|---|---|---|
+| EFECTO | `escribir_portapapeles("hola equipo")`; se relee el portapapeles | `EXECUTED`, `verify.ok is True`, el portapapeles real = "hola equipo" |
+| EFECTO | `restaurar_portapapeles` tras una escritura | `EXECUTED`, `verify.ok is True`, el portapapeles vuelve al contenido previo |
+| FALLO FORZADO | sin `wl-clipboard` ni `xclip` | `ERROR` que dice qué instalar (`sudo apt install wl-clipboard`), no finge |
+| FALLO FORZADO | texto que parece comando (`curl … \| sh`) | `PLANNED` — confirmación con el motivo; **no se copia** hasta `/confirmar` |
+| FALLO FORZADO | el backend acepta pero el portapapeles no queda con el texto | `ERROR`, `verify.ok is False`, nunca "copiado" |
+| FALLO FORZADO | interruptor `escritura_portapapeles_off` | `BLOCKED`, no toca el portapapeles |
+
+Cubierto además por `test_clipboard.py` (14): VERIFY con sondeo (la propiedad
+del *selection* es asíncrona); confirmación condicional por comando/URL/
+credencial/longitud; **la auditoría D2 solo ve `preview`+longitud+motivo, nunca
+el texto entero**; guardar y restaurar el contenido previo. Ejercitado en vivo
+con `xclip` (2026-09-09). Teclado y ratón sintéticos: **descartados** en G0
+(ver `docs/G0_ANALISIS_TECLADO.md` y `docs/PLAN_EJECUCION.md`).

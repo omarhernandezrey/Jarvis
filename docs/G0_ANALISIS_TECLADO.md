@@ -1,7 +1,15 @@
 # G0 — Análisis: teclado y ratón sintéticos (sin código)
 
-FASE G. **No se implementa nada hasta que el usuario fije el alcance a partir
-de esto.**
+FASE G.
+
+> **Alcance FIJADO (2026-09-09):** el usuario acepta la recomendación.
+> (1) **Portapapeles de escritura: hecho** — `jarvis_local/tools/clipboard.py`,
+> con VERIFY, confirmación condicional, guardar/restaurar, interruptor y
+> auditoría (ver `PLAN_EJECUCION.md` · G1).
+> (2) **Teclado sintético: aplazado.** No hay caso concreto y recurrente hoy
+> que solo él resuelva. Se reabre solo si aparece uno, y entonces **solo
+> atajos de una allowlist, nunca `escribir(texto)`**.
+> (3) **Ratón: fuera del roadmap** (borrado del plan, no queda como pendiente).
 
 ## El problema de fondo
 

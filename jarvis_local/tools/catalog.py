@@ -333,6 +333,21 @@ def _win_integracion(activa: bool = True):
     return set_integracion(bool(activa))
 
 
+def _clip_write(texto: str):
+    from jarvis_local.tools.clipboard import plan_write_clipboard
+    return plan_write_clipboard(texto)
+
+
+def _clip_restore():
+    from jarvis_local.tools.clipboard import restore_clipboard
+    return restore_clipboard()
+
+
+def _clip_switch(activa: bool = True):
+    from jarvis_local.tools.clipboard import set_escritura
+    return set_escritura(bool(activa))
+
+
 def _brightness(accion: str, nivel: int = 50):
     from jarvis_local.tools import brightness as b
     accion = (accion or "").lower()
@@ -1183,6 +1198,42 @@ CONTRACTS: list[ToolContract] = [
                  verify="Se escribe data/ventanas_integracion.json.",
                  revert="integracion_ventanas_on.",
                  parser_intents=("win_integ_off",), parser_fixed={"activa": False}),
+
+    # ---- Portapapeles de escritura (FASE G) ----
+    ToolContract("escribir_portapapeles",
+                 "Pone un texto en el portapapeles (para que el usuario lo "
+                 "pegue con Ctrl+V). Confirmación si el texto es largo o parece "
+                 "comando/URL/credencial.",
+                 _obj({"texto": _str("El texto a copiar al portapapeles")}),
+                 _clip_write, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (G/D1): se relee el portapapeles y se "
+                        "compara con lo escrito; si no se puede releer -> "
+                        "EXECUTED con salvedad. Guarda el contenido previo para "
+                        "'restaurar_portapapeles'.",
+                 revert="restaurar_portapapeles.",
+                 plan_capable=True, plan_run=_clip_write,
+                 parser_intents=("clip_write",)),
+    ToolContract("restaurar_portapapeles",
+                 "Devuelve el portapapeles a lo que había antes de la última "
+                 "escritura de JARVIS.",
+                 _obj({}, []), _clip_restore, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="EJECUTABLE (G/D1): se relee y se compara con el "
+                        "contenido previo guardado.",
+                 revert="n/a.",
+                 parser_intents=("clip_restore",)),
+    ToolContract("escritura_portapapeles_on",
+                 "Reactiva la escritura del portapapeles.",
+                 _obj({}, []), _clip_switch, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="Se escribe data/portapapeles_escritura.json.",
+                 revert="escritura_portapapeles_off.",
+                 parser_intents=("clip_on",), parser_fixed={"activa": True}),
+    ToolContract("escritura_portapapeles_off",
+                 "Desactiva la escritura del portapapeles: JARVIS deja de "
+                 "copiar cosas.",
+                 _obj({}, []), _clip_switch, RiskLevel.EXECUTE, llm_visible=False,
+                 verify="Se escribe data/portapapeles_escritura.json.",
+                 revert="escritura_portapapeles_on.",
+                 parser_intents=("clip_off",), parser_fixed={"activa": False}),
 
     # ---- Notificaciones (FASE E · E5) ----
     ToolContract("enviar_notificacion",

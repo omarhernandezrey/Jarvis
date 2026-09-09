@@ -29,7 +29,7 @@
 | D | VERIFY post-acción + auditoría append-only + salida estructurada + fallback de modelo | ✅ 2026-09-07 (merge `8dcb8de`) |
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `85873e4`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
-| G | Control de máquina oleada 3: portapapeles escritura, teclado/ratón (ydotool) | ⬜ pendiente |
+| G | Interacción: portapapeles de escritura (teclado sintético aplazado con motivo, ratón descartado) | ✅ 2026-09-09 (merge `<pendiente>`) |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
 | I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
 | J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ⬜ pendiente |
@@ -865,29 +865,58 @@ Orden estricto: F4.0 → F4.1 → (OK del usuario) → F4.2.
       `data/ventanas_integracion.json`), el resto de JARVIS funciona igual;
       solo `listar/enfocar/cerrar_ventana` quedan inertes con error claro.
 
-## FASE G — Control de máquina, oleada 3: interacción
+## FASE G — Interacción: portapapeles de escritura  ✅ CERRADA 2026-09-09 (merge `<pendiente>`)
 
-Portapapeles de escritura, teclado y ratón sintéticos con `ydotool`. La más
-peligrosa: confirmación siempre, límite de velocidad, interruptor global para
-desactivarla.
+Cierre: **portapapeles de escritura hecho; teclado sintético aplazado con
+motivo; ratón descartado.** No es una fase a medias — es el alcance que el
+usuario fijó tras el análisis G0.
 
 - [x] **G0 — ANÁLISIS** (sin código). `docs/G0_ANALISIS_TECLADO.md`.
-      Recomendación entregada: (1) portapapeles de escritura ya, pieza
-      propia y pequeña; (2) teclado sintético — solo atajos allowlistados si
-      hay caso concreto, **nunca** `escribir(texto)` libre; por defecto
-      aplazarlo; (3) ratón fuera del roadmap. **Esperando que el usuario
-      fije el alcance.**
+      Recomendación: (1) portapapeles ya; (2) teclado sintético aplazado
+      salvo caso concreto, y solo atajos allowlistados, **nunca**
+      `escribir(texto)`; (3) ratón fuera del roadmap. **Alcance aceptado por
+      el usuario.**
 
-> **Prerrequisito de entorno — resolver ANTES de escribir código, no a mitad.**
-> `ydotool` no funciona a secas: necesita el demonio **`ydotoold`** corriendo
-> y que el usuario pertenezca a un grupo con acceso a `/dev/uinput` (grupo
-> **`input`**, o udev rule equivalente). Pasos: instalar, arrancar `ydotoold`
-> (servicio de usuario o de sistema), `sudo usermod -aG input omar`, y
-> **reiniciar Claude Code** para heredar el grupo (ver OPERACION_MEMORIA.md §5
-> — el proceso hereda los grupos de arranque; nos pasó con `video` en F1).
-> Comprobar `id -nG` antes de dar por buena la verificación en vivo. Si no se
-> puede dejar operativo, G se implementa igual pero se marca NO VERIFICABLE en
-> vivo desde el principio (como F2/F3). Detalle en OPERACION_MEMORIA.md §6.
+- [x] **G1 — PORTAPAPELES DE ESCRITURA.** `jarvis_local/tools/clipboard.py` +
+      parser `_parse_portapapeles_escritura` + contratos `escribir_portapapeles`
+      / `restaurar_portapapeles` / `escritura_portapapeles_on|off` (todos
+      `llm_visible=False`).
+      - `escribir_portapapeles(texto)`: EXECUTE + VERIFY (se relee y se
+        compara; sondeo hasta 1,5 s porque la propiedad del *selection* es
+        asíncrona). Guarda el contenido previo → `restaurar_portapapeles`.
+      - **Confirmación condicional** (E2): solo si el texto es largo (>280) o
+        parece comando / URL / credencial. Texto inocuo va directo.
+        Auditoría D2: el plan lleva solo `preview` + longitud + motivo, nunca
+        el texto entero.
+      - Interruptor `data/portapapeles_escritura.json` (por defecto activo).
+      - Backend: `wl-copy`/`wl-paste`; si no, `xclip` (X11 vía Xwayland — las
+        apps Wayland puras pueden no verlo). Sin ninguno → ERROR claro
+        (`sudo apt install wl-clipboard`).
+      - **En vivo (2026-09-09):** ejercitado con `xclip` — escribir/releer/
+        VERIFY True, confirmación para `curl … | sh`, restaurar el previo,
+        portapapeles del usuario dejado como estaba. (Bug corregido de paso:
+        `capture_output=True` colgaba `subprocess.run` esperando el EOF de la
+        pipe que el hijo daemonizado de `xclip`/`wl-copy` hereda y no cierra
+        → ahora `stdout/stderr=DEVNULL`.)
+      - Tests: `test_clipboard.py` (14) + banco §G (2 EFECTO + 4 FALLO).
+
+- [ ] ~~**Teclado y ratón sintéticos** (`ydotool`).~~ **DESCARTADO.**
+      - **Teclado sintético: APLAZADO.** Motivo: `ydotool` escribe a
+        `/dev/uinput` sin saber en qué ventana, rodeando el guardia de shell,
+        E1, E2 y D2 (análisis en `docs/G0_ANALISIS_TECLADO.md`). El
+        subconjunto seguro (atajos allowlistados, negativa si el foco es una
+        terminal, confirmación + re-chequeo, límite de velocidad, interruptor,
+        auditoría) es acotable pero **aporta poco**: pulsar Enter/PageDown/
+        Ctrl+S en una app ya enfocada. El texto libre —el valor real que se le
+        supone— es justo lo que hay que prohibir.
+      - **Condición para reabrirlo:** que aparezca un **caso real y repetido**
+        que solo el teclado sintético resuelva. Si se hace, **solo atajos de
+        una allowlist, nunca `escribir(texto)`**, con todas las capas de G0.
+      - **Ratón: fuera del roadmap.** Un clic sintético es estrictamente peor
+        (el objetivo es un píxel) y `enfocar_ventana` + atajos cubren lo que
+        un asistente necesita. No queda como pendiente.
+      - Prerrequisito `ydotoold` + grupo `input` (OPERACION_MEMORIA.md §6):
+        solo relevante si se reabre el teclado.
 
 ## FASE H — Código muerto: integrar o borrar
 
