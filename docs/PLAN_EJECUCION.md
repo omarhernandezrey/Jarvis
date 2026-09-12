@@ -1311,26 +1311,76 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
       - Aun así, midiendo con `psutil.Process().cpu_percent()` sobre
         ventanas de 10 s (vía `app.exec()` real, no un bucle de sondeo
         propio — un bucle así de Python inflaba las primeras lecturas) sale
-        una comparación honesta y útil, con desglose:
-          - **Sin ninguna animación** (`FrameAnimation` parado del todo):
-            **4,6 %** — el suelo de los hilos de fondo (métricas, voz, chat),
-            nada que ver con el render.
+        una comparación honesta y útil, **con desglose por pasada**:
+          - **Sin ninguna animación** (`rootItem.paused = true`,
+            `FrameAnimation` parado del todo): **4,6–5,3 %** — el suelo de
+            los hilos de fondo (métricas, voz, chat), nada que ver con el
+            render.
+          - **Ventana minimizada** (`win.showMinimized()`,
+            `motionActive` cae solo por el guard de `win.active`): **0,8 %**
+            — confirma "0 fps sin foco/minimizado": el `FrameAnimation` dejó
+            de correr del todo (`motionActive=False`), no es una
+            optimización a medias. No se pudo ensayar el caso "visible pero
+            sin foco real" con una ventana señuelo del mismo proceso (el WM
+            de esta sesión no le movió el foco a tiempo, y no hay
+            `wmctrl`/`xdotool` instalados para forzarlo desde otra
+            aplicación) — el mecanismo es el mismo guard (`win.active`) que
+            sí se verificó con la minimización, pero el caso concreto
+            "alt-tab sin minimizar" queda sin ensayar en vivo.
           - **Antes de I6·3** (sin techo de fps, commit `8b656aa`, en
             reposo): **103,1 %** — el render corría sin freno, a lo que el
             compositor diera.
-          - **Después de I6·3** (con el techo 30/60, HEAD de I6), en
-            reposo: **44,7–47,1 %**; hablando (techo 60): **48,2 %**.
-          - Bloom+atmósfera completos vs. bypass forzado
-            (`perfOverride=1`), ambos YA con el techo de fps puesto:
-            **46,5–47,1 %** en los dos — en esta máquina el techo de fps
-            domina el coste con mucha diferencia sobre el bloom/atmósfera
-            en sí; su parte no se pudo aislar del ruido de contención.
-        El techo de fps de I6·3, por sí solo, se lleva más de **la mitad**
-        del coste de render medido en esta máquina (~103 % → ~45 %) — una
-        mejora real y grande, aunque el número final no sea comparable al
-        objetivo del brief (una HD 520 sin nada más corriendo habría dado
-        un `cpu_percent()` mucho más bajo en ambos casos, pero la
-        PROPORCIÓN del ahorro debería sostenerse).
+          - **Después de I6·3** (con el techo 30/60), en reposo: dos
+            corridas, **43,9 %** y **33,6 %**; hablando (techo 60): **36,4 %**
+            y **42,2 %** — el rango de ruido entre corridas (~10 puntos) es
+            del tamaño del efecto que se busca medir en esta máquina
+            contendida; idle y speaking no se distinguen de forma fiable
+            aquí, aunque el techo de fps en sí (ver más abajo) sí se
+            confirmó por conteo de fotogramas, no por CPU.
+          - **Desglose de dónde se va el tiempo** (todas con el techo de fps
+            ya puesto, un solo estado —`idle`— para que el desglose no se
+            mezcle con el ruido idle/speaking de arriba):
+            **resto de la escena del HUD** (espina, hairlines, marco,
+            widgets — todo lo animado por `Design.breath()`/`lightLevel`
+            salvo el núcleo) sola, núcleo oculto: **33,9 %**; **+ shader del
+            núcleo** (sin bloom/atmósfera, `perfOverride=1`): **36,7 %**
+            (+2,8 p.p.); **+ bloom y atmósfera** (pipeline completo):
+            **43,9 %** (+7,2 p.p. sobre el shader solo). **El coste NO está
+            concentrado en el shader vistoso ni en el bloom: el grueso
+            (~29 de ~39 puntos por encima del suelo de 4,6 %-5,3 %) es el
+            resto del HUD** — muchos elementos pequeños (las 44 barras de
+            la espina, los 8 corchetes del marco con su propio
+            `lightLevel`, cada hairline con su `mix()` de color) cada uno
+            barato, pero recalculados 30-60 veces por segundo. Si hiciera
+            falta bajar más el coste, este es el sitio, no el shader ni el
+            post-proceso.
+          - **Techo de fps — reconfirmado tras el fix del arnés**: contando
+            cambios reales de `tick` en 3 s, **idle ~21/s** (techo 30) vs
+            **speaking ~36/s** (techo 60) — proporción ~1,7× esperada entre
+            30 y 60 (igual que en I6·3; los valores absolutos, por debajo
+            de lo nominal, son el propio bucle de sondeo de Python, no el
+            mecanismo).
+        El techo de fps de I6·3, comparado contra el propio código sin él
+        (antes/después del mismo commit, mismo estado, misma máquina), se
+        lleva más de **la mitad** del coste de render medido (~103 % →
+        ~34–44 %) — una mejora real y grande, aunque el número final no sea
+        comparable al objetivo del brief ni entre sí de una corrida a otra
+        en esta máquina en concreto.
+      - **Máscara de esquinas redondeadas sobrevive a la degradación por
+        fps — verificado en vivo, no sólo por lectura de código.** El
+        `Item` real de `Main.qml` no tiene contenido opaco pegado al borde
+        (ventana sin fondo), así que no servía como probeta visual. Se
+        aisló `Atmosphere.qml` en una ventana de prueba con un fondo blanco
+        opaco de sobra para recortar, con los mismos parámetros que usa
+        `Main.qml` en cada modo (`grainAmt`/`vignette`/`aberration` a 0 en
+        degradado, `cornerRadius` SIEMPRE en 24). Resultado, leyendo alfa
+        píxel a píxel: en modo completo, el píxel de la esquina (0,0) sale
+        con alfa 0 y crece hacia el centro (recorte + viñeta juntos); **en
+        modo degradado, (0,0) y (3,3) siguen en alfa 0 y el resto ya vuelve
+        a alfa 255 sin viñeta** — el recorte de esquina se mantiene
+        exactamente igual de ancho con o sin viñeta/grano/aberración,
+        confirmando que `cornerRadius` no depende de `degraded` en el
+        shader real.
       - Con esto, **I6 queda completa**: bloom a 1/4 res + compuesto sólo
         sobre el rect del núcleo, atmósfera a 15 fps con grano/viñeta
         corregidos y máscara de esquinas que sobrevive a la degradación
