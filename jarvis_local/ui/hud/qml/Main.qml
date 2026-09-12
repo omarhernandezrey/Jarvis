@@ -54,11 +54,25 @@ Window {
         // ruta de degradación (§7): no es un `if` teórico, se dispara de verdad.
         property real _fpsEma: 60
         property real _lowSince: 0            // ms de `tick` en que empezó a ir <40
+
+        // FASE I · I6 — TECHO DE FPS: 30 en reposo, 60 sólo mientras trabaja
+        // (listening/thinking/speaking) o durante el frente de reacción de un
+        // cambio de estado. `tick` (y con él TODA la escena: shaders,
+        // hairlines, respiración) sólo avanza a esta cadencia — el resto de
+        // frames que sí dispara el compositor no tocan ninguna property, así
+        // que el árbol de escena no se ensucia y Qt no repinta nada: ahorro
+        // real, no una etiqueta. La medición de fps de más abajo usa el
+        // `frameTime` CRUDO de cada disparo, no el acumulado — el techo
+        // propio nunca se confunde con una degradación real del hardware.
+        readonly property bool _activeState:
+            Vm && (Vm.state === "listening" || Vm.state === "thinking"
+                   || Vm.state === "speaking")
+        readonly property int _targetFps: _activeState ? 60 : 30
+        property real _frameAcc: 1.0          // arranca alto: no pierde el primer frame
         FrameAnimation {
             objectName: "coreLoop"
             running: rootItem.motionActive
             onTriggered: {
-                rootItem.tick += frameTime
                 if (frameTime > 0.001 && frameTime < 0.5 && rootItem.tick > 2.0) {
                     rootItem._fpsEma = rootItem._fpsEma * 0.9 + (1.0 / frameTime) * 0.1
                     if (rootItem._fpsEma < 40) {
@@ -70,6 +84,11 @@ Window {
                         rootItem._lowSince = 0
                     }
                 }
+                rootItem._frameAcc += frameTime
+                var minDt = 1.0 / rootItem._targetFps
+                if (rootItem._frameAcc < minDt) return
+                rootItem.tick += rootItem._frameAcc
+                rootItem._frameAcc = 0
             }
         }
 

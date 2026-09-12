@@ -1275,6 +1275,27 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         devuelve un pixmap vacío (bloqueado por seguridad, esperable). Se
         deja constancia del límite en vez de fingir una verificación que no
         se pudo hacer.
+      - **I6·3 — Techo de fps por estado** (`Main.qml`): el ÚNICO
+        `FrameAnimation` sólo actualizaba `tick` en cada disparo del
+        compositor (sin techo propio, lo que el display diera). Ahora
+        `tick` — y con él TODA la escena reactiva (shaders, hairlines,
+        respiración) — sólo avanza a una cadencia objetivo: 30 fps en
+        reposo, 60 sólo en `listening`/`thinking`/`speaking`
+        (`rootItem._targetFps`). El resto de disparos del compositor
+        acumulan tiempo en `_frameAcc` sin tocar ninguna property visible,
+        así que Qt no ensucia el árbol de escena ni repinta — ahorro real,
+        no una etiqueta. La medición de fps para el latch de degradación
+        sigue usando el `frameTime` CRUDO de cada disparo (no el
+        acumulado): el techo propio nunca se puede confundir con una
+        degradación real del hardware.
+      - Verificado en vivo (GPU real): `tick` sigue representando segundos
+        reales 1:1 en ambos casos (no se pierde ni se adelanta tiempo, sólo
+        cambia CADA CUÁNTO se actualiza) — confirmado midiendo cuántas
+        veces cambia `tick` en una ventana de 3 s real: ~21/s en idle
+        (techo 30) vs ~36/s en speaking (techo 60), la proporción ~1,7×
+        esperada entre 30 y 60 (los valores absolutos quedan por debajo de
+        lo nominal por el propio bucle de sondeo de Python del arnés de
+        prueba, no por el mecanismo en sí).
 
 ## FASE J — Endurecer
 
