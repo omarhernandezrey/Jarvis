@@ -35,14 +35,25 @@ Item {
     }
     property real rolled: 0
     property real bump: 0
+    // FASE I · I5: `to` se fijaba con un BINDING sobre `parsed` — al cambiar
+    // `parsed` de null a un valor real (p. ej. el primer dato que llega tras
+    // el estado ausente), `onParsedChanged` podía disparar `restart()` antes
+    // de que ese binding se reevaluara, así que la animación arrancaba y
+    // terminaba apuntando al `to` VIEJO (0) y `rolled` se quedaba clavado en
+    // 0 para siempre: un número FALSO en pantalla (justo lo que FASE D
+    // prohíbe), no solo un defecto cosmético. Fijar `to` a mano ANTES de
+    // `restart()` lo hace determinista, sin depender del orden de
+    // reevaluación de bindings frente al propio handler de la señal.
     onParsedChanged: {
-        if (parsed) rollAnim.restart()
+        if (parsed) {
+            rollAnim.to = parsed.num
+            rollAnim.restart()
+        }
         bumpAnim.restart()
     }
     NumberAnimation {
         id: rollAnim
         target: cell; property: "rolled"
-        to: cell.parsed ? cell.parsed.num : 0
         duration: Design.durRoll
         easing.type: Design.easeType; easing.bezierCurve: Design.easeCurve
     }

@@ -1137,24 +1137,45 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         inventados): "modelo llama3.2:3b · herramientas 46" /
         "memoria 6 recuerdos · última sesión hoy 16:34" — los cuatro datos
         genuinamente en vivo del sistema.
-      - **Hallazgo colateral, fuera del alcance de I5, NO corregido aquí**: al
-        usar por primera vez un recuento real de herramientas (46, con
+      - **Hallazgo colateral, corregido en su propio commit (ver más abajo)**:
+        al usar por primera vez un recuento real de herramientas (46, con
         `agent: true`) en vez del valor fijo de la careta de pruebas
-        (`hud_shot.py` usaba 84), el widget superior "HERRAMIENTAS" (vía
-        `HudCell.qml`, la animación de "rodar" el número) se queda en "0" en
-        vez de mostrar "46" — reproducido a los 2,4 s y persistente a los 6 s
-        de espera, así que no es cuestión de tiempo de animación. Aislado:
-        `HudCell.qml` solo, alimentado directamente con `value: "46"`, rueda
-        bien a 46 — el componente en sí no está roto. El fallo aparece sólo
-        integrado en `Hud.qml`/`Vm.metrics` reales, y es el ÚNICO de los 5
-        widgets de esa fila cuyo valor empieza por un dígito (los demás —
-        SISTEMA, MODELO, VOZ, MEMORIA— arrancan con una letra y por eso nunca
-        pasan por el camino de "rodar"), lo que probablemente explica por qué
-        llevaba tiempo sin notarse: nada más en el HUD ejercita ese camino
-        con datos reales. Ningún test existente lo cubre (son todos del
-        catálogo de herramientas, no de esta vista). No se toca en I5 —
-        `Hud.qml`/`HudCell.qml` no se tocaron— se deja anotado para que el
-        usuario decida cuándo perseguirlo (FASE J o una rama corta aparte).
+        (`hud_shot.py` usaba 84), el widget superior "HERRAMIENTAS" se
+        quedaba en "0" — un dato FALSO en pantalla, lo que FASE D prohíbe en
+        todo el sistema. Mismo patrón que `plan_delete` y la `ListView`
+        vacía: funciona simulado, falla con datos reales.
+- [x] **I5·fix — HudCell: el número que "rueda" se quedaba clavado en 0.**
+      Causa raíz en `HudCell.qml`: `NumberAnimation.to` colgaba de un BINDING
+      sobre `parsed` (`to: cell.parsed ? cell.parsed.num : 0`). Al pasar de
+      ausente (sin dato, `parsed=null`) a un valor real, `onParsedChanged`
+      llamaba a `rollAnim.restart()` — pero el orden entre la reevaluación de
+      ESE binding y la ejecución del propio handler de la señal no está
+      garantizado: si el handler corría primero, la animación arrancaba y
+      terminaba apuntando al `to` VIEJO (0), y `rolled` quedaba clavado ahí
+      para siempre. Aislado con un componente mínimo fuera del árbol real
+      (reproducido con solo `value: ""` → `value: "46"`, sin nada de
+      `Hud.qml` de por medio) antes de tocar el archivo, para no confundir
+      "roto por I5" con "roto siempre".
+      - Fix: fijar `rollAnim.to = parsed.num` A MANO justo antes de
+        `restart()`, en vez de depender de un binding declarativo — hace el
+        arranque de la animación determinista sin importar el orden de
+        reevaluación.
+      - **Es un bug del componente, no del dato**: de los 5 widgets de esa
+        fila, "herramientas" era el ÚNICO cuyo valor empieza por un dígito
+        (los demás — SISTEMA, MODELO, VOZ, MEMORIA — arrancan con letra y
+        nunca ejercitaban el camino de "rodar"), lo que explica por qué
+        llevaba tiempo sin notarse. Comprobado que NO es exclusivo de
+        "herramientas": un nombre de modelo que empiece por dígito (caso
+        real, p. ej. "70b-instruct") disparaba el mismo bloqueo antes del
+        fix y rueda bien después — cualquier widget futuro con una cifra
+        habría heredado el mismo fallo.
+      - Test de regresión nuevo (`test_ui_hud.py`,
+        `test_hud_cell_rolls_to_real_value_not_stuck_at_zero`): sin el fix
+        falla (`0.0 == 46.0`), con el fix pasa — verificado en ambos sentidos
+        (`git stash` del archivo corregido y vuelta atrás) antes de dar el
+        commit por bueno.
+      - Verificado en vivo: captura del estado vacío de I5 con el fix
+        aplicado — "HERRAMIENTAS 46" real, resto de widgets sin regresión.
 - [ ] **I6 — RENDIMIENTO.** bloom a 1/4 de resolución sobre el rect del núcleo
       (no la ventana) · atmósfera a 15 fps con grano tileado y viñeta horneada
       · techo 30 fps idle / 60 en listening·thinking·speaking · ≤12% de un

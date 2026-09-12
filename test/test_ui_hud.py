@@ -239,6 +239,64 @@ def _conversation_listview(win):
     raise AssertionError("no se encontró la ListView de la conversación")
 
 
+def _hud_cell_by_label(win, label):
+    """Los delegados de `Repeater` no aparecen en `findChildren` desde un
+    ancestro (limitación de PySide/QML, no del árbol real: `Repeater.count`
+    sí los ve) -- hay que pedirlos por `itemAt(i)`."""
+    from PySide6.QtCore import Q_ARG, Q_RETURN_ARG, QMetaObject
+    from PySide6.QtQuick import QQuickItem
+    hud = win.findChild(QQuickItem, "hud")
+    if hud is None:
+        return None
+    for rep in hud.findChildren(QQuickItem):
+        if rep.metaObject().className() != "QQuickRepeater":
+            continue
+        for i in range(rep.property("count")):
+            item = QMetaObject.invokeMethod(
+                rep, "itemAt", Q_RETURN_ARG("QQuickItem*"), Q_ARG("int", i))
+            if item is not None and item.property("label") == label:
+                return item
+    return None
+
+
+def test_hud_cell_rolls_to_real_value_not_stuck_at_zero():
+    """FASE I · I5 (hallazgo colateral, FASE D: nunca un dato falso en
+    pantalla). 'herramientas' es el único widget de la fila superior cuyo
+    valor empieza por un dígito -- el único que ejercita la animación de
+    "rodar" el número de HudCell.qml. Antes del fix, `NumberAnimation.to`
+    colgaba de un binding sobre `parsed`: al pasar de ausente (sin dato) a
+    un valor real, `onParsedChanged` podía llamar a `restart()` antes de que
+    ese binding se reevaluara, así que la animación arrancaba y terminaba
+    apuntando al `to` VIEJO (0) -- el número se quedaba clavado en 0 para
+    siempre, mostrando un dato falso."""
+    import time
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        rt = engine._runtime  # noqa: SLF001
+
+        def _settle(seconds):
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < seconds:
+                _app.processEvents()
+                time.sleep(0.02)
+
+        _settle(0.3)   # arranca ausente: sin métricas todavía
+        rt.vm.push_metrics({"tools": {"count": 46, "agent": True}})
+        _settle(1.0)   # más que Design.durRoll (560 ms)
+
+        cell = _hud_cell_by_label(win, "herramientas")
+        assert cell is not None, "no se encontró el widget de herramientas"
+        assert cell.property("rolled") == 46.0, \
+            "el número se quedó clavado en vez de rodar al valor real"
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
+
+
 def test_qml_conversation_listview_reflects_model():
     """P0 (Fase 9): la ListView de la conversación DEBE estar cableada al
     ConversationModel real. Regresión: el context property se llamaba
