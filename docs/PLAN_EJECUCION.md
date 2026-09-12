@@ -1176,11 +1176,57 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         commit por bueno.
       - Verificado en vivo: captura del estado vacío de I5 con el fix
         aplicado — "HERRAMIENTAS 46" real, resto de widgets sin regresión.
-- [ ] **I6 — RENDIMIENTO.** bloom a 1/4 de resolución sobre el rect del núcleo
-      (no la ventana) · atmósfera a 15 fps con grano tileado y viñeta horneada
-      · techo 30 fps idle / 60 en listening·thinking·speaking · ≤12% de un
-      núcleo en la HD 520, medido · la máscara de esquinas redondeadas NO
-      desaparece con la ruta de degradación.
+- [ ] **I6 — RENDIMIENTO.** 🚧 EN CURSO. bloom a 1/4 de resolución sobre el
+      rect del núcleo (no la ventana) · atmósfera a 15 fps con grano tileado y
+      viñeta horneada · techo 30 fps idle / 60 en listening·thinking·speaking
+      · ≤12% de un núcleo en la HD 520, medido · la máscara de esquinas
+      redondeadas NO desaparece con la ruta de degradación.
+      - **Metodología corregida a mitad de fase**: hasta aquí, toda captura de
+        verificación de FASE I se tomó con `QT_QPA_PLATFORM=offscreen`
+        (renderizado por software forzado), que en este equipo activa el
+        LATCH de degradación (`rootItem._softwareBackend`) y por tanto
+        **nunca ejecutó de verdad el bloom ni la atmósfera** — sólo el
+        `CoreShader` puro, sin post-proceso. El entorno SÍ tiene un display
+        Wayland real (`WAYLAND_DISPLAY=wayland-0`); sin `offscreen`, Qt usa
+        `RHI backend: OpenGL` de verdad. Se descubrió al empezar I6 porque
+        el downsample del bloom no se podía comprobar sin bloom real. Para
+        forzar el pipeline completo en pruebas automatizadas existe
+        `rootItem.perfOverride = -1` (ya reservado en el código para esto).
+        Las verificaciones de I1-I5 (composición, iluminación ambiental,
+        color, datos) no dependían del bloom/atmósfera y sus conclusiones se
+        mantienen; pero fueron todas contra el núcleo "desnudo", nunca contra
+        el pipeline completo que ve un usuario real.
+      - **I6·1 — Bloom a 1/4 de resolución** (`CoreBloom.qml`): la cadena de
+        extracción + dos pasadas de blur ahora renderiza a mitad de ancho ×
+        mitad de alto (1/4 de píxeles, la convención habitual), con
+        `blurMax` a la mitad (10/24, antes 20/48) para que el radio aparente
+        no cambie al recomponer a resolución completa. El compuesto final
+        sigue a resolución completa — la nitidez la pone el núcleo, no el
+        halo. Ya estaba "compuesto sólo sobre el rectángulo del núcleo" (el
+        `Item` de `CoreBloom` ya vive dentro de `coreZone`, del tamaño del
+        orbe, no de la ventana).
+      - **Residual verde de I2 — comprobado, diagnóstico CORREGIDO**: con
+        bloom real (OpenGL, no software) se reprodujo el fragmento verde en
+        forma de flecha/hoja, en el mismo punto aproximado en varias
+        capturas. El downsample **NO lo hace desaparecer**: se probó también
+        a 1/8 de ancho×alto (1/64 de píxeles, muy por debajo de lo que se
+        va a usar) y el fragmento sale IDÉNTICO en forma, tamaño y color.
+        Esto descarta la hipótesis de I2 ("artefacto de blur/downsample de
+        MultiEffect sobre highlights nítidos a resolución nativa"): si fuera
+        un artefacto de blur, degradar tanto la resolución de entrada lo
+        habría suavizado o deformado, y no lo hizo — sale idéntico a
+        cualquier resolución. Es, con más certeza ahora, una emisión de
+        color genuina en `core.frag` anterior al bloom — el umbral de
+        extracción (0,80) simplemente la vuelve visible al recortarla y
+        ampliarla. Candidato más probable por posición y cadencia de
+        movimiento (coincide con un periodo de giro lento): el SATÉLITE
+        COMPAÑERO (línea ~223 de `core.frag`) u otra fuente cercana en el
+        archivo — su código mezcla `warmTint`/`tintHot` sin escribir canales
+        sueltos, así que no se localizó la línea exacta en esta pasada.
+        **No se persigue más aquí** (excede "comprobar si el downsample lo
+        cierra", que es lo pedido): queda para una rama de shader dedicada,
+        con el diagnóstico ya acotado y la vía del artefacto de blur
+        descartada, no abierta.
 
 ## FASE J — Endurecer
 
