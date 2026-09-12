@@ -26,10 +26,13 @@ Item {
             anchors { left: parent.left; leftMargin: Design.sp(0.5)
                       verticalCenter: parent.verticalCenter }
             spacing: Design.sp(1.5)
-            Rectangle {   // testigo de canal
+            Rectangle {   // testigo de canal — I4: verde SÓLO si de verdad hay
+                          // conexión (Vm.metrics.online); si no, es una alerta
+                          // real, no un adorno fijo.
                 width: 6; height: 6
                 anchors.verticalCenter: parent.verticalCenter
-                color: Design.ok
+                color: (Vm && Vm.metrics && Vm.metrics.online === false)
+                       ? Design.alert : Design.ok
                 opacity: Math.min(1.0, 0.35 + 0.35 * Design.breath()
                                   + 0.5 * Math.min(1.0, Design.coreEnergy * 1.6))
                 scale: 0.85 + 0.2 * Design.breath()

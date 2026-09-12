@@ -1082,8 +1082,36 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         no un panel de estado— pero ya no es "sólo estar puesta": respira de
         forma perceptible por sí sola, sin parpadeo (todo el cambio es por
         opacidad/tinte continuos, ninguna transición discreta).
-- [ ] **I4 — COLOR.** borde del input a **cyan** (no verde). Auditar cada uso
+- [x] **I4 — COLOR.** borde del input a **cyan** (no verde). Auditar cada uso
       de verde/amarillo/rojo: color = estado, nunca decoración.
+      - Borde del input (`CommandBar.qml`): verificado en vivo — ya es
+        `Design.cyan` con foco (`Design.azure` generando, atenuado con
+        `litHairline` en reposo). No usa verde en ningún estado; sin cambios.
+      - Auditados todos los usos de `Design.ok`/`warn`/`alert` en
+        `jarvis_local/ui/hud/qml/`: estado real de mic/voz, umbrales de
+        cpu/ram/latencia, alerta del núcleo, error de turno, banner de
+        degradado — todos legítimos (el color sigue un dato real, nunca es
+        fijo).
+      - **Violación real encontrada y corregida:** el "testigo de canal" en
+        la cabecera de `Conversation.qml` ("JARVIS // CONSOLA") era
+        `Design.ok` fijo, sin condición — un verde permanente que no
+        comunicaba nada. Ahora es `Design.alert` cuando `Vm.metrics.online
+        === false` y `Design.ok` en caso contrario: verde/rojo real, no
+        decoración. Verificado en vivo (capturas online/offline: el testigo
+        y el widget SISTEMA cambian juntos).
+      - Revisados y mantenidos sin cambio, con su razón: (1) los "colores de
+        firma" de `Hud.qml` (`amber`, `acidLime`, `magenta`, `sky`, `violet`)
+        son una decisión ya documentada de Fase 6 (`Design.qml`) — tokens
+        DISTINTOS de `ok`/`warn`/`alert`, precisamente para no chocar con el
+        estado real; (2) el resaltado de sintaxis de `CodeBlock.qml` reutiliza
+        los tokens literales `ok`/`warn` para cadenas/números — es una
+        convención de resaltado tipo terminal, no un indicador de estado del
+        sistema, y nadie lo lee como tal dentro de un bloque de código; se
+        deja así pero se señala por si el usuario prefiere tokens propios.
+      - Nota aparte (no es de esta tarea, es FASE H): `CoreStatus.qml` es
+        código muerto — ya no se instancia desde `Main.qml` desde I1 (la
+        ActivitySpine lo reemplazó), sólo queda un comentario que lo
+        menciona. Se deja para el barrido de FASE H.
 - [ ] **I5 — ESTADO VACÍO.** fuera el "consola conversacional" gris; datos
       reales (modelo cargado, nº de recuerdos, herramientas, última sesión).
 - [ ] **I6 — RENDIMIENTO.** bloom a 1/4 de resolución sobre el rect del núcleo
