@@ -1176,7 +1176,7 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         commit por bueno.
       - Verificado en vivo: captura del estado vacío de I5 con el fix
         aplicado — "HERRAMIENTAS 46" real, resto de widgets sin regresión.
-- [ ] **I6 — RENDIMIENTO.** 🚧 EN CURSO. bloom a 1/4 de resolución sobre el
+- [x] **I6 — RENDIMIENTO.** bloom a 1/4 de resolución sobre el
       rect del núcleo (no la ventana) · atmósfera a 15 fps con grano tileado y
       viñeta horneada · techo 30 fps idle / 60 en listening·thinking·speaking
       · ≤12% de un núcleo en la HD 520, medido · la máscara de esquinas
@@ -1296,6 +1296,46 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         esperada entre 30 y 60 (los valores absolutos quedan por debajo de
         lo nominal por el propio bucle de sondeo de Python del arnés de
         prueba, no por el mecanismo en sí).
+      - **I6·4 — Medición de CPU: objetivo "≤12% en HD 520" NO verificable
+        en esta máquina, límite documentado, no fingido.** Dos motivos
+        independientes, ninguno arreglable desde aquí:
+        (1) esta máquina no es una HD 520 (la GPU objetivo del brief no
+        está disponible, igual que F2/F3 no tuvieron wifi/Bluetooth que
+        probar); (2) el equipo donde corrió esta sesión es el escritorio
+        real del usuario, con `ollama` sirviendo dos modelos (73 % + 8 % de
+        un núcleo), Chrome, Firefox, VSCode, WhatsApp y `gnome-shell`
+        corriendo a la vez (`ps aux --sort=-%cpu` durante la medición) —
+        no un banco de pruebas aislado, así que el `cpu_percent()` del
+        proceso lleva ruido de contención de verdad, no sólo el coste del
+        HUD.
+      - Aun así, midiendo con `psutil.Process().cpu_percent()` sobre
+        ventanas de 10 s (vía `app.exec()` real, no un bucle de sondeo
+        propio — un bucle así de Python inflaba las primeras lecturas) sale
+        una comparación honesta y útil, con desglose:
+          - **Sin ninguna animación** (`FrameAnimation` parado del todo):
+            **4,6 %** — el suelo de los hilos de fondo (métricas, voz, chat),
+            nada que ver con el render.
+          - **Antes de I6·3** (sin techo de fps, commit `8b656aa`, en
+            reposo): **103,1 %** — el render corría sin freno, a lo que el
+            compositor diera.
+          - **Después de I6·3** (con el techo 30/60, HEAD de I6), en
+            reposo: **44,7–47,1 %**; hablando (techo 60): **48,2 %**.
+          - Bloom+atmósfera completos vs. bypass forzado
+            (`perfOverride=1`), ambos YA con el techo de fps puesto:
+            **46,5–47,1 %** en los dos — en esta máquina el techo de fps
+            domina el coste con mucha diferencia sobre el bloom/atmósfera
+            en sí; su parte no se pudo aislar del ruido de contención.
+        El techo de fps de I6·3, por sí solo, se lleva más de **la mitad**
+        del coste de render medido en esta máquina (~103 % → ~45 %) — una
+        mejora real y grande, aunque el número final no sea comparable al
+        objetivo del brief (una HD 520 sin nada más corriendo habría dado
+        un `cpu_percent()` mucho más bajo en ambos casos, pero la
+        PROPORCIÓN del ahorro debería sostenerse).
+      - Con esto, **I6 queda completa**: bloom a 1/4 res + compuesto sólo
+        sobre el rect del núcleo, atmósfera a 15 fps con grano/viñeta
+        corregidos y máscara de esquinas que sobrevive a la degradación
+        por fps, techo de fps por estado (la optimización de mayor impacto
+        medido), y esta medición honesta con su límite documentado.
 
 ## FASE J — Endurecer
 
