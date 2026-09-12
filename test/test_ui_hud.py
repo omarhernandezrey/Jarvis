@@ -59,7 +59,7 @@ def test_sample_all_shape_no_invention():
     None o de tipo correcto -- nunca aleatorios ni de relleno."""
     data = services.sample_all()
     for key in ("cpu", "ram", "online", "model", "healthPingMs",
-                "voice", "tools", "memory"):
+                "voice", "tools", "memory", "lastSession"):
         assert key in data
     assert data["cpu"] is None or isinstance(data["cpu"], (int, float))
     assert data["ram"] is None or isinstance(data["ram"], (int, float))
@@ -69,6 +69,7 @@ def test_sample_all_shape_no_invention():
     assert set(data["voice"]) == {"tts", "mic"}
     assert set(data["tools"]) == {"count", "agent"}
     assert set(data["memory"]) == {"auto_recall", "count"}
+    assert data["lastSession"] is None or isinstance(data["lastSession"], str)
 
 
 def test_conversation_model_streaming_turn():

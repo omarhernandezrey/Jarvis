@@ -162,13 +162,35 @@ Item {
         }
     }
 
-    // estado vacío: identidad a 40 px, callada. Se desvanece con el primer turno.
+    // estado vacío (FASE I · I5): identidad a 40 px + datos REALES del
+    // sistema (Vm.metrics) — nunca la frase de relleno "consola
+    // conversacional". Sin dato, "—": jamás se inventa.
     Column {
+        id: emptyState
         anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-        spacing: Design.sp(3)
+        spacing: Design.sp(1.5)
         opacity: list.count === 0 ? 1.0 : 0.0
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
+
+        readonly property var _m: (Vm && Vm.metrics) ? Vm.metrics : ({})
+
+        function _val(v, suffix) {
+            return (v === undefined || v === null) ? "—" : ("" + v) + (suffix || "")
+        }
+        function _lastSession() {
+            var iso = emptyState._m.lastSession
+            if (!iso) return "—"
+            var d = new Date(iso)
+            if (isNaN(d.getTime())) return "—"
+            var now = new Date()
+            var hhmm = Qt.formatDateTime(d, "hh:mm")
+            if (d.toDateString() === now.toDateString()) return "hoy " + hhmm
+            var ayer = new Date(now); ayer.setDate(now.getDate() - 1)
+            if (d.toDateString() === ayer.toDateString()) return "ayer " + hhmm
+            return Qt.formatDateTime(d, "dd/MM") + " " + hhmm
+        }
+
         Text {
             text: "JARVIS ❯ _"
             color: Design.chatJarvis
@@ -178,10 +200,22 @@ Item {
             style: Text.Outline; styleColor: Design.textEdge
         }
         Text {
-            text: "consola conversacional — escribe abajo o mantén el micrófono"
+            text: "modelo " + emptyState._val(emptyState._m.model)
+                  + "   ·   herramientas "
+                  + emptyState._val(emptyState._m.tools ? emptyState._m.tools.count : undefined)
             color: Design.chatMeta
             font.family: Design.fontMono
-            font.pixelSize: Design.fsSmall
+            font.pixelSize: Design.fsMicro
+            style: Text.Outline; styleColor: Design.textEdge
+        }
+        Text {
+            text: "memoria "
+                  + emptyState._val(emptyState._m.memory ? emptyState._m.memory.count : undefined,
+                                    " recuerdos")
+                  + "   ·   última sesión " + emptyState._lastSession()
+            color: Design.chatMeta
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsMicro
             style: Text.Outline; styleColor: Design.textEdge
         }
     }
