@@ -1227,6 +1227,54 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         cierra", que es lo pedido): queda para una rama de shader dedicada,
         con el diagnóstico ya acotado y la vía del artefacto de blur
         descartada, no abierta.
+      - **I6·2 — Atmósfera a 15 fps, grano tileado, viñeta horneada** (esta
+        última parte, "tileado"/"horneada" en el sentido de: barata y
+        estable, no recalculada por-frame a resolución nativa — ver nota
+        de coste más abajo): reintroducida en `Main.qml` como
+        `layer.effect` de `rootItem`, tras encontrar y corregir la causa
+        real del "marco oscuro" que la había hecho descartar en Fase 2:
+        `atmosphere.frag` tocaba el alfa del grano y de la máscara de
+        esquinas sin tocar el color en la misma proporción, rompiendo el
+        invariante premultiplicado (`rgb <= alfa`) justo donde la ventana
+        debía quedar transparente — invisible en una captura de
+        `grabToImage` (alfa recompuesto correctamente por Qt), pero real
+        para el compositor del SO al mezclar contra el escritorio de
+        verdad. Corregido: grano escalado por alfa (`col += g * a`) y
+        máscara de esquinas aplicada a AMBOS canales (`a *= mask; col *=
+        mask`). Verificado sin fuga de color componiendo contra magenta
+        puro (ninguna prueba de color inesperado en los bordes).
+      - `time` del grano cuantizado a 15 fps (`floor(tick*15)/15`): la
+        escena puede renderizar más rápido, pero el grano sólo "salta" 15
+        veces por segundo — se lee como grano de película, no como
+        parpadeo. Nuevo token `Design.windowCornerRadius` (14 px).
+      - Encendido/apagado en dos niveles, no uno: la capa entera
+        (`layer.enabled`) depende SÓLO de `_softwareBackend` — ahí el
+        shader puede no ejecutarse en absoluto, límite de hardware, mismo
+        trato que el bloom. Dentro de la capa, `grainAmt`/`vignette`/
+        `aberration` dependen de `degraded` (que sí cubre fps sostenidos
+        <40 y `perfOverride` de prueba) y se apagan a 0 ahí, PERO
+        `cornerRadius` se pasa siempre que la capa esté encendida — así la
+        máscara de esquinas sobrevive a la ruta de degradación por fps
+        (GPU real, sólo más lento) aunque no al límite de hardware real
+        (software/Null, donde nada de esto puede ejecutarse: mismo
+        límite ya aceptado para el bloom). Verificado con
+        `perfOverride=1` en GPU real: `degraded=True`,
+        `_softwareBackend=False` → capa sigue encendida.
+      - Impacto visual del recorte de esquinas: mínimo en esta app en
+        concreto porque la ventana no tiene fondo sólido que recortar
+        ("sin panel, sin caja" es el lenguaje de diseño desde Fase 4) — el
+        recorte importa donde SÍ hay contenido tocando el borde (p. ej. el
+        tirador de redimensionado, alfa ~218 visto en la esquina
+        inferior-derecha), no en el resto de la ventana, que ya era
+        transparente antes del recorte. El código es correcto y queda listo
+        para cuando haga falta.
+      - No se pudo verificar contra un compositor de escritorio real
+        (mutter) con un pantallazo del sistema — los intentos anteriores de
+        esta fase con `grim`/`gnome-screenshot`/el portal XDG ya habían
+        fallado en este entorno, y `QScreen.grabWindow()` en Wayland nativo
+        devuelve un pixmap vacío (bloqueado por seguridad, esperable). Se
+        deja constancia del límite en vez de fingir una verificación que no
+        se pudo hacer.
 
 ## FASE J — Endurecer
 

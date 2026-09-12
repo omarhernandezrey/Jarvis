@@ -90,11 +90,38 @@ Window {
           : perfOverride === -1 ? false
           : (_softwareBackend || _degradedLatch)
 
-        // La atmósfera global (viñeta/grano/aberración) se aplicaba como
-        // `layer.effect` de TODA la escena. Con la ventana transparente eso
-        // pintaría un marco oscuro en los bordes — justo lo que NO se quiere.
-        // El orbe conserva su propio bloom (CoreBloom); no hay post-proceso
-        // de ventana.
+        // La atmósfera global (viñeta/grano/aberración cromática + máscara de
+        // esquinas redondeadas) va como `layer.effect` de TODA la escena.
+        // FASE I · I6: se había descartado porque con la ventana transparente
+        // pintaba un marco oscuro en los bordes — la causa real era que el
+        // grano y la máscara de esquinas tocaban el alfa sin tocar el color
+        // en la misma proporción, rompiendo el invariante premultiplicado
+        // justo donde debía quedar transparente (visible en el compositor
+        // real del SO, no en una captura de `grabToImage`). Corregido en
+        // `atmosphere.frag`: grano y máscara escalan también el color.
+        //
+        // Se apaga por completo SÓLO en backend de software/Null
+        // (`_softwareBackend`): ahí el shader puede no ejecutarse en
+        // absoluto — límite de hardware, no una decisión de coste, mismo
+        // trato que el bloom. La máscara de esquinas redondeadas, en cambio,
+        // NO depende de `degraded` (fps sostenidos <40 o `perfOverride`
+        // forzado): ahí el GPU real sigue pudiendo correr el shader, sólo
+        // más despacio, así que se apagan grano/viñeta/aberración (el coste)
+        // pero la forma de la ventana se mantiene.
+        readonly property bool _atmosphereOn: !_softwareBackend
+        layer.enabled: _atmosphereOn
+        layer.effect: Atmosphere {
+            // FASE I · I6: grano a 15 fps — el reloj que alimenta el hash se
+            // cuantiza, así que el grano sólo "salta" 15 veces por segundo
+            // aunque la escena renderice más rápido (nunca se ve como un
+            // parpadeo: es la misma cadencia perceptual de un grano de
+            // película, no una animación).
+            time: rootItem.degraded ? 0.0 : Math.floor(rootItem.tick * 15.0) / 15.0
+            grainAmt: rootItem.degraded ? 0.0 : 0.026
+            vignette: rootItem.degraded ? 0.0 : 0.30
+            aberration: rootItem.degraded ? 0.0 : 1.2
+            cornerRadius: Design.windowCornerRadius
+        }
 
         // alcance de la luz del núcleo, en función del tamaño de la ventana
         Binding {

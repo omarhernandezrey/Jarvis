@@ -285,6 +285,10 @@ QtObject {
     // Canaleta para la sombra proyectada de la ventana sin marco.
     readonly property int windowShadowGutter: 22
 
+    // Radio de las esquinas de la ventana sin marco (FASE I · I6) — lo aplica
+    // la máscara de `Atmosphere.frag`, no el compositor del SO.
+    readonly property int windowCornerRadius: 14
+
     // ── MOTION ───────────────────────────────────────────────────────────────
     // Una sola escala temporal, sin literales sueltos por los .qml. De rápido a
     // lento según la INTENCIÓN del movimiento, no al azar:

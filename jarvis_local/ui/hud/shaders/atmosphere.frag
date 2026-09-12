@@ -40,18 +40,29 @@ void main() {
     // viñeta
     col *= mix(1.0, 1.0 - vignette, smoothstep(0.30, 1.0, r));
 
-    // grano temporal (por píxel de pantalla, varía con el tiempo)
-    float g = (hash21(gl_FragCoord.xy + time * 411.0 + 0.5) - 0.5) * grainAmt;
-    col += g;
-
-    // esquinas redondeadas de la ventana sin marco (SDF de caja redondeada)
+    // grano temporal (por píxel de pantalla, varía con el tiempo). El origen
+    // es una textura PREMULTIPLICADA (source ya trae rgb <= alfa); sumar un
+    // grano sin más rompe ese invariante donde alfa es bajo/0 y el
+    // compositor del SO deja de tratarlo como transparente de verdad — ahí
+    // vivía el "marco oscuro" con ventana transparente. Se escala por alfa
+    // para no introducir color donde no hay nada que mostrar.
     float a = gg.a;
+    float g = (hash21(gl_FragCoord.xy + time * 411.0 + 0.5) - 0.5) * grainAmt;
+    col += g * a;
+
+    // esquinas redondeadas de la ventana sin marco (SDF de caja redondeada).
+    // El mismo motivo: el recorte tiene que vaciar TAMBIÉN el color, no sólo
+    // el alfa, o el resto premultiplicado (rgb de un píxel de HUD, alfa ya
+    // en 0) se ve como un halo opaco en la esquina al componer con el
+    // escritorio real.
     if (cornerRadius > 0.5) {
         vec2 res = 1.0 / texel;
         vec2 p = (uv - 0.5) * res;
         vec2 q = abs(p) - (res * 0.5 - cornerRadius);
         float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - cornerRadius;
-        a *= 1.0 - smoothstep(-1.0, 1.0, d);
+        float mask = 1.0 - smoothstep(-1.0, 1.0, d);
+        a   *= mask;
+        col *= mask;
     }
 
     fragColor = vec4(col, a) * qt_Opacity;
