@@ -125,6 +125,11 @@ def main() -> int:
     win.setProperty("width", size[0])
     win.setProperty("height", size[1])
     win.show()
+    # En un WM real (a diferencia de offscreen), el tamaño pedido antes de
+    # show() no siempre se respeta (esta ventana sin marco puede llegar
+    # ajustada a otra cosa, p.ej. DPI/política del compositor) — un
+    # resize() explícito DESPUÉS de show() sí se sostiene.
+    win.resize(size[0], size[1])
 
     root_item = win.findChild(QQuickItem, "rootItem")
     if root_item is None:
@@ -147,7 +152,14 @@ def main() -> int:
             canvas.fill(QColor("#04070D"))  # Design.bgVoid
             p = QPainter(canvas)
             p.drawImage(0, 0, img)
-            scale = img.width() / max(1, win.property("width"))
+            # `root_item.width` (no `win.property("width")`) es lo que de
+            # verdad usan orbCX/orbCY/orbSize y demás geometría de Main.qml
+            # (coordenadas lógicas de rootItem). En un WM real, la ventana
+            # puede reescalarse/redimensionarse (DPI, políticas del
+            # compositor) de forma que `win.width` físico y el tamaño lógico
+            # de rootItem ya no coincidan 1:1 — usar rootItem.width evita que
+            # las tapas de --cover-core/--cover-spine queden mal alineadas.
+            scale = img.width() / max(1, root_item.property("width"))
             if cover_core:
                 cx = root_item.property("orbCX")
                 cy = root_item.property("orbCY")

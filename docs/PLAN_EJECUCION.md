@@ -1337,6 +1337,54 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         por fps, techo de fps por estado (la optimización de mayor impacto
         medido), y esta medición honesta con su límite documentado.
 
+## Post-I6 — revalidación de I1-I5 con el pipeline REAL
+
+La corrección de metodología de I6 (ver arriba) no se queda en una nota:
+tras cerrar I6 se repitió la verificación visual de I1 a I5 con el pipeline
+real (sin `QT_QPA_PLATFORM=offscreen`, `backend=OpenGL`, `degraded=False`,
+8 mensajes sembrados), porque hasta entonces TODA la fase se había
+verificado contra el núcleo desnudo (bypass), nunca contra bloom+atmósfera
+juntos.
+
+- **Arnés (`hud_shot.py`) — hallazgo nuevo**: en un WM real (a diferencia
+  de `offscreen`), el tamaño de ventana pedido no siempre se respeta — esta
+  sesión lo devolvía en 1536×864 lógicos con `devicePixelRatio=1.25`
+  (1920×1080 físicos) en vez de los 1360×820 pedidos, y un `resize()`
+  explícito tras `show()` no lo corrigió de forma fiable dentro de la app
+  completa (sí en un script aislado mínimo). Se corrigió lo que SÍ se podía
+  corregir: `--cover-core`/`--cover-spine` calculaban la escala con
+  `win.property("width")`; ahora usan `root_item.property("width")`, que es
+  lo que de verdad usan `orbCX`/`orbCY`/`orbSize`. El tamaño final seguirá
+  sin ser exactamente el pedido en esta máquina — no invalida las
+  comparaciones (ambas capturas de cada par salen con el mismo tamaño real),
+  pero queda anotado como límite del arnés, no fingido como resuelto.
+- **I3 — la preocupación concreta era que el bloom, al añadir luz encima de
+  todo, diluyera los contrastes sutiles (1,3×/3,4×) de la espina/marco
+  tapados.** Resultado: **al contrario, se distingue MEJOR, no peor.** Con
+  núcleo y espina tapados, en `speaking` los corchetes del marco y el
+  conector se ven claramente encendidos (cian vivo) frente a casi
+  invisibles en `idle` — una diferencia más marcada a simple vista que en
+  las capturas sin bloom de I3. Los corchetes están geométricamente lejos
+  del rectángulo del núcleo (esquinas de la ventana, el core vive en el
+  tercio inferior izquierdo), así que esto no es el halo del bloom
+  colándose por el margen de tapado: es `Design.lightLevel` funcionando,
+  y el bloom no lo diluye. **No hace falta reajustar I3.**
+- **I2 — la preocupación era que el orbe se hubiera afinado sin ver su
+  propio bloom encima.** Revisados los 5 estados con bloom real: el cuerpo
+  sigue oscuro en el centro con el fresnel vivo en el limbo, la rampa
+  azul/cian se mantiene, y `alert` sigue siendo el único rojo. El halo del
+  bloom no introduce ningún tono fuera de rampa nuevo ni cambia el
+  equilibrio "nitidez > glow" que pedía el brief — el núcleo compuesto a
+  resolución completa sigue leyéndose nítido con el halo detrás, no al
+  revés. **No hace falta reajustar I2.** Única excepción, ya conocida y
+  anotada en I6·1: el residuo verde del satélite compañero (~línea 223 de
+  `core.frag`), visible en algunos fotogramas de `speaking`/`listening`,
+  pendiente de una rama de shader dedicada.
+- **I1, I4, I5**: sin cambios de conclusión — su contenido (geometría,
+  cableado de datos reales, ausencia de verde fijo) no depende del bloom ni
+  de la atmósfera; revisadas de refilón en las mismas capturas sin nada que
+  objetar.
+
 ## FASE J — Endurecer
 
 - Ampliar el banco a las capacidades de E, F, G.
