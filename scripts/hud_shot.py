@@ -1,7 +1,7 @@
 """Captura del HUD con una conversación real dentro.
 
 Uso:  python -m scripts.hud_shot [salida.png] [--state speaking] [--size 1360x820]
-                                 [--cover-core]
+                                 [--cover-core] [--cover-spine]
 
 Siembra >=6 turnos reales en el ConversationModel, fija métricas y estado,
 espera a que la escena renderice (tras el arranque) y guarda un PNG del
@@ -11,6 +11,12 @@ Window compuesto sobre el fondo del sistema (Design.bgVoid) para que se lea.
 núcleo (`rootItem.orbCX/orbCY/orbSize`), para la prueba de aceptación de la
 iluminación global: si el estado se distingue SOLO por la luz del resto de
 la interfaz, sin ver el núcleo.
+
+--cover-spine (FASE I · I3, comprobación de refuerzo): tapa ADEMÁS la
+ActivitySpine (objectName "activitySpine") — la barra de energía es un
+indicador de datos, no iluminación, y si es la única señal que distingue
+estados hay que descartarla para juzgar si hairlines/bordes/marco respiran
+con el núcleo por sí solos.
 """
 from __future__ import annotations
 
@@ -45,6 +51,7 @@ def main() -> int:
     state = "speaking"
     size = (1360, 820)
     cover_core = False
+    cover_spine = False
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -58,6 +65,9 @@ def main() -> int:
             i += 2
         elif a == "--cover-core":
             cover_core = True
+            i += 1
+        elif a == "--cover-spine":
+            cover_spine = True
             i += 1
         elif not a.startswith("--"):
             out = a
@@ -114,8 +124,8 @@ def main() -> int:
             canvas.fill(QColor("#04070D"))  # Design.bgVoid
             p = QPainter(canvas)
             p.drawImage(0, 0, img)
+            scale = img.width() / max(1, win.property("width"))
             if cover_core:
-                scale = img.width() / max(1, win.property("width"))
                 cx = root_item.property("orbCX")
                 cy = root_item.property("orbCY")
                 r = root_item.property("orbSize")
@@ -128,10 +138,28 @@ def main() -> int:
                 else:
                     print("[hud_shot] --cover-core: no encontré orbCX/orbCY/orbSize"
                           " en rootItem", file=sys.stderr)
+            if cover_spine:
+                spine = win.findChild(QQuickItem, "activitySpine")
+                if spine is not None:
+                    top_left = spine.mapToItem(root_item, 0, 0)
+                    p.fillRect(
+                        top_left.x() * scale, top_left.y() * scale,
+                        spine.width() * scale, spine.height() * scale,
+                        QColor("#000000"),
+                    )
+                else:
+                    print("[hud_shot] --cover-spine: no encontré activitySpine",
+                          file=sys.stderr)
             p.end()
             canvas.save(out)
+            tags = []
+            if cover_core:
+                tags.append("núcleo tapado")
+            if cover_spine:
+                tags.append("espina tapada")
+            suffix = f" [{', '.join(tags)}]" if tags else ""
             print(f"[hud_shot] guardado {out} ({img.width()}x{img.height()}) estado={state}"
-                  + (" [núcleo tapado]" if cover_core else ""))
+                  + suffix)
             app.quit()
 
         res.ready.connect(_ready)

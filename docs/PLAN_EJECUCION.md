@@ -1051,6 +1051,37 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
         aparte por inspección directa del motor de lightLevel/litHairline en
         su posición real, con el mismo resultado: la energía alta lo satura
         a brillo máximo).
+      - **Comprobación de refuerzo pedida por el usuario** (antes de I4): la
+        prueba anterior tapaba sólo el núcleo, y la espina de energía —un
+        indicador de datos, no iluminación— podía estar cargando sola toda
+        la distinción. Se repitió tapando TAMBIÉN la `ActivitySpine` (nueva
+        bandera `--cover-spine` en `scripts/hud_shot.py`, que localiza el
+        ítem por `objectName` y lo tapa con su rect real en coords de
+        escena). Resultado inicial: con la espina tapada, el resto de la
+        interfaz (marco, conector, regla punteada) SÍ respondía a la luz
+        real (confirmado analíticamente y con recortes ampliados) pero el
+        margen era demasiado pequeño para leerse a simple vista — la
+        objeción del usuario era correcta.
+      - Se subió la ganancia en dos rondas: `Design.lightLevel` reduce su
+        piso de distancia (0,14→0,03) y sube su ganancia por energía
+        (0,62–1,55·E → 0,32–2,60·E); `HudFrame._k` y los mapeos de opacidad
+        de corchetes/ticks bajan su piso y suben el peso de `lightLevel`
+        (de compartir un piso ~0,2-0,3 fijo a casi apagarse del todo en
+        reposo); `hudConnector` gana un término de opacidad ligado a
+        `lightLevel` que antes no existía (sólo el tinte cambiaba, no el
+        brillo); la regla punteada de `Conversation.qml` amplía su rango de
+        igual forma. Verificado que esto NO deslució la señal ya buena de
+        la espina/hairlines (formalmente más contrastada, no menos).
+      - **Resultado final, verificado en vivo** (núcleo + espina tapados,
+        `idle` vs `speaking`): los corchetes del marco pasan de un azul casi
+        invisible a un cian claramente encendido (×3,4 de contraste medido
+        en la esquina más próxima al núcleo), y la regla punteada de la
+        derecha se aclara de forma visible aunque más discreta (×1,3–1,5,
+        coherente con estar más lejos que la espina). Sigue siendo una señal
+        más sutil que la de la espina —por diseño: son detalles de cabina,
+        no un panel de estado— pero ya no es "sólo estar puesta": respira de
+        forma perceptible por sí sola, sin parpadeo (todo el cambio es por
+        opacidad/tinte continuos, ninguna transición discreta).
 - [ ] **I4 — COLOR.** borde del input a **cyan** (no verde). Auditar cada uso
       de verde/amarillo/rojo: color = estado, nunca decoración.
 - [ ] **I5 — ESTADO VACÍO.** fuera el "consola conversacional" gris; datos

@@ -207,7 +207,7 @@ QtObject {
         var cosA = (dx * inv) * lightCast.x + (dy * inv) * lightCast.y
         var angF = 0.68 + 0.32 * Math.max(0.0, cosA)     // 0.68..1.0, nunca a 0
         var f = distF * angF
-        return Math.min(1.0, (0.14 + 0.86 * f) * (0.62 + 1.55 * coreEnergy))
+        return Math.min(1.0, (0.03 + 0.97 * f) * (0.32 + 2.60 * coreEnergy))
     }
     // color de una hairline/borde en ese punto: la base, teñida hacia el núcleo
     // y con la opacidad modulada por la luz (cerca = brilla, lejos = se apaga).

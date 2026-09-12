@@ -90,7 +90,7 @@ Item {
                 delegate: Rectangle {
                     width: 3; height: 1
                     color: Design.litHairline(headerRule._mid.x, headerRule._mid.y)
-                    opacity: (0.18 + 0.14 * Design.breath()) * (0.45 + 1.35 * headerRule._l)
+                    opacity: (0.03 + 0.05 * Design.breath()) * (0.20 + 3.20 * headerRule._l)
                 }
             }
         }

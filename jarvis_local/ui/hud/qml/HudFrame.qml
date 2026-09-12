@@ -31,9 +31,12 @@ Item {
 
     // brillo 0..1 en un punto propio de la escena (distancia+ángulo+energía
     // reales al núcleo), combinado con la respiración y el frente de reacción.
+    // I3 (comprobación de refuerzo): el peso de la luz real se sube mucho —
+    // con la espina tapada, el marco es de las pocas señales que quedan para
+    // distinguir idle de speaking, así que tiene que respirar de forma clara.
     function _k(mx, my) {
         return Math.min(1.0,
-            (0.28 + 0.42 * Design.lightLevel(mx, my)) * Design.breath()
+            (0.04 + 0.90 * Design.lightLevel(mx, my)) * Design.breath()
             + 0.55 * Design.waveGlow + 0.35 * frame._wave)
     }
 
@@ -48,7 +51,7 @@ Item {
             x: rightSide  ? frame.width  - frame.inset - frame._arm : frame.inset
             y: bottomSide ? frame.height - frame.inset - frame._arm : frame.inset
             width: frame._arm; height: frame._arm
-            opacity: 0.22 + 0.72 * frame._k(x + width / 2, y + height / 2)
+            opacity: 0.04 + 0.90 * frame._k(x + width / 2, y + height / 2)
 
             Rectangle {
                 width: c.width; height: 1.5
@@ -78,7 +81,7 @@ Item {
              : index === 1 ? frame.height - frame.inset + 3 - height
              : frame._cy - height / 2
             color: frame._wc
-            opacity: 0.18 + 0.55 * frame._k(x + width / 2, y + height / 2)
+            opacity: 0.02 + 0.80 * frame._k(x + width / 2, y + height / 2)
         }
     }
 }

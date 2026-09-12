@@ -224,14 +224,18 @@ Window {
             id: hudConnector
             readonly property real _cy: y + height / 2
             readonly property real _wave: Design.waveAt(x, _cy)
+            readonly property real _l: Design.lightLevel(x, _cy)
             x: Math.round(rootItem.orbCX)
             y: hud.y + hud.height
             width: 1 + 3 * _wave                         // se engrosa al pasar el frente
             height: Math.max(0, (rootItem.orbCY - rootItem.orbSize / 2) - y - Design.sp(2))
             // I3: el divisor vertical recibe la luz real del núcleo (distancia
-            // + ángulo + energía), no un tinte de estado plano.
+            // + ángulo + energía), no un tinte de estado plano. La opacidad
+            // también responde a la luz (antes sólo el color): en reposo se
+            // apaga de verdad, hablando se enciende — no sólo cambia de tinte.
             color: Design.litHairline(x, _cy)
-            opacity: (0.35 + 0.4 * Design.breath() + 0.5 * _wave) * Design.reveal(x, _cy)
+            opacity: (0.04 + 0.85 * _l + 0.12 * Design.breath() + 0.5 * _wave)
+                     * Design.reveal(x, _cy)
 
             // impulso de datos que baja por el conector hacia el orbe: un punto
             // de luz recorre la línea de forma continua (reloj global, sin timer).
