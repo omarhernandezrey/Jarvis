@@ -17,6 +17,22 @@ ActivitySpine (objectName "activitySpine") — la barra de energía es un
 indicador de datos, no iluminación, y si es la única señal que distingue
 estados hay que descartarla para juzgar si hairlines/bordes/marco respiran
 con el núcleo por sí solos.
+
+--force-full-pipeline (FASE I · I6): fuerza `rootItem.perfOverride = -1`
+para forzar bloom+atmósfera incluso bajo un backend de software (el latch
+de degradación normalmente los apaga). Sólo tiene sentido para depurar en
+una máquina sin GPU real; en una máquina con Wayland/X11 real (como ESTA)
+no hace falta y NO SE DEBE usar por defecto — el pipeline real es el que
+corre sin forzar nada.
+
+IMPORTANTE (FASE I, corrección de metodología en I6): este script NO fija
+`QT_QPA_PLATFORM`. Si el proceso lo hereda como "offscreen" (por el entorno,
+no por este script), Qt usará un backend de software y el HUD activará su
+propio latch de degradación — sin bloom ni atmósfera, sólo el núcleo puro.
+Cada captura queda marcada con el backend real y el estado de `degraded`
+(impreso y grabado como texto en la esquina de la imagen) precisamente para
+que esto nunca vuelva a pasar desapercibido: una captura que no dice en qué
+pipeline se tomó no sirve como evidencia de nada.
 """
 from __future__ import annotations
 
@@ -52,6 +68,7 @@ def main() -> int:
     size = (1360, 820)
     cover_core = False
     cover_spine = False
+    force_full_pipeline = False
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -68,6 +85,9 @@ def main() -> int:
             i += 1
         elif a == "--cover-spine":
             cover_spine = True
+            i += 1
+        elif a == "--force-full-pipeline":
+            force_full_pipeline = True
             i += 1
         elif not a.startswith("--"):
             out = a
@@ -111,6 +131,9 @@ def main() -> int:
         print("[hud_shot] no encontré rootItem", file=sys.stderr)
         return 1
 
+    if force_full_pipeline:
+        root_item.setProperty("perfOverride", -1)
+
     def _grab() -> None:
         res = root_item.grabToImage()
         if res is None:
@@ -151,6 +174,16 @@ def main() -> int:
                     print("[hud_shot] --cover-spine: no encontré activitySpine",
                           file=sys.stderr)
             p.end()
+            # FASE I · I6: qué pipeline generó esta captura — grabado EN LA
+            # IMAGEN (no sólo en el log) porque un PNG sin esta marca no sirve
+            # como evidencia: no dice si bloom/atmósfera corrieron de verdad.
+            backend = root_item.property("rhiBackendName") or "?"
+            degraded = bool(root_item.property("degraded"))
+            stamp = f"backend={backend} degraded={degraded}"
+            p2 = QPainter(canvas)
+            p2.setPen(QColor("#FF9F1C" if degraded else "#37D2FF"))
+            p2.drawText(6, canvas.height() - 6, stamp)
+            p2.end()
             canvas.save(out)
             tags = []
             if cover_core:
@@ -158,8 +191,13 @@ def main() -> int:
             if cover_spine:
                 tags.append("espina tapada")
             suffix = f" [{', '.join(tags)}]" if tags else ""
-            print(f"[hud_shot] guardado {out} ({img.width()}x{img.height()}) estado={state}"
-                  + suffix)
+            print(f"[hud_shot] guardado {out} ({img.width()}x{img.height()}) estado={state} "
+                  f"{stamp}" + suffix)
+            if degraded:
+                print("[hud_shot] AVISO: degraded=True -> bloom y atmósfera "
+                      "apagados por el latch de degradación (backend de "
+                      "software, o fps sostenidos <40). Esta captura NO es "
+                      "evidencia del pipeline completo.", file=sys.stderr)
             app.quit()
 
         res.ready.connect(_ready)

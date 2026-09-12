@@ -78,6 +78,10 @@ Window {
         // atmósfera; se mantiene el shader del núcleo. Es un LATCH: una vez que
         // degrada, se queda así toda la sesión (evita oscilar el pipeline).
         property int  perfOverride: 0        // 0 auto · 1 forzar degradado · -1 forzar completo (tests)
+        // FASE I · I6: qué RHI usa realmente esta sesión — para que una
+        // captura de verificación pueda decir de qué pipeline es evidencia
+        // (Software/Null nunca ejecuta bloom ni atmósfera de verdad).
+        property string rhiBackendName: "?"
         property bool _softwareBackend: false
         property bool _degradedLatch: false
         readonly property bool _lowFpsSustained: _degradedLatch
@@ -413,6 +417,7 @@ Window {
                 : api === GraphicsInfo.Metal ? "Metal"
                 : api === GraphicsInfo.Null ? "Null" : ("api=" + api)
             console.log("[hud] RHI backend:", name)
+            rootItem.rhiBackendName = name
             rootItem._softwareBackend = (api === GraphicsInfo.Software
                                          || api === GraphicsInfo.Null)
             swBanner.visible = rootItem._softwareBackend
