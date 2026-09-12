@@ -186,26 +186,41 @@ QtObject {
     property real  coreEnergy: 0.0          // 0..1 dato real (RMS mic / tok·s / TTS)
     property color coreTint: azure          // color del estado actual
     property real  lightRadius: 720         // px: alcance de la luz (lo fija Main)
+    // dirección (normalizada) hacia la que "mira" la luz del núcleo — el HUD
+    // vive arriba y a la derecha de dónde se sienta el orbe (Fase I · I1), así
+    // que un elemento alineado con esa dirección recibe más luz que uno que
+    // quede detrás. Distancia sigue mandando; el ángulo es un matiz, no
+    // apaga nunca del todo lo que queda a contraluz (addendum I3).
+    readonly property point lightCast: Qt.point(0.62, -0.79)
 
-    // nivel de luz 0..1 en un punto de escena (sx, sy)
+    // nivel de luz 0..1 en un punto de escena (sx, sy): distancia Y ángulo
+    // respecto a `lightCast`, modulado por la energía REAL del núcleo. La
+    // ganancia de energía es fuerte a propósito (addendum I3): hablando vs.
+    // en reposo tiene que notarse en el resto de la interfaz aunque el
+    // propio núcleo esté tapado — es la prueba de aceptación de I3.
     function lightLevel(sx, sy) {
         var dx = sx - corePos.x, dy = sy - corePos.y
-        var dn = Math.sqrt(dx * dx + dy * dy) / Math.max(1.0, lightRadius)
-        var f = 1.0 / (1.0 + dn * dn * 2.6)          // caída suave
-        return Math.min(1.0, (0.20 + 0.80 * f) * (0.88 + 0.40 * coreEnergy))
+        var dist = Math.sqrt(dx * dx + dy * dy)
+        var dn = dist / Math.max(1.0, lightRadius)
+        var distF = 1.0 / (1.0 + dn * dn * 2.6)          // caída suave
+        var inv = dist > 1.0 ? 1.0 / dist : 0.0
+        var cosA = (dx * inv) * lightCast.x + (dy * inv) * lightCast.y
+        var angF = 0.68 + 0.32 * Math.max(0.0, cosA)     // 0.68..1.0, nunca a 0
+        var f = distF * angF
+        return Math.min(1.0, (0.14 + 0.86 * f) * (0.62 + 1.55 * coreEnergy))
     }
     // color de una hairline/borde en ese punto: la base, teñida hacia el núcleo
     // y con la opacidad modulada por la luz (cerca = brilla, lejos = se apaga).
     function litHairline(sx, sy) {
         var l = lightLevel(sx, sy)
-        var t = Math.min(0.65, l * 0.55 + coreEnergy * 0.20)
+        var t = Math.min(0.78, l * 0.5 + coreEnergy * 0.6)
         var c = mix(hairline, coreTint, t)
-        return Qt.rgba(c.r, c.g, c.b, hairline.a * (0.62 + 0.95 * l))
+        return Qt.rgba(c.r, c.g, c.b, hairline.a * (0.35 + 1.75 * l))
     }
     // un color base que "respira" con el núcleo (para texto secundario/metadato)
     function litText(base, sx, sy) {
         var l = lightLevel(sx, sy)
-        var t = Math.max(0.0, Math.min(0.45, (l - 0.5) * 0.6 + coreEnergy * 0.35))
+        var t = Math.max(0.0, Math.min(0.55, (l - 0.4) * 0.7 + coreEnergy * 0.5))
         return mix(base, mix(base, coreTint, 0.4), t)
     }
 

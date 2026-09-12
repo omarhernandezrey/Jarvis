@@ -68,16 +68,29 @@ Item {
                 onTriggered: clock.text = "T " + Qt.formatDateTime(new Date(), "hh:mm:ss")
             }
         }
-        // regla punteada bajo la cabecera
+        // regla punteada bajo la cabecera — I3: recibe la luz real del
+        // núcleo igual que los hairlines de la espina (izquierda), para que
+        // la comparación izquierda/derecha que exige la prueba de aceptación
+        // tenga sentido: esta, más lejos del núcleo, se apaga más que las de
+        // la espina.
         Row {
+            id: headerRule
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
             spacing: 4
+            property point _mid: Qt.point(0, 0)
+            function _remap() { _mid = mapToItem(null, width / 2, height / 2) }
+            onWidthChanged: _remap()
+            onXChanged: _remap()
+            onYChanged: _remap()
+            Component.onCompleted: _remap()
+            Connections { target: Design; function onCorePosChanged() { headerRule._remap() } }
+            readonly property real _l: Design.lightLevel(_mid.x, _mid.y)
             Repeater {
                 model: Math.max(1, Math.floor(header.width / 7))
                 delegate: Rectangle {
                     width: 3; height: 1
-                    color: Design.stateWash(Design.consoleHeader, 0.5)
-                    opacity: 0.18 + 0.14 * Design.breath()
+                    color: Design.litHairline(headerRule._mid.x, headerRule._mid.y)
+                    opacity: (0.18 + 0.14 * Design.breath()) * (0.45 + 1.35 * headerRule._l)
                 }
             }
         }

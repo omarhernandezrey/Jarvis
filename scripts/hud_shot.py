@@ -1,10 +1,16 @@
 """Captura del HUD con una conversación real dentro.
 
 Uso:  python -m scripts.hud_shot [salida.png] [--state speaking] [--size 1360x820]
+                                 [--cover-core]
 
 Siembra >=6 turnos reales en el ConversationModel, fija métricas y estado,
 espera a que la escena renderice (tras el arranque) y guarda un PNG del
 Window compuesto sobre el fondo del sistema (Design.bgVoid) para que se lea.
+
+--cover-core (FASE I · I3): tapa con un rectángulo negro sólido la zona del
+núcleo (`rootItem.orbCX/orbCY/orbSize`), para la prueba de aceptación de la
+iluminación global: si el estado se distingue SOLO por la luz del resto de
+la interfaz, sin ver el núcleo.
 """
 from __future__ import annotations
 
@@ -38,6 +44,7 @@ def main() -> int:
     out = "hud_shot.png"
     state = "speaking"
     size = (1360, 820)
+    cover_core = False
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -49,6 +56,9 @@ def main() -> int:
             w, h = args[i + 1].lower().split("x")
             size = (int(w), int(h))
             i += 2
+        elif a == "--cover-core":
+            cover_core = True
+            i += 1
         elif not a.startswith("--"):
             out = a
             i += 1
@@ -104,9 +114,24 @@ def main() -> int:
             canvas.fill(QColor("#04070D"))  # Design.bgVoid
             p = QPainter(canvas)
             p.drawImage(0, 0, img)
+            if cover_core:
+                scale = img.width() / max(1, win.property("width"))
+                cx = root_item.property("orbCX")
+                cy = root_item.property("orbCY")
+                r = root_item.property("orbSize")
+                if cx is not None and cy is not None and r is not None:
+                    side = r * 1.15 * scale  # margen leve por el halo del bloom
+                    p.fillRect(
+                        (cx * scale) - side / 2, (cy * scale) - side / 2,
+                        side, side, QColor("#000000"),
+                    )
+                else:
+                    print("[hud_shot] --cover-core: no encontré orbCX/orbCY/orbSize"
+                          " en rootItem", file=sys.stderr)
             p.end()
             canvas.save(out)
-            print(f"[hud_shot] guardado {out} ({img.width()}x{img.height()}) estado={state}")
+            print(f"[hud_shot] guardado {out} ({img.width()}x{img.height()}) estado={state}"
+                  + (" [núcleo tapado]" if cover_core else ""))
             app.quit()
 
         res.ready.connect(_ready)

@@ -9,6 +9,12 @@ import "."
 //  cada borde. Teñidos por el color del ESTADO, respirando con el latido del
 //  orbe y destellando en cada cambio de estado. La ventana sigue 100 %
 //  transparente. Deja libre la canaleta de redimensionado.
+//
+//  I3 — ILUMINACIÓN GLOBAL: antes los 8 elementos compartían UNA sola
+//  muestra de luz (el centro de la ventana), así que brillaban todos igual
+//  sin importar dónde estuviera el núcleo. Ahora cada corchete y cada tick
+//  calcula SU PROPIA `Design.lightLevel` en su propia posición: el más
+//  cercano al núcleo se ve claramente más vivo que el opuesto.
 // ─────────────────────────────────────────────────────────────────────────────
 Item {
     id: frame
@@ -20,11 +26,16 @@ Item {
     readonly property real _cx: width / 2
     readonly property real _cy: height / 2
     readonly property real _wave: Design.waveAt(_cx, _cy)
-    readonly property real _k: Math.min(1.0,
-        (0.28 + 0.42 * Design.lightLevel(_cx, _cy)) * Design.breath()
-        + 0.55 * Design.waveGlow + 0.35 * _wave)
 
     readonly property real _arm: Math.max(14, Math.min(30, width * 0.05))
+
+    // brillo 0..1 en un punto propio de la escena (distancia+ángulo+energía
+    // reales al núcleo), combinado con la respiración y el frente de reacción.
+    function _k(mx, my) {
+        return Math.min(1.0,
+            (0.28 + 0.42 * Design.lightLevel(mx, my)) * Design.breath()
+            + 0.55 * Design.waveGlow + 0.35 * frame._wave)
+    }
 
     // ── 4 corchetes de esquina ──
     Repeater {
@@ -37,7 +48,7 @@ Item {
             x: rightSide  ? frame.width  - frame.inset - frame._arm : frame.inset
             y: bottomSide ? frame.height - frame.inset - frame._arm : frame.inset
             width: frame._arm; height: frame._arm
-            opacity: 0.22 + 0.72 * frame._k
+            opacity: 0.22 + 0.72 * frame._k(x + width / 2, y + height / 2)
 
             Rectangle {
                 width: c.width; height: 1.5
@@ -67,7 +78,7 @@ Item {
              : index === 1 ? frame.height - frame.inset + 3 - height
              : frame._cy - height / 2
             color: frame._wc
-            opacity: 0.18 + 0.55 * frame._k
+            opacity: 0.18 + 0.55 * frame._k(x + width / 2, y + height / 2)
         }
     }
 }

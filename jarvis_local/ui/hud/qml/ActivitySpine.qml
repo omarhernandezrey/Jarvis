@@ -98,11 +98,10 @@ Item {
             }
         }
 
-        Rectangle {   // regla
-            width: parent.width; height: 1
-            color: Design.stateWash(Design.hairline, 0.7)
-            opacity: 0.35 + 0.25 * Design.breath()
-        }
+        // regla — I3: luz real del núcleo (distancia + ángulo + energía),
+        // no un tinte de estado plano. Es uno de los "hairlines" de la
+        // espina que la prueba de aceptación de I3 exige que reaccionen.
+        Hairline { width: parent.width }
 
         // ── ESTADO ──
         Column {
@@ -137,11 +136,10 @@ Item {
             }
         }
 
-        Rectangle {   // regla
-            width: parent.width; height: 1
-            color: Design.stateWash(Design.hairline, 0.7)
-            opacity: 0.35 + 0.25 * Design.breath()
-        }
+        // regla — I3: luz real del núcleo (distancia + ángulo + energía),
+        // no un tinte de estado plano. Es uno de los "hairlines" de la
+        // espina que la prueba de aceptación de I3 exige que reaccionen.
+        Hairline { width: parent.width }
 
         // ── TELEMETRÍA en vivo (compacta) ──
         Column {
@@ -175,11 +173,10 @@ Item {
             }
         }
 
-        Rectangle {   // regla
-            width: parent.width; height: 1
-            color: Design.stateWash(Design.hairline, 0.7)
-            opacity: 0.35 + 0.25 * Design.breath()
-        }
+        // regla — I3: luz real del núcleo (distancia + ángulo + energía),
+        // no un tinte de estado plano. Es uno de los "hairlines" de la
+        // espina que la prueba de aceptación de I3 exige que reaccionen.
+        Hairline { width: parent.width }
 
         Text {
             text: "ESPINA · ENERGÍA"

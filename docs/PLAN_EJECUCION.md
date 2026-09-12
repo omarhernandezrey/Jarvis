@@ -1014,9 +1014,43 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
       - Verificado en vivo con `scripts/hud_shot.py`: capturas antes/después
         de I1 (mismo shader, para separar la regresión) y antes/después de
         I2 (mismo tamaño, mismo estado, 8 mensajes reales), en los 5 estados.
-- [ ] **I3 — ILUMINACIÓN GLOBAL VISIBLE.** divisor y hairlines reciben la luz
+- [x] **I3 — ILUMINACIÓN GLOBAL VISIBLE.** divisor y hairlines reciben la luz
       del núcleo por distancia y ángulo. Prueba: tapando el orbe, se nota que
       habla por el cambio de luz del resto.
+      - `Design.qml`: `lightLevel(sx,sy)` gana un término angular (`lightCast`,
+        una dirección preferida) además del de distancia, y la ganancia por
+        energía real del núcleo se sube sustancialmente; `litHairline`/
+        `litText` ensanchan sus rangos de tinte/alfa en la misma proporción.
+      - Elementos que antes usaban un tinte de estado plano y ahora derivan su
+        color/opacidad de `Design.litHairline`/`lightLevel` con su propia
+        posición real en la escena: el conector vertical HUD↔núcleo
+        (`hudConnector` en `Main.qml`), los tres separadores de la
+        `ActivitySpine` (vía el componente `Hairline.qml`, ya existía pero no
+        se usaba en ningún sitio) y la regla punteada bajo "JARVIS // CONSOLA"
+        en `Conversation.qml` (el "subrayado de la derecha" de la prueba de
+        aceptación).
+      - `HudFrame.qml` reescrito: sus 8 elementos (4 corchetes + 4 ticks)
+        compartían UNA sola muestra de luz tomada en el centro de la ventana,
+        así que brillaban todos igual sin importar dónde estuviera el núcleo
+        — un bug real frente al objetivo de I3 ("más brillante cerca, apagado
+        lejos"). Ahora cada uno calcula su propia `Design.lightLevel` en su
+        posición real.
+      - `scripts/hud_shot.py`: nueva bandera `--cover-core` que tapa con un
+        rectángulo negro la zona del núcleo (`rootItem.orbCX/orbCY/orbSize`,
+        con un margen del 15% por el halo del bloom) antes de guardar el PNG,
+        para poder ejercitar la prueba de aceptación tal como la pidió el
+        usuario sin ver el núcleo en absoluto.
+      - **Prueba de aceptación ejercitada en vivo** (capturas `idle` vs
+        `speaking`, núcleo tapado, 8 mensajes reales sembrados): se distingue
+        el estado sin ver el núcleo — la espina de energía y sus hairlines son
+        la señal dominante (más del doble de luminancia en `speaking`), los
+        corchetes de esquina y la regla punteada de la derecha aportan una
+        señal secundaria más sutil pero real, y correctamente más tenue que
+        la de la izquierda (el conector vertical queda mayormente bajo el
+        propio rectángulo de tapado por estar pegado al núcleo; se verificó
+        aparte por inspección directa del motor de lightLevel/litHairline en
+        su posición real, con el mismo resultado: la energía alta lo satura
+        a brillo máximo).
 - [ ] **I4 — COLOR.** borde del input a **cyan** (no verde). Auditar cada uso
       de verde/amarillo/rojo: color = estado, nunca decoración.
 - [ ] **I5 — ESTADO VACÍO.** fuera el "consola conversacional" gris; datos

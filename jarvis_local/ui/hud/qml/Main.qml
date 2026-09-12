@@ -228,7 +228,9 @@ Window {
             y: hud.y + hud.height
             width: 1 + 3 * _wave                         // se engrosa al pasar el frente
             height: Math.max(0, (rootItem.orbCY - rootItem.orbSize / 2) - y - Design.sp(2))
-            color: Design.stateWash(Design.hairline, 0.8)
+            // I3: el divisor vertical recibe la luz real del núcleo (distancia
+            // + ángulo + energía), no un tinte de estado plano.
+            color: Design.litHairline(x, _cy)
             opacity: (0.35 + 0.4 * Design.breath() + 0.5 * _wave) * Design.reveal(x, _cy)
 
             // impulso de datos que baja por el conector hacia el orbe: un punto
