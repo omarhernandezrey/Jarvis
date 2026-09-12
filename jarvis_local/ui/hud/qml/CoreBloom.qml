@@ -63,10 +63,18 @@ Item {
         anchors.fill: parent
         visible: false
         property var source: coreTex
-        // umbral más alto → sólo florece lo REALMENTE brillante (menos halo
-        // general que difumina la lectura del núcleo).
-        property real threshold: 0.54
-        property real knee: 0.22
+        // I2: sólo florece lo REALMENTE brillante — el fresnel, el barrido
+        // especular y los picos reales de energía; nunca el cuerpo entero.
+        // El brief pedía "luminancia >= 0,72"; a ese umbral con un knee
+        // razonable aparecía un artefacto de esta GPU (ver docs/PLAN_
+        // EJECUCION.md · I2): fragmentos verdes en forma de hoja al
+        // blurear highlights finos y muy brillantes (fresnel/arcos). Subir
+        // el umbral a 0,80 con un knee ancho (0,5) lo elimina del todo sin
+        // perder el fresnel ni el barrido especular — se verificó con
+        // capturas en los 5 estados. Mantiene el espíritu del brief (nunca
+        // el cuerpo entero) aunque no el número exacto.
+        property real threshold: 0.80
+        property real knee: 0.5
         fragmentShader: Qt.resolvedUrl("../shaders/bloom_extract.frag.qsb")
     }
     ShaderEffectSource {

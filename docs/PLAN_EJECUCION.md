@@ -937,6 +937,15 @@ usuario fijó tras el análisis G0.
 Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentro
 (`scripts/hud_shot.py` lo siembra).
 
+> **REGLA DURA para el resto de la fase (desde I2): ningún commit que toque
+> un shader se da por hecho sin captura de verificación en vivo.** Las Fases
+> 8 y 9 metieron la piel celular Voronoi y el iris alienígena compilando el
+> `.qsb` sin mirar el resultado, y el orbe llevó meses fuera de la rampa de
+> color sin que nadie lo notara (ver I2). Es exactamente el fallo que D0
+> existe para cazar en el resto del proyecto — aquí se aplica igual: se
+> compila, se renderiza con `scripts/hud_shot.py`, se mira la captura, y solo
+> entonces se da el punto por cerrado.
+
 > **Merge de `main` a la rama del rediseño — NADA QUE RESOLVER.** `origin/
 > rediseno-presentacion` (HEAD `505ebf3`, "Fase 13") es **ancestro estricto de
 > `main`**: `git merge-base --is-ancestor 505ebf3 main` → true, y no hay ni un
@@ -959,10 +968,52 @@ Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentr
       `test_ui_hud.py::test_responsive_layout…` actualizado: el solape
       núcleo/conversación es ahora **intencionado**; se sigue exigiendo que
       texto, identidad y comando queden dentro de la ventana.
-- [ ] **I2 — EL ORBE, TRES FRECUENCIAS.** fresnel nítido ≤2px · centro por
-      absorción (más oscuro que el borde) · 2ª octava de ruido creciente hacia
-      el limbo · bloom SOLO sobre luminancia ≥0,72 · dispersión cromática solo
-      en el limbo · barrido especular cada 7 s.
+- [x] **I2 — EL ORBE, TRES FRECUENCIAS** (incluye el saneado de color de
+      Fases 8-9). `jarvis_local/ui/hud/shaders/core.frag` reescrito.
+      - **Diagnóstico previo** (ver también el cierre de I1): comparando
+        capturas antes/después de I1 con el mismo shader se confirmó que el
+        naranja/rojo/verde caótico del orbe **ya estaba en `main`**, no era
+        regresión de I1 — venía de Fase 8 (`a686eff`, piel celular Voronoi +
+        iris alienígena) y Fase 9 (`0bb6402`), compiladas y versionadas sin
+        verificación en vivo.
+      - **LEY DE COLOR aplicada:** se borran (no se comentan) el raymarch
+        volumétrico, la piel celular Voronoi y el iris alienígena — no
+        podían garantizarse en rampa y eran, medido con `compact:true`, la
+        causa principal del caos. También se corrige `irid()` (rotaba por
+        todo el espectro) y el fleco cromático del borde, que escribía
+        `col.r/g/b` de tres bandas independientes sin base acromática —
+        con eso, en el radio donde solo una banda estaba activa, salía un
+        píxel de rojo o verde puro. Ahora hay un fresnel acromático de base
+        y la dispersión solo lo desplaza, nunca lo sustituye.
+      - **Las tres frecuencias:** cuerpo por absorción (radio 0 = denso/
+        oscuro, sube monótono hacia el limbo — antes era al revés, "bombilla"
+        en el centro); fresnel nítido (~2px) en el limbo; microdetalle de 2ª
+        octava con amplitud creciente hacia el limbo. Encima: el patrón de
+        interferencia (Fase 6, ya en rampa, es lo que el usuario recordaba
+        como "antes"), arcos, corona/anillo de audio (datos reales), onda de
+        choque, barrido especular cada 7 s.
+      - **Bloom:** `bloom_composite.frag` ya no porta el matiz de su blur —
+        se re-tiñe a la rampa por LUMINANCIA (dos tintes fijos, ambos
+        cian/azul), así ningún desequilibrio de canal del blur puede colar
+        rojo/verde. Umbral en `0,80` (el brief pedía `≥0,72`; a ese número,
+        con cualquier knee razonable, apareció un artefacto propio de esta
+        GPU — ver más abajo — y subirlo lo elimina sin perder el fresnel ni
+        el especular; se prioriza el espíritu del brief —nunca el cuerpo
+        entero— sobre el número exacto).
+      - **Artefacto encontrado y resuelto (no era regresión, tampoco Fase
+        8-9):** con el shader ya saneado, aparecían pequeños fragmentos
+        verdes en forma de hoja alrededor del orbe. Se aisló por descarte
+        —corona, microdetalle, segunda pasada de blur, dispersión cromática,
+        patrón de interferencia y arcos, cada uno probado por separado,
+        ninguno era la causa única— hasta confirmar que es un artefacto de
+        blur/downsample de `MultiEffect` en esta GPU con highlights pequeños
+        y muy nítidos (el shader anterior nunca los tuvo: su brillo estaba
+        repartido, no concentrado). Un `knee` de extracción ancho (0,5) con
+        el umbral en 0,80 lo elimina por completo, verificado en los 5
+        estados (`idle/listening/thinking/speaking/alert`).
+      - Verificado en vivo con `scripts/hud_shot.py`: capturas antes/después
+        de I1 (mismo shader, para separar la regresión) y antes/después de
+        I2 (mismo tamaño, mismo estado, 8 mensajes reales), en los 5 estados.
 - [ ] **I3 — ILUMINACIÓN GLOBAL VISIBLE.** divisor y hairlines reciben la luz
       del núcleo por distancia y ángulo. Prueba: tapando el orbe, se nota que
       habla por el cambio de luz del resto.
