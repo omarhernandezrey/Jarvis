@@ -922,7 +922,7 @@ usuario fijó tras el análisis G0.
       - Prerrequisito `ydotoold` + grupo `input` (OPERACION_MEMORIA.md §6):
         solo relevante si se reabre el teclado.
 
-## FASE H — Código muerto: integrar o borrar
+## FASE H — Código muerto: integrar o borrar  ✅ COMPLETA 2026-09-12 (rama `feature/fase-h-codigo-muerto`)
 
 `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py`.
 - Visión: solo bajo petición explícita, una captura y un OCR por petición, sin
@@ -931,6 +931,59 @@ usuario fijó tras el análisis G0.
   sistema, consumo en reposo indistinguible de cero, el usuario controla qué
   reglas están activas.
 - Si algo no llega al presupuesto, borrarlo con justificación. Nada en limbo.
+
+**Decisión: los seis, borrados.** Los seis venían del mismo commit `a6c050b`
+("completar fases 14-17 al 100%", 2026-08-08) — un lote generado de una sola
+vez, sin cablear a ningún camino real (agente, parser, catálogo, HUD), sin un
+solo test, con nombres de fase que no corresponden al PLAN_EJECUCION real.
+Cero referencias reales confirmadas por grep antes de borrar (solo el propio
+archivo o su carpeta de test). Motivo de cada uno:
+
+- **`vision/`** (captura de pantalla + OCR): el OCR en sí no es el problema —
+  medido en esta máquina, **0,6-0,7 s por pasada, ~30 MB transitorios**
+  (tesseract corre como subproceso aparte, no queda residente), de sobra
+  dentro de presupuesto incluso con los modelos de Ollama cargados
+  (`docs/OPERACION_MEMORIA.md`). **El bloqueo real es la CAPTURA de
+  pantalla, no viable en este escritorio (GNOME + Wayland/mutter) por
+  ninguna vía estándar probada en vivo**: `PIL.ImageGrab` cuelga sin
+  timeout (invoca `gnome-screenshot`, que revienta con "Unable to capture a
+  screenshot of any window" y se queda colgado — el propio código de
+  `vision/` no tenía timeout, así que habría congelado el hilo del agente en
+  el primer uso); `grim` falla porque mutter no implementa
+  `wlr-screencopy-unstable-v1`; el portal XDG `Screenshot` responde pero
+  exige un diálogo de permiso interactivo en CADA llamada, incompatible con
+  "una captura y un OCR por petición, sin bucles, sin sondeo". Sin captura
+  fiable no hay OCR que valga: ninguno de los dos casos de punta a punta
+  ("¿qué dice en pantalla?", "lee el error que tengo abierto") es entregable
+  hoy. **Esta decisión es reabrible**: si el escritorio cambia de
+  compositor (uno con `wlr-screencopy`) o el portal deja de exigir diálogo
+  por llamada (permiso "recordar" ya concedido y verificado), el bloqueo
+  desaparece y vale la pena revisitar — el límite es del escritorio, no del
+  diseño del OCR.
+- **`proactive/`**: lo que había eran saludos de relleno por hora/día
+  ("¿Desea ver restaurantes cercanos?"), no reglas sobre eventos reales
+  (batería, disco, recordatorios vencidos) — no hacía nada que un motor de
+  proactividad debiera hacer. Un motor de verdad es trabajo nuevo con
+  alcance propio, no algo que "integrar" desde este relleno; queda
+  explícitamente FUERA de FASE H, para cuando se pida como tarea aparte.
+- **`plugins/`**: cargador genérico de `.py` sueltos vía
+  `importlib`+`exec_module`, sin pasar por el catálogo único de FASE B —
+  integrarlo habría sido un agujero en el modelo de seguridad completo
+  (RiskLevel, auditoría D2, verify, confirmación), no una función neutra.
+- **`profiles.py`**: scaffold multi-usuario que nadie más lee
+  (`data/profiles/` nunca llegó a crearse) y que contradice el diseño de
+  todo el proyecto (asistente de un solo usuario). Su `delete_profile()`
+  hacía `shutil.rmtree` sin auditoría ni confirmación — cablearlo tal cual
+  habría sido una regresión de seguridad frente a D2.
+- **`performance.py`**: no resuelve ningún cuello de botella medido, y
+  `jarvis_local/ollama_client/client.py` ya reimplementó por su cuenta la
+  misma detección de `httpx` en el sitio que de verdad importa. Integrarlo
+  habría sido refactorizar código que funciona para adoptar una abstracción
+  que nadie pidió. Si algún día hay un cuello de botella real de JSON/HTTP,
+  se resuelve entonces, con datos.
+- **`CoreStatus.qml`**: no es código abandonado, es un retiro deliberado —
+  `ActivitySpine` lo reemplazó en I1 (el propio `Main.qml` lo documenta en
+  un comentario). Borrado sin pérdida funcional.
 
 ## FASE I — Interfaz: composición y acabado del HUD  ✅ COMPLETA 2026-09-12 (merge `883367d`)
 
