@@ -1,9 +1,12 @@
 import QtQuick
 
 // Envoltorio GPU del núcleo. Todo el dibujo vive en `../shaders/core.frag.qsb`
-// (campo de interferencia + volumen SDF + especular anisótropo). Este archivo
-// solo expone los uniforms; el cerebro (máquina de estados, datos reales) está
-// en Core.qml. `layer.*` da MSAA y permite congelar el render sin foco.
+// (Fase I · I2 — tres frecuencias: cuerpo por absorción, borde fresnel con
+// dispersión acotada al limbo, microdetalle de 2ª octava; más el patrón de
+// interferencia, arcos, corona y barrido especular, todo en la rampa
+// azul/cian/casi-blanco). Este archivo solo expone los uniforms; el cerebro
+// (máquina de estados, datos reales) está en Core.qml. `layer.*` da MSAA y
+// permite congelar el render sin foco.
 ShaderEffect {
     id: fx
 

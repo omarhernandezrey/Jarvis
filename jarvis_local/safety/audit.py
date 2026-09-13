@@ -176,6 +176,35 @@ class AuditLog:
         end = datetime.combine(day, datetime.max.time())
         return self.read(since=start, until=end, limit=limit)
 
+    def last_entry(self) -> dict | None:
+        """Última entrada registrada (FASE I · I5: "última sesión" del HUD).
+
+        A diferencia de `read()`, NUNCA carga el histórico completo: sólo la
+        cola del fichero activo (y, si acaba de rotar y está vacío, la del
+        rotado más reciente). Se sondea cada 2 s desde el HUD — tiene que ser
+        barato sin importar cuánto pese `audit.jsonl`."""
+        files = self._iter_files()
+        for f in (files[-1], *reversed(files[:-1])):  # activo primero, luego rotados
+            try:
+                if not f.exists() or f.stat().st_size == 0:
+                    continue
+                with f.open("rb") as fh:
+                    fh.seek(0, os.SEEK_END)
+                    size = fh.tell()
+                    fh.seek(max(0, size - 4096))
+                    tail = fh.read().decode("utf-8", errors="ignore")
+            except OSError:
+                continue
+            for ln in reversed(tail.splitlines()):
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    return json.loads(ln)
+                except json.JSONDecodeError:
+                    continue
+        return None
+
 
 def _parse_ts(s) -> datetime | None:
     if not isinstance(s, str):

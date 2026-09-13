@@ -932,17 +932,508 @@ usuario fijó tras el análisis G0.
   reglas están activas.
 - Si algo no llega al presupuesto, borrarlo con justificación. Nada en limbo.
 
-## FASE I — Interfaz: composición y acabado (rama `rediseno-presentacion`)
+## FASE I — Interfaz: composición y acabado del HUD  🚧 EN CURSO (rama `feature/fase-i-interfaz`)
 
-Addendum 8.2–8.7: composición (núcleo agrandado que sangra tras la columna de
-conversación anclada abajo), tres frecuencias del orbe (fresnel nítido, centro
-oscuro, microdetalle, bloom solo ≥0,72), iluminación global visible (divisor y
-hairlines reciben luz del núcleo según distancia), disciplina de color (borde
-del input cyan, no verde; verde solo estado en línea), estado vacío con datos
-reales, rendimiento (bloom 1/4 res sobre el rect del núcleo, atmósfera 15 fps,
-techo 30 fps idle, ≤12% de un núcleo en HD 520). Verificar que la máscara de
-esquinas redondeadas no desaparece con la atmósfera apagada. Toda captura con
-≥6 mensajes reales dentro.
+Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentro
+(`scripts/hud_shot.py` lo siembra).
+
+> **REGLA DURA para el resto de la fase (desde I2): ningún commit que toque
+> un shader se da por hecho sin captura de verificación en vivo.** Las Fases
+> 8 y 9 metieron la piel celular Voronoi y el iris alienígena compilando el
+> `.qsb` sin mirar el resultado, y el orbe llevó meses fuera de la rampa de
+> color sin que nadie lo notara (ver I2). Es exactamente el fallo que D0
+> existe para cazar en el resto del proyecto — aquí se aplica igual: se
+> compila, se renderiza con `scripts/hud_shot.py`, se mira la captura, y solo
+> entonces se da el punto por cerrado.
+
+> **Merge de `main` a la rama del rediseño — NADA QUE RESOLVER.** `origin/
+> rediseno-presentacion` (HEAD `505ebf3`, "Fase 13") es **ancestro estricto de
+> `main`**: `git merge-base --is-ancestor 505ebf3 main` → true, y no hay ni un
+> commit en la rama que no esté en `main`. Todo el HUD ("feat(vista): Fase
+> 4–13") lleva en `main` desde antes de la FASE D; se desarrolló en paralelo a
+> D–G sin tocar la vista, así que **no divergió y no hubo conflictos**. La
+> rama `feature/fase-i-interfaz` sale de `main` al día.
+
+- [x] **I1 — COMPOSICIÓN.** `Main.qml` reencuadrado + `ActivitySpine.qml`
+      (nuevo). Núcleo ×1,6 (factor de tamaño 0.66→1.06), centro en el **tercio
+      inferior izquierdo** del escenario (`orbCX = stageLeft + stageW·0,32`,
+      `orbCY = stageTop + stageH·0,60`), **sangrando por detrás** del panel de
+      conversación. Conversación sobre **panel translúcido** (gradiente holo +
+      vela de fondo con degradado horizontal 0,90→0,62 + filo izquierdo
+      emisivo), anclada abajo junto al input y creciendo hacia arriba. Columna
+      izquierda = **ActivitySpine**: reloj de sesión, MODO (estado + acento),
+      telemetría cpu/ram/lat/tok·s, e **historial de energía del núcleo** en
+      barras apiladas (muestreo del reloj global, sin timer). Se retira el
+      `CoreStatus` suelto (lo duplicaba la espina y chocaba con el orbe).
+      `test_ui_hud.py::test_responsive_layout…` actualizado: el solape
+      núcleo/conversación es ahora **intencionado**; se sigue exigiendo que
+      texto, identidad y comando queden dentro de la ventana.
+- [x] **I2 — EL ORBE, TRES FRECUENCIAS** (incluye el saneado de color de
+      Fases 8-9). `jarvis_local/ui/hud/shaders/core.frag` reescrito.
+      - **Diagnóstico previo** (ver también el cierre de I1): comparando
+        capturas antes/después de I1 con el mismo shader se confirmó que el
+        naranja/rojo/verde caótico del orbe **ya estaba en `main`**, no era
+        regresión de I1 — venía de Fase 8 (`a686eff`, piel celular Voronoi +
+        iris alienígena) y Fase 9 (`0bb6402`), compiladas y versionadas sin
+        verificación en vivo.
+      - **LEY DE COLOR aplicada:** se borran (no se comentan) el raymarch
+        volumétrico, la piel celular Voronoi y el iris alienígena — no
+        podían garantizarse en rampa y eran, medido con `compact:true`, la
+        causa principal del caos. También se corrige `irid()` (rotaba por
+        todo el espectro) y el fleco cromático del borde, que escribía
+        `col.r/g/b` de tres bandas independientes sin base acromática —
+        con eso, en el radio donde solo una banda estaba activa, salía un
+        píxel de rojo o verde puro. Ahora hay un fresnel acromático de base
+        y la dispersión solo lo desplaza, nunca lo sustituye.
+      - **Las tres frecuencias:** cuerpo por absorción (radio 0 = denso/
+        oscuro, sube monótono hacia el limbo — antes era al revés, "bombilla"
+        en el centro); fresnel nítido (~2px) en el limbo; microdetalle de 2ª
+        octava con amplitud creciente hacia el limbo. Encima: el patrón de
+        interferencia (Fase 6, ya en rampa, es lo que el usuario recordaba
+        como "antes"), arcos, corona/anillo de audio (datos reales), onda de
+        choque, barrido especular cada 7 s.
+      - **Bloom:** `bloom_composite.frag` ya no porta el matiz de su blur —
+        se re-tiñe a la rampa por LUMINANCIA (dos tintes fijos, ambos
+        cian/azul), así ningún desequilibrio de canal del blur puede colar
+        rojo/verde. Umbral en `0,80` (el brief pedía `≥0,72`; a ese número,
+        con cualquier knee razonable, apareció un artefacto propio de esta
+        GPU — ver más abajo — y subirlo lo elimina sin perder el fresnel ni
+        el especular; se prioriza el espíritu del brief —nunca el cuerpo
+        entero— sobre el número exacto).
+      - **Artefacto encontrado y resuelto (no era regresión, tampoco Fase
+        8-9):** con el shader ya saneado, aparecían pequeños fragmentos
+        verdes en forma de hoja alrededor del orbe. Se aisló por descarte
+        —corona, microdetalle, segunda pasada de blur, dispersión cromática,
+        patrón de interferencia y arcos, cada uno probado por separado,
+        ninguno era la causa única— hasta confirmar que es un artefacto de
+        blur/downsample de `MultiEffect` en esta GPU con highlights pequeños
+        y muy nítidos (el shader anterior nunca los tuvo: su brillo estaba
+        repartido, no concentrado). Un `knee` de extracción ancho (0,5) con
+        el umbral en 0,80 lo elimina por completo, verificado en los 5
+        estados (`idle/listening/thinking/speaking/alert`).
+      - Verificado en vivo con `scripts/hud_shot.py`: capturas antes/después
+        de I1 (mismo shader, para separar la regresión) y antes/después de
+        I2 (mismo tamaño, mismo estado, 8 mensajes reales), en los 5 estados.
+- [x] **I3 — ILUMINACIÓN GLOBAL VISIBLE.** divisor y hairlines reciben la luz
+      del núcleo por distancia y ángulo. Prueba: tapando el orbe, se nota que
+      habla por el cambio de luz del resto.
+      - `Design.qml`: `lightLevel(sx,sy)` gana un término angular (`lightCast`,
+        una dirección preferida) además del de distancia, y la ganancia por
+        energía real del núcleo se sube sustancialmente; `litHairline`/
+        `litText` ensanchan sus rangos de tinte/alfa en la misma proporción.
+      - Elementos que antes usaban un tinte de estado plano y ahora derivan su
+        color/opacidad de `Design.litHairline`/`lightLevel` con su propia
+        posición real en la escena: el conector vertical HUD↔núcleo
+        (`hudConnector` en `Main.qml`), los tres separadores de la
+        `ActivitySpine` (vía el componente `Hairline.qml`, ya existía pero no
+        se usaba en ningún sitio) y la regla punteada bajo "JARVIS // CONSOLA"
+        en `Conversation.qml` (el "subrayado de la derecha" de la prueba de
+        aceptación).
+      - `HudFrame.qml` reescrito: sus 8 elementos (4 corchetes + 4 ticks)
+        compartían UNA sola muestra de luz tomada en el centro de la ventana,
+        así que brillaban todos igual sin importar dónde estuviera el núcleo
+        — un bug real frente al objetivo de I3 ("más brillante cerca, apagado
+        lejos"). Ahora cada uno calcula su propia `Design.lightLevel` en su
+        posición real.
+      - `scripts/hud_shot.py`: nueva bandera `--cover-core` que tapa con un
+        rectángulo negro la zona del núcleo (`rootItem.orbCX/orbCY/orbSize`,
+        con un margen del 15% por el halo del bloom) antes de guardar el PNG,
+        para poder ejercitar la prueba de aceptación tal como la pidió el
+        usuario sin ver el núcleo en absoluto.
+      - **Prueba de aceptación ejercitada en vivo** (capturas `idle` vs
+        `speaking`, núcleo tapado, 8 mensajes reales sembrados): se distingue
+        el estado sin ver el núcleo — la espina de energía y sus hairlines son
+        la señal dominante (más del doble de luminancia en `speaking`), los
+        corchetes de esquina y la regla punteada de la derecha aportan una
+        señal secundaria más sutil pero real, y correctamente más tenue que
+        la de la izquierda (el conector vertical queda mayormente bajo el
+        propio rectángulo de tapado por estar pegado al núcleo; se verificó
+        aparte por inspección directa del motor de lightLevel/litHairline en
+        su posición real, con el mismo resultado: la energía alta lo satura
+        a brillo máximo).
+      - **Comprobación de refuerzo pedida por el usuario** (antes de I4): la
+        prueba anterior tapaba sólo el núcleo, y la espina de energía —un
+        indicador de datos, no iluminación— podía estar cargando sola toda
+        la distinción. Se repitió tapando TAMBIÉN la `ActivitySpine` (nueva
+        bandera `--cover-spine` en `scripts/hud_shot.py`, que localiza el
+        ítem por `objectName` y lo tapa con su rect real en coords de
+        escena). Resultado inicial: con la espina tapada, el resto de la
+        interfaz (marco, conector, regla punteada) SÍ respondía a la luz
+        real (confirmado analíticamente y con recortes ampliados) pero el
+        margen era demasiado pequeño para leerse a simple vista — la
+        objeción del usuario era correcta.
+      - Se subió la ganancia en dos rondas: `Design.lightLevel` reduce su
+        piso de distancia (0,14→0,03) y sube su ganancia por energía
+        (0,62–1,55·E → 0,32–2,60·E); `HudFrame._k` y los mapeos de opacidad
+        de corchetes/ticks bajan su piso y suben el peso de `lightLevel`
+        (de compartir un piso ~0,2-0,3 fijo a casi apagarse del todo en
+        reposo); `hudConnector` gana un término de opacidad ligado a
+        `lightLevel` que antes no existía (sólo el tinte cambiaba, no el
+        brillo); la regla punteada de `Conversation.qml` amplía su rango de
+        igual forma. Verificado que esto NO deslució la señal ya buena de
+        la espina/hairlines (formalmente más contrastada, no menos).
+      - **Resultado final, verificado en vivo** (núcleo + espina tapados,
+        `idle` vs `speaking`): los corchetes del marco pasan de un azul casi
+        invisible a un cian claramente encendido (×3,4 de contraste medido
+        en la esquina más próxima al núcleo), y la regla punteada de la
+        derecha se aclara de forma visible aunque más discreta (×1,3–1,5,
+        coherente con estar más lejos que la espina). Sigue siendo una señal
+        más sutil que la de la espina —por diseño: son detalles de cabina,
+        no un panel de estado— pero ya no es "sólo estar puesta": respira de
+        forma perceptible por sí sola, sin parpadeo (todo el cambio es por
+        opacidad/tinte continuos, ninguna transición discreta).
+- [x] **I4 — COLOR.** borde del input a **cyan** (no verde). Auditar cada uso
+      de verde/amarillo/rojo: color = estado, nunca decoración.
+      - Borde del input (`CommandBar.qml`): verificado en vivo — ya es
+        `Design.cyan` con foco (`Design.azure` generando, atenuado con
+        `litHairline` en reposo). No usa verde en ningún estado; sin cambios.
+      - Auditados todos los usos de `Design.ok`/`warn`/`alert` en
+        `jarvis_local/ui/hud/qml/`: estado real de mic/voz, umbrales de
+        cpu/ram/latencia, alerta del núcleo, error de turno, banner de
+        degradado — todos legítimos (el color sigue un dato real, nunca es
+        fijo).
+      - **Violación real encontrada y corregida:** el "testigo de canal" en
+        la cabecera de `Conversation.qml` ("JARVIS // CONSOLA") era
+        `Design.ok` fijo, sin condición — un verde permanente que no
+        comunicaba nada. Ahora es `Design.alert` cuando `Vm.metrics.online
+        === false` y `Design.ok` en caso contrario: verde/rojo real, no
+        decoración. Verificado en vivo (capturas online/offline: el testigo
+        y el widget SISTEMA cambian juntos).
+      - Revisados y mantenidos sin cambio, con su razón: (1) los "colores de
+        firma" de `Hud.qml` (`amber`, `acidLime`, `magenta`, `sky`, `violet`)
+        son una decisión ya documentada de Fase 6 (`Design.qml`) — tokens
+        DISTINTOS de `ok`/`warn`/`alert`, precisamente para no chocar con el
+        estado real; (2) el resaltado de sintaxis de `CodeBlock.qml` reutiliza
+        los tokens literales `ok`/`warn` para cadenas/números — es una
+        convención de resaltado tipo terminal, no un indicador de estado del
+        sistema, y nadie lo lee como tal dentro de un bloque de código; se
+        deja así pero se señala por si el usuario prefiere tokens propios.
+      - Nota aparte (no es de esta tarea, es FASE H): `CoreStatus.qml` es
+        código muerto — ya no se instancia desde `Main.qml` desde I1 (la
+        ActivitySpine lo reemplazó), sólo queda un comentario que lo
+        menciona. Se deja para el barrido de FASE H.
+- [x] **I5 — ESTADO VACÍO.** fuera el "consola conversacional" gris; datos
+      reales (modelo cargado, nº de recuerdos, herramientas, última sesión).
+      - `Conversation.qml`: la frase de relleno desaparece; en su lugar,
+        `Vm.metrics.model`, `Vm.metrics.tools.count` y `Vm.metrics.memory.count`
+        — ya reales y en vivo desde `services.sample_all()` (FASE 3/B), sin
+        tocar ese camino — más una cuarta pieza nueva, "última sesión".
+      - **"Última sesión" (D2)**: `AuditLog.last_entry()` (nuevo método en
+        `safety/audit.py`) — la entrada más reciente de la auditoría
+        append-only. A diferencia de `read()`, NUNCA carga el histórico
+        completo: sólo la cola (últimos 4 KiB) del fichero activo, y sólo si
+        éste está vacío (rotación reciente) cae al rotado más nuevo. Se
+        sondea cada 2 s desde `MetricsService`, tenía que ser barato sin
+        importar el tamaño de `audit.jsonl`. Nueva clave `lastSession` en
+        `services.sample_all()`. Formato en QML: "hoy hh:mm" / "ayer hh:mm" /
+        "dd/mm hh:mm"; sin ninguna entrada, "—" — nunca una fecha inventada.
+      - Sin dato en cualquiera de las cuatro piezas: "—", igual que el resto
+        del HUD.
+      - Tests nuevos: `test_last_entry_*` (vacío, entrada más reciente,
+        superviviente a la rotación) en `test_audit.py`; `sample_all()` shape
+        ampliado con `lastSession` en `test_ui_hud.py`.
+      - **Captura de verificación en vivo** (sin sembrar conversación, con
+        `services.sample_all()` real de este checkout, no datos de prueba
+        inventados): "modelo llama3.2:3b · herramientas 46" /
+        "memoria 6 recuerdos · última sesión hoy 16:34" — los cuatro datos
+        genuinamente en vivo del sistema.
+      - **Hallazgo colateral, corregido en su propio commit (ver más abajo)**:
+        al usar por primera vez un recuento real de herramientas (46, con
+        `agent: true`) en vez del valor fijo de la careta de pruebas
+        (`hud_shot.py` usaba 84), el widget superior "HERRAMIENTAS" se
+        quedaba en "0" — un dato FALSO en pantalla, lo que FASE D prohíbe en
+        todo el sistema. Mismo patrón que `plan_delete` y la `ListView`
+        vacía: funciona simulado, falla con datos reales.
+- [x] **I5·fix — HudCell: el número que "rueda" se quedaba clavado en 0.**
+      Causa raíz en `HudCell.qml`: `NumberAnimation.to` colgaba de un BINDING
+      sobre `parsed` (`to: cell.parsed ? cell.parsed.num : 0`). Al pasar de
+      ausente (sin dato, `parsed=null`) a un valor real, `onParsedChanged`
+      llamaba a `rollAnim.restart()` — pero el orden entre la reevaluación de
+      ESE binding y la ejecución del propio handler de la señal no está
+      garantizado: si el handler corría primero, la animación arrancaba y
+      terminaba apuntando al `to` VIEJO (0), y `rolled` quedaba clavado ahí
+      para siempre. Aislado con un componente mínimo fuera del árbol real
+      (reproducido con solo `value: ""` → `value: "46"`, sin nada de
+      `Hud.qml` de por medio) antes de tocar el archivo, para no confundir
+      "roto por I5" con "roto siempre".
+      - Fix: fijar `rollAnim.to = parsed.num` A MANO justo antes de
+        `restart()`, en vez de depender de un binding declarativo — hace el
+        arranque de la animación determinista sin importar el orden de
+        reevaluación.
+      - **Es un bug del componente, no del dato**: de los 5 widgets de esa
+        fila, "herramientas" era el ÚNICO cuyo valor empieza por un dígito
+        (los demás — SISTEMA, MODELO, VOZ, MEMORIA — arrancan con letra y
+        nunca ejercitaban el camino de "rodar"), lo que explica por qué
+        llevaba tiempo sin notarse. Comprobado que NO es exclusivo de
+        "herramientas": un nombre de modelo que empiece por dígito (caso
+        real, p. ej. "70b-instruct") disparaba el mismo bloqueo antes del
+        fix y rueda bien después — cualquier widget futuro con una cifra
+        habría heredado el mismo fallo.
+      - Test de regresión nuevo (`test_ui_hud.py`,
+        `test_hud_cell_rolls_to_real_value_not_stuck_at_zero`): sin el fix
+        falla (`0.0 == 46.0`), con el fix pasa — verificado en ambos sentidos
+        (`git stash` del archivo corregido y vuelta atrás) antes de dar el
+        commit por bueno.
+      - Verificado en vivo: captura del estado vacío de I5 con el fix
+        aplicado — "HERRAMIENTAS 46" real, resto de widgets sin regresión.
+- [x] **I6 — RENDIMIENTO.** bloom a 1/4 de resolución sobre el
+      rect del núcleo (no la ventana) · atmósfera a 15 fps con grano tileado y
+      viñeta horneada · techo 30 fps idle / 60 en listening·thinking·speaking
+      · ≤12% de un núcleo en la HD 520, medido · la máscara de esquinas
+      redondeadas NO desaparece con la ruta de degradación.
+      - **Metodología corregida a mitad de fase**: hasta aquí, toda captura de
+        verificación de FASE I se tomó con `QT_QPA_PLATFORM=offscreen`
+        (renderizado por software forzado), que en este equipo activa el
+        LATCH de degradación (`rootItem._softwareBackend`) y por tanto
+        **nunca ejecutó de verdad el bloom ni la atmósfera** — sólo el
+        `CoreShader` puro, sin post-proceso. El entorno SÍ tiene un display
+        Wayland real (`WAYLAND_DISPLAY=wayland-0`); sin `offscreen`, Qt usa
+        `RHI backend: OpenGL` de verdad. Se descubrió al empezar I6 porque
+        el downsample del bloom no se podía comprobar sin bloom real. Para
+        forzar el pipeline completo en pruebas automatizadas existe
+        `rootItem.perfOverride = -1` (ya reservado en el código para esto).
+        Las verificaciones de I1-I5 (composición, iluminación ambiental,
+        color, datos) no dependían del bloom/atmósfera y sus conclusiones se
+        mantienen; pero fueron todas contra el núcleo "desnudo", nunca contra
+        el pipeline completo que ve un usuario real.
+      - **I6·1 — Bloom a 1/4 de resolución** (`CoreBloom.qml`): la cadena de
+        extracción + dos pasadas de blur ahora renderiza a mitad de ancho ×
+        mitad de alto (1/4 de píxeles, la convención habitual), con
+        `blurMax` a la mitad (10/24, antes 20/48) para que el radio aparente
+        no cambie al recomponer a resolución completa. El compuesto final
+        sigue a resolución completa — la nitidez la pone el núcleo, no el
+        halo. Ya estaba "compuesto sólo sobre el rectángulo del núcleo" (el
+        `Item` de `CoreBloom` ya vive dentro de `coreZone`, del tamaño del
+        orbe, no de la ventana).
+      - **Residual verde de I2 — comprobado, diagnóstico CORREGIDO**: con
+        bloom real (OpenGL, no software) se reprodujo el fragmento verde en
+        forma de flecha/hoja, en el mismo punto aproximado en varias
+        capturas. El downsample **NO lo hace desaparecer**: se probó también
+        a 1/8 de ancho×alto (1/64 de píxeles, muy por debajo de lo que se
+        va a usar) y el fragmento sale IDÉNTICO en forma, tamaño y color.
+        Esto descarta la hipótesis de I2 ("artefacto de blur/downsample de
+        MultiEffect sobre highlights nítidos a resolución nativa"): si fuera
+        un artefacto de blur, degradar tanto la resolución de entrada lo
+        habría suavizado o deformado, y no lo hizo — sale idéntico a
+        cualquier resolución. Es, con más certeza ahora, una emisión de
+        color genuina en `core.frag` anterior al bloom — el umbral de
+        extracción (0,80) simplemente la vuelve visible al recortarla y
+        ampliarla. Candidato más probable por posición y cadencia de
+        movimiento (coincide con un periodo de giro lento): el SATÉLITE
+        COMPAÑERO (línea ~223 de `core.frag`) u otra fuente cercana en el
+        archivo — su código mezcla `warmTint`/`tintHot` sin escribir canales
+        sueltos, así que no se localizó la línea exacta en esta pasada.
+        **No se persigue más aquí** (excede "comprobar si el downsample lo
+        cierra", que es lo pedido): queda para una rama de shader dedicada,
+        con el diagnóstico ya acotado y la vía del artefacto de blur
+        descartada, no abierta.
+      - **I6·2 — Atmósfera a 15 fps, grano tileado, viñeta horneada** (esta
+        última parte, "tileado"/"horneada" en el sentido de: barata y
+        estable, no recalculada por-frame a resolución nativa — ver nota
+        de coste más abajo): reintroducida en `Main.qml` como
+        `layer.effect` de `rootItem`, tras encontrar y corregir la causa
+        real del "marco oscuro" que la había hecho descartar en Fase 2:
+        `atmosphere.frag` tocaba el alfa del grano y de la máscara de
+        esquinas sin tocar el color en la misma proporción, rompiendo el
+        invariante premultiplicado (`rgb <= alfa`) justo donde la ventana
+        debía quedar transparente — invisible en una captura de
+        `grabToImage` (alfa recompuesto correctamente por Qt), pero real
+        para el compositor del SO al mezclar contra el escritorio de
+        verdad. Corregido: grano escalado por alfa (`col += g * a`) y
+        máscara de esquinas aplicada a AMBOS canales (`a *= mask; col *=
+        mask`). Verificado sin fuga de color componiendo contra magenta
+        puro (ninguna prueba de color inesperado en los bordes).
+      - `time` del grano cuantizado a 15 fps (`floor(tick*15)/15`): la
+        escena puede renderizar más rápido, pero el grano sólo "salta" 15
+        veces por segundo — se lee como grano de película, no como
+        parpadeo. Nuevo token `Design.windowCornerRadius` (14 px).
+      - Encendido/apagado en dos niveles, no uno: la capa entera
+        (`layer.enabled`) depende SÓLO de `_softwareBackend` — ahí el
+        shader puede no ejecutarse en absoluto, límite de hardware, mismo
+        trato que el bloom. Dentro de la capa, `grainAmt`/`vignette`/
+        `aberration` dependen de `degraded` (que sí cubre fps sostenidos
+        <40 y `perfOverride` de prueba) y se apagan a 0 ahí, PERO
+        `cornerRadius` se pasa siempre que la capa esté encendida — así la
+        máscara de esquinas sobrevive a la ruta de degradación por fps
+        (GPU real, sólo más lento) aunque no al límite de hardware real
+        (software/Null, donde nada de esto puede ejecutarse: mismo
+        límite ya aceptado para el bloom). Verificado con
+        `perfOverride=1` en GPU real: `degraded=True`,
+        `_softwareBackend=False` → capa sigue encendida.
+      - Impacto visual del recorte de esquinas: mínimo en esta app en
+        concreto porque la ventana no tiene fondo sólido que recortar
+        ("sin panel, sin caja" es el lenguaje de diseño desde Fase 4) — el
+        recorte importa donde SÍ hay contenido tocando el borde (p. ej. el
+        tirador de redimensionado, alfa ~218 visto en la esquina
+        inferior-derecha), no en el resto de la ventana, que ya era
+        transparente antes del recorte. El código es correcto y queda listo
+        para cuando haga falta.
+      - No se pudo verificar contra un compositor de escritorio real
+        (mutter) con un pantallazo del sistema — los intentos anteriores de
+        esta fase con `grim`/`gnome-screenshot`/el portal XDG ya habían
+        fallado en este entorno, y `QScreen.grabWindow()` en Wayland nativo
+        devuelve un pixmap vacío (bloqueado por seguridad, esperable). Se
+        deja constancia del límite en vez de fingir una verificación que no
+        se pudo hacer.
+      - **I6·3 — Techo de fps por estado** (`Main.qml`): el ÚNICO
+        `FrameAnimation` sólo actualizaba `tick` en cada disparo del
+        compositor (sin techo propio, lo que el display diera). Ahora
+        `tick` — y con él TODA la escena reactiva (shaders, hairlines,
+        respiración) — sólo avanza a una cadencia objetivo: 30 fps en
+        reposo, 60 sólo en `listening`/`thinking`/`speaking`
+        (`rootItem._targetFps`). El resto de disparos del compositor
+        acumulan tiempo en `_frameAcc` sin tocar ninguna property visible,
+        así que Qt no ensucia el árbol de escena ni repinta — ahorro real,
+        no una etiqueta. La medición de fps para el latch de degradación
+        sigue usando el `frameTime` CRUDO de cada disparo (no el
+        acumulado): el techo propio nunca se puede confundir con una
+        degradación real del hardware.
+      - Verificado en vivo (GPU real): `tick` sigue representando segundos
+        reales 1:1 en ambos casos (no se pierde ni se adelanta tiempo, sólo
+        cambia CADA CUÁNTO se actualiza) — confirmado midiendo cuántas
+        veces cambia `tick` en una ventana de 3 s real: ~21/s en idle
+        (techo 30) vs ~36/s en speaking (techo 60), la proporción ~1,7×
+        esperada entre 30 y 60 (los valores absolutos quedan por debajo de
+        lo nominal por el propio bucle de sondeo de Python del arnés de
+        prueba, no por el mecanismo en sí).
+      - **I6·4 — Medición de CPU: objetivo "≤12% en HD 520" NO verificable
+        en esta máquina, límite documentado, no fingido.** Dos motivos
+        independientes, ninguno arreglable desde aquí:
+        (1) esta máquina no es una HD 520 (la GPU objetivo del brief no
+        está disponible, igual que F2/F3 no tuvieron wifi/Bluetooth que
+        probar); (2) el equipo donde corrió esta sesión es el escritorio
+        real del usuario, con `ollama` sirviendo dos modelos (73 % + 8 % de
+        un núcleo), Chrome, Firefox, VSCode, WhatsApp y `gnome-shell`
+        corriendo a la vez (`ps aux --sort=-%cpu` durante la medición) —
+        no un banco de pruebas aislado, así que el `cpu_percent()` del
+        proceso lleva ruido de contención de verdad, no sólo el coste del
+        HUD.
+      - Aun así, midiendo con `psutil.Process().cpu_percent()` sobre
+        ventanas de 10 s (vía `app.exec()` real, no un bucle de sondeo
+        propio — un bucle así de Python inflaba las primeras lecturas) sale
+        una comparación honesta y útil, **con desglose por pasada**:
+          - **Sin ninguna animación** (`rootItem.paused = true`,
+            `FrameAnimation` parado del todo): **4,6–5,3 %** — el suelo de
+            los hilos de fondo (métricas, voz, chat), nada que ver con el
+            render.
+          - **Ventana minimizada** (`win.showMinimized()`,
+            `motionActive` cae solo por el guard de `win.active`): **0,8 %**
+            — confirma "0 fps sin foco/minimizado": el `FrameAnimation` dejó
+            de correr del todo (`motionActive=False`), no es una
+            optimización a medias. No se pudo ensayar el caso "visible pero
+            sin foco real" con una ventana señuelo del mismo proceso (el WM
+            de esta sesión no le movió el foco a tiempo, y no hay
+            `wmctrl`/`xdotool` instalados para forzarlo desde otra
+            aplicación) — el mecanismo es el mismo guard (`win.active`) que
+            sí se verificó con la minimización, pero el caso concreto
+            "alt-tab sin minimizar" queda sin ensayar en vivo.
+          - **Antes de I6·3** (sin techo de fps, commit `8b656aa`, en
+            reposo): **103,1 %** — el render corría sin freno, a lo que el
+            compositor diera.
+          - **Después de I6·3** (con el techo 30/60), en reposo: dos
+            corridas, **43,9 %** y **33,6 %**; hablando (techo 60): **36,4 %**
+            y **42,2 %** — el rango de ruido entre corridas (~10 puntos) es
+            del tamaño del efecto que se busca medir en esta máquina
+            contendida; idle y speaking no se distinguen de forma fiable
+            aquí, aunque el techo de fps en sí (ver más abajo) sí se
+            confirmó por conteo de fotogramas, no por CPU.
+          - **Desglose de dónde se va el tiempo** (todas con el techo de fps
+            ya puesto, un solo estado —`idle`— para que el desglose no se
+            mezcle con el ruido idle/speaking de arriba):
+            **resto de la escena del HUD** (espina, hairlines, marco,
+            widgets — todo lo animado por `Design.breath()`/`lightLevel`
+            salvo el núcleo) sola, núcleo oculto: **33,9 %**; **+ shader del
+            núcleo** (sin bloom/atmósfera, `perfOverride=1`): **36,7 %**
+            (+2,8 p.p.); **+ bloom y atmósfera** (pipeline completo):
+            **43,9 %** (+7,2 p.p. sobre el shader solo). **El coste NO está
+            concentrado en el shader vistoso ni en el bloom: el grueso
+            (~29 de ~39 puntos por encima del suelo de 4,6 %-5,3 %) es el
+            resto del HUD** — muchos elementos pequeños (las 44 barras de
+            la espina, los 8 corchetes del marco con su propio
+            `lightLevel`, cada hairline con su `mix()` de color) cada uno
+            barato, pero recalculados 30-60 veces por segundo. Si hiciera
+            falta bajar más el coste, este es el sitio, no el shader ni el
+            post-proceso.
+          - **Techo de fps — reconfirmado tras el fix del arnés**: contando
+            cambios reales de `tick` en 3 s, **idle ~21/s** (techo 30) vs
+            **speaking ~36/s** (techo 60) — proporción ~1,7× esperada entre
+            30 y 60 (igual que en I6·3; los valores absolutos, por debajo
+            de lo nominal, son el propio bucle de sondeo de Python, no el
+            mecanismo).
+        El techo de fps de I6·3, comparado contra el propio código sin él
+        (antes/después del mismo commit, mismo estado, misma máquina), se
+        lleva más de **la mitad** del coste de render medido (~103 % →
+        ~34–44 %) — una mejora real y grande, aunque el número final no sea
+        comparable al objetivo del brief ni entre sí de una corrida a otra
+        en esta máquina en concreto.
+      - **Máscara de esquinas redondeadas sobrevive a la degradación por
+        fps — verificado en vivo, no sólo por lectura de código.** El
+        `Item` real de `Main.qml` no tiene contenido opaco pegado al borde
+        (ventana sin fondo), así que no servía como probeta visual. Se
+        aisló `Atmosphere.qml` en una ventana de prueba con un fondo blanco
+        opaco de sobra para recortar, con los mismos parámetros que usa
+        `Main.qml` en cada modo (`grainAmt`/`vignette`/`aberration` a 0 en
+        degradado, `cornerRadius` SIEMPRE en 24). Resultado, leyendo alfa
+        píxel a píxel: en modo completo, el píxel de la esquina (0,0) sale
+        con alfa 0 y crece hacia el centro (recorte + viñeta juntos); **en
+        modo degradado, (0,0) y (3,3) siguen en alfa 0 y el resto ya vuelve
+        a alfa 255 sin viñeta** — el recorte de esquina se mantiene
+        exactamente igual de ancho con o sin viñeta/grano/aberración,
+        confirmando que `cornerRadius` no depende de `degraded` en el
+        shader real.
+      - Con esto, **I6 queda completa**: bloom a 1/4 res + compuesto sólo
+        sobre el rect del núcleo, atmósfera a 15 fps con grano/viñeta
+        corregidos y máscara de esquinas que sobrevive a la degradación
+        por fps, techo de fps por estado (la optimización de mayor impacto
+        medido), y esta medición honesta con su límite documentado.
+
+## Post-I6 — revalidación de I1-I5 con el pipeline REAL
+
+La corrección de metodología de I6 (ver arriba) no se queda en una nota:
+tras cerrar I6 se repitió la verificación visual de I1 a I5 con el pipeline
+real (sin `QT_QPA_PLATFORM=offscreen`, `backend=OpenGL`, `degraded=False`,
+8 mensajes sembrados), porque hasta entonces TODA la fase se había
+verificado contra el núcleo desnudo (bypass), nunca contra bloom+atmósfera
+juntos.
+
+- **Arnés (`hud_shot.py`) — hallazgo nuevo**: en un WM real (a diferencia
+  de `offscreen`), el tamaño de ventana pedido no siempre se respeta — esta
+  sesión lo devolvía en 1536×864 lógicos con `devicePixelRatio=1.25`
+  (1920×1080 físicos) en vez de los 1360×820 pedidos, y un `resize()`
+  explícito tras `show()` no lo corrigió de forma fiable dentro de la app
+  completa (sí en un script aislado mínimo). Se corrigió lo que SÍ se podía
+  corregir: `--cover-core`/`--cover-spine` calculaban la escala con
+  `win.property("width")`; ahora usan `root_item.property("width")`, que es
+  lo que de verdad usan `orbCX`/`orbCY`/`orbSize`. El tamaño final seguirá
+  sin ser exactamente el pedido en esta máquina — no invalida las
+  comparaciones (ambas capturas de cada par salen con el mismo tamaño real),
+  pero queda anotado como límite del arnés, no fingido como resuelto.
+- **I3 — la preocupación concreta era que el bloom, al añadir luz encima de
+  todo, diluyera los contrastes sutiles (1,3×/3,4×) de la espina/marco
+  tapados.** Resultado: **al contrario, se distingue MEJOR, no peor.** Con
+  núcleo y espina tapados, en `speaking` los corchetes del marco y el
+  conector se ven claramente encendidos (cian vivo) frente a casi
+  invisibles en `idle` — una diferencia más marcada a simple vista que en
+  las capturas sin bloom de I3. Los corchetes están geométricamente lejos
+  del rectángulo del núcleo (esquinas de la ventana, el core vive en el
+  tercio inferior izquierdo), así que esto no es el halo del bloom
+  colándose por el margen de tapado: es `Design.lightLevel` funcionando,
+  y el bloom no lo diluye. **No hace falta reajustar I3.**
+- **I2 — la preocupación era que el orbe se hubiera afinado sin ver su
+  propio bloom encima.** Revisados los 5 estados con bloom real: el cuerpo
+  sigue oscuro en el centro con el fresnel vivo en el limbo, la rampa
+  azul/cian se mantiene, y `alert` sigue siendo el único rojo. El halo del
+  bloom no introduce ningún tono fuera de rampa nuevo ni cambia el
+  equilibrio "nitidez > glow" que pedía el brief — el núcleo compuesto a
+  resolución completa sigue leyéndose nítido con el halo detrás, no al
+  revés. **No hace falta reajustar I2.** Única excepción, ya conocida y
+  anotada en I6·1: el residuo verde del satélite compañero (~línea 223 de
+  `core.frag`), visible en algunos fotogramas de `speaking`/`listening`,
+  pendiente de una rama de shader dedicada.
+- **I1, I4, I5**: sin cambios de conclusión — su contenido (geometría,
+  cableado de datos reales, ausencia de verde fijo) no depende del bloom ni
+  de la atmósfera; revisadas de refilón en las mismas capturas sin nada que
+  objetar.
 
 ## FASE J — Endurecer
 

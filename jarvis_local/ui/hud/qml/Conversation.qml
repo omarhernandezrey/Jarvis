@@ -26,10 +26,13 @@ Item {
             anchors { left: parent.left; leftMargin: Design.sp(0.5)
                       verticalCenter: parent.verticalCenter }
             spacing: Design.sp(1.5)
-            Rectangle {   // testigo de canal
+            Rectangle {   // testigo de canal — I4: verde SÓLO si de verdad hay
+                          // conexión (Vm.metrics.online); si no, es una alerta
+                          // real, no un adorno fijo.
                 width: 6; height: 6
                 anchors.verticalCenter: parent.verticalCenter
-                color: Design.ok
+                color: (Vm && Vm.metrics && Vm.metrics.online === false)
+                       ? Design.alert : Design.ok
                 opacity: Math.min(1.0, 0.35 + 0.35 * Design.breath()
                                   + 0.5 * Math.min(1.0, Design.coreEnergy * 1.6))
                 scale: 0.85 + 0.2 * Design.breath()
@@ -68,16 +71,29 @@ Item {
                 onTriggered: clock.text = "T " + Qt.formatDateTime(new Date(), "hh:mm:ss")
             }
         }
-        // regla punteada bajo la cabecera
+        // regla punteada bajo la cabecera — I3: recibe la luz real del
+        // núcleo igual que los hairlines de la espina (izquierda), para que
+        // la comparación izquierda/derecha que exige la prueba de aceptación
+        // tenga sentido: esta, más lejos del núcleo, se apaga más que las de
+        // la espina.
         Row {
+            id: headerRule
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
             spacing: 4
+            property point _mid: Qt.point(0, 0)
+            function _remap() { _mid = mapToItem(null, width / 2, height / 2) }
+            onWidthChanged: _remap()
+            onXChanged: _remap()
+            onYChanged: _remap()
+            Component.onCompleted: _remap()
+            Connections { target: Design; function onCorePosChanged() { headerRule._remap() } }
+            readonly property real _l: Design.lightLevel(_mid.x, _mid.y)
             Repeater {
                 model: Math.max(1, Math.floor(header.width / 7))
                 delegate: Rectangle {
                     width: 3; height: 1
-                    color: Design.stateWash(Design.consoleHeader, 0.5)
-                    opacity: 0.18 + 0.14 * Design.breath()
+                    color: Design.litHairline(headerRule._mid.x, headerRule._mid.y)
+                    opacity: (0.03 + 0.05 * Design.breath()) * (0.20 + 3.20 * headerRule._l)
                 }
             }
         }
@@ -146,13 +162,35 @@ Item {
         }
     }
 
-    // estado vacío: identidad a 40 px, callada. Se desvanece con el primer turno.
+    // estado vacío (FASE I · I5): identidad a 40 px + datos REALES del
+    // sistema (Vm.metrics) — nunca la frase de relleno "consola
+    // conversacional". Sin dato, "—": jamás se inventa.
     Column {
+        id: emptyState
         anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-        spacing: Design.sp(3)
+        spacing: Design.sp(1.5)
         opacity: list.count === 0 ? 1.0 : 0.0
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
+
+        readonly property var _m: (Vm && Vm.metrics) ? Vm.metrics : ({})
+
+        function _val(v, suffix) {
+            return (v === undefined || v === null) ? "—" : ("" + v) + (suffix || "")
+        }
+        function _lastSession() {
+            var iso = emptyState._m.lastSession
+            if (!iso) return "—"
+            var d = new Date(iso)
+            if (isNaN(d.getTime())) return "—"
+            var now = new Date()
+            var hhmm = Qt.formatDateTime(d, "hh:mm")
+            if (d.toDateString() === now.toDateString()) return "hoy " + hhmm
+            var ayer = new Date(now); ayer.setDate(now.getDate() - 1)
+            if (d.toDateString() === ayer.toDateString()) return "ayer " + hhmm
+            return Qt.formatDateTime(d, "dd/MM") + " " + hhmm
+        }
+
         Text {
             text: "JARVIS ❯ _"
             color: Design.chatJarvis
@@ -162,10 +200,22 @@ Item {
             style: Text.Outline; styleColor: Design.textEdge
         }
         Text {
-            text: "consola conversacional — escribe abajo o mantén el micrófono"
+            text: "modelo " + emptyState._val(emptyState._m.model)
+                  + "   ·   herramientas "
+                  + emptyState._val(emptyState._m.tools ? emptyState._m.tools.count : undefined)
             color: Design.chatMeta
             font.family: Design.fontMono
-            font.pixelSize: Design.fsSmall
+            font.pixelSize: Design.fsMicro
+            style: Text.Outline; styleColor: Design.textEdge
+        }
+        Text {
+            text: "memoria "
+                  + emptyState._val(emptyState._m.memory ? emptyState._m.memory.count : undefined,
+                                    " recuerdos")
+                  + "   ·   última sesión " + emptyState._lastSession()
+            color: Design.chatMeta
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsMicro
             style: Text.Outline; styleColor: Design.textEdge
         }
     }

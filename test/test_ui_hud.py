@@ -59,7 +59,7 @@ def test_sample_all_shape_no_invention():
     None o de tipo correcto -- nunca aleatorios ni de relleno."""
     data = services.sample_all()
     for key in ("cpu", "ram", "online", "model", "healthPingMs",
-                "voice", "tools", "memory"):
+                "voice", "tools", "memory", "lastSession"):
         assert key in data
     assert data["cpu"] is None or isinstance(data["cpu"], (int, float))
     assert data["ram"] is None or isinstance(data["ram"], (int, float))
@@ -69,6 +69,7 @@ def test_sample_all_shape_no_invention():
     assert set(data["voice"]) == {"tts", "mic"}
     assert set(data["tools"]) == {"count", "agent"}
     assert set(data["memory"]) == {"auto_recall", "count"}
+    assert data["lastSession"] is None or isinstance(data["lastSession"], str)
 
 
 def test_conversation_model_streaming_turn():
@@ -236,6 +237,64 @@ def _conversation_listview(win):
         if "QQuickListView" in o.metaObject().className():
             return o
     raise AssertionError("no se encontró la ListView de la conversación")
+
+
+def _hud_cell_by_label(win, label):
+    """Los delegados de `Repeater` no aparecen en `findChildren` desde un
+    ancestro (limitación de PySide/QML, no del árbol real: `Repeater.count`
+    sí los ve) -- hay que pedirlos por `itemAt(i)`."""
+    from PySide6.QtCore import Q_ARG, Q_RETURN_ARG, QMetaObject
+    from PySide6.QtQuick import QQuickItem
+    hud = win.findChild(QQuickItem, "hud")
+    if hud is None:
+        return None
+    for rep in hud.findChildren(QQuickItem):
+        if rep.metaObject().className() != "QQuickRepeater":
+            continue
+        for i in range(rep.property("count")):
+            item = QMetaObject.invokeMethod(
+                rep, "itemAt", Q_RETURN_ARG("QQuickItem*"), Q_ARG("int", i))
+            if item is not None and item.property("label") == label:
+                return item
+    return None
+
+
+def test_hud_cell_rolls_to_real_value_not_stuck_at_zero():
+    """FASE I · I5 (hallazgo colateral, FASE D: nunca un dato falso en
+    pantalla). 'herramientas' es el único widget de la fila superior cuyo
+    valor empieza por un dígito -- el único que ejercita la animación de
+    "rodar" el número de HudCell.qml. Antes del fix, `NumberAnimation.to`
+    colgaba de un binding sobre `parsed`: al pasar de ausente (sin dato) a
+    un valor real, `onParsedChanged` podía llamar a `restart()` antes de que
+    ese binding se reevaluara, así que la animación arrancaba y terminaba
+    apuntando al `to` VIEJO (0) -- el número se quedaba clavado en 0 para
+    siempre, mostrando un dato falso."""
+    import time
+
+    from jarvis_local.ui.hud.app import create_engine
+
+    engine = create_engine(_app, ViewModel())
+    try:
+        win = engine.rootObjects()[0]
+        rt = engine._runtime  # noqa: SLF001
+
+        def _settle(seconds):
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < seconds:
+                _app.processEvents()
+                time.sleep(0.02)
+
+        _settle(0.3)   # arranca ausente: sin métricas todavía
+        rt.vm.push_metrics({"tools": {"count": 46, "agent": True}})
+        _settle(1.0)   # más que Design.durRoll (560 ms)
+
+        cell = _hud_cell_by_label(win, "herramientas")
+        assert cell is not None, "no se encontró el widget de herramientas"
+        assert cell.property("rolled") == 46.0, \
+            "el número se quedó clavado en vez de rodar al valor real"
+    finally:
+        engine._runtime.shutdown()  # noqa: SLF001
+        engine.deleteLater()
 
 
 def test_qml_conversation_listview_reflects_model():
@@ -673,8 +732,11 @@ def test_reduced_motion_detection_env(monkeypatch):
 
 
 def test_responsive_layout_no_overlap_no_overflow():
-    """Fase 6: en los cuatro modos, núcleo y conversación no se solapan, todo
-    queda dentro de la ventana y la barra de comando es alcanzable."""
+    """Fase I·I1: el núcleo SANGRA por detrás del panel de conversación
+    (solape intencionado). Lo que se exige: la conversación, la identidad y la
+    barra de comando quedan DENTRO de la ventana y el comando es alcanzable.
+    El `coreZone` (visual, no control) puede desbordar: su halo es enorme a
+    propósito."""
     from PySide6.QtCore import QPointF
     from PySide6.QtQuick import QQuickItem
 
@@ -695,14 +757,18 @@ def test_responsive_layout_no_overlap_no_overflow():
 
     try:
         for w, h in ((1700, 900), (1360, 820), (1000, 760), (430, 360)):
-            win.setWidth(w); win.setHeight(h)
+            win.setWidth(w)
+            win.setHeight(h)
             _app.processEvents()
-            cz, vz, cb = rect("coreZone"), rect("convZone"), rect("cmdBar")
-            assert overlap(cz, vz) == 0, f"{w}x{h}: solapan núcleo y conversación"
-            for r in (cz, vz, rect("hud")):
-                assert r[0] >= -1 and r[1] >= -1
-                assert r[0] + r[2] <= w + 1 and r[1] + r[3] <= h + 1, f"{w}x{h}: overflow"
+            vz, cb = rect("convZone"), rect("cmdBar")
+            # los CONTROLES / texto quedan dentro de la ventana
+            for name, r in (("convZone", vz), ("hud", rect("hud")), ("cmdBar", cb)):
+                assert r[0] >= -1 and r[1] >= -1, f"{w}x{h}: {name} fuera por arriba/izq"
+                assert r[0] + r[2] <= w + 1 and r[1] + r[3] <= h + 1, \
+                    f"{w}x{h}: {name} overflow"
             assert cb[1] + cb[3] <= h + 1, f"{w}x{h}: barra de comando fuera de vista"
+            # el panel de conversación no pisa la barra de comando
+            assert overlap(vz, cb) == 0, f"{w}x{h}: la conversación pisa el comando"
     finally:
         engine._metrics.stop()  # noqa: SLF001
         engine.deleteLater()

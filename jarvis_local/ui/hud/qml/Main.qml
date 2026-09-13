@@ -54,11 +54,25 @@ Window {
         // ruta de degradación (§7): no es un `if` teórico, se dispara de verdad.
         property real _fpsEma: 60
         property real _lowSince: 0            // ms de `tick` en que empezó a ir <40
+
+        // FASE I · I6 — TECHO DE FPS: 30 en reposo, 60 sólo mientras trabaja
+        // (listening/thinking/speaking) o durante el frente de reacción de un
+        // cambio de estado. `tick` (y con él TODA la escena: shaders,
+        // hairlines, respiración) sólo avanza a esta cadencia — el resto de
+        // frames que sí dispara el compositor no tocan ninguna property, así
+        // que el árbol de escena no se ensucia y Qt no repinta nada: ahorro
+        // real, no una etiqueta. La medición de fps de más abajo usa el
+        // `frameTime` CRUDO de cada disparo, no el acumulado — el techo
+        // propio nunca se confunde con una degradación real del hardware.
+        readonly property bool _activeState:
+            Vm && (Vm.state === "listening" || Vm.state === "thinking"
+                   || Vm.state === "speaking")
+        readonly property int _targetFps: _activeState ? 60 : 30
+        property real _frameAcc: 1.0          // arranca alto: no pierde el primer frame
         FrameAnimation {
             objectName: "coreLoop"
             running: rootItem.motionActive
             onTriggered: {
-                rootItem.tick += frameTime
                 if (frameTime > 0.001 && frameTime < 0.5 && rootItem.tick > 2.0) {
                     rootItem._fpsEma = rootItem._fpsEma * 0.9 + (1.0 / frameTime) * 0.1
                     if (rootItem._fpsEma < 40) {
@@ -70,6 +84,11 @@ Window {
                         rootItem._lowSince = 0
                     }
                 }
+                rootItem._frameAcc += frameTime
+                var minDt = 1.0 / rootItem._targetFps
+                if (rootItem._frameAcc < minDt) return
+                rootItem.tick += rootItem._frameAcc
+                rootItem._frameAcc = 0
             }
         }
 
@@ -78,6 +97,10 @@ Window {
         // atmósfera; se mantiene el shader del núcleo. Es un LATCH: una vez que
         // degrada, se queda así toda la sesión (evita oscilar el pipeline).
         property int  perfOverride: 0        // 0 auto · 1 forzar degradado · -1 forzar completo (tests)
+        // FASE I · I6: qué RHI usa realmente esta sesión — para que una
+        // captura de verificación pueda decir de qué pipeline es evidencia
+        // (Software/Null nunca ejecuta bloom ni atmósfera de verdad).
+        property string rhiBackendName: "?"
         property bool _softwareBackend: false
         property bool _degradedLatch: false
         readonly property bool _lowFpsSustained: _degradedLatch
@@ -86,11 +109,38 @@ Window {
           : perfOverride === -1 ? false
           : (_softwareBackend || _degradedLatch)
 
-        // La atmósfera global (viñeta/grano/aberración) se aplicaba como
-        // `layer.effect` de TODA la escena. Con la ventana transparente eso
-        // pintaría un marco oscuro en los bordes — justo lo que NO se quiere.
-        // El orbe conserva su propio bloom (CoreBloom); no hay post-proceso
-        // de ventana.
+        // La atmósfera global (viñeta/grano/aberración cromática + máscara de
+        // esquinas redondeadas) va como `layer.effect` de TODA la escena.
+        // FASE I · I6: se había descartado porque con la ventana transparente
+        // pintaba un marco oscuro en los bordes — la causa real era que el
+        // grano y la máscara de esquinas tocaban el alfa sin tocar el color
+        // en la misma proporción, rompiendo el invariante premultiplicado
+        // justo donde debía quedar transparente (visible en el compositor
+        // real del SO, no en una captura de `grabToImage`). Corregido en
+        // `atmosphere.frag`: grano y máscara escalan también el color.
+        //
+        // Se apaga por completo SÓLO en backend de software/Null
+        // (`_softwareBackend`): ahí el shader puede no ejecutarse en
+        // absoluto — límite de hardware, no una decisión de coste, mismo
+        // trato que el bloom. La máscara de esquinas redondeadas, en cambio,
+        // NO depende de `degraded` (fps sostenidos <40 o `perfOverride`
+        // forzado): ahí el GPU real sigue pudiendo correr el shader, sólo
+        // más despacio, así que se apagan grano/viñeta/aberración (el coste)
+        // pero la forma de la ventana se mantiene.
+        readonly property bool _atmosphereOn: !_softwareBackend
+        layer.enabled: _atmosphereOn
+        layer.effect: Atmosphere {
+            // FASE I · I6: grano a 15 fps — el reloj que alimenta el hash se
+            // cuantiza, así que el grano sólo "salta" 15 veces por segundo
+            // aunque la escena renderice más rápido (nunca se ve como un
+            // parpadeo: es la misma cadencia perceptual de un grano de
+            // película, no una animación).
+            time: rootItem.degraded ? 0.0 : Math.floor(rootItem.tick * 15.0) / 15.0
+            grainAmt: rootItem.degraded ? 0.0 : 0.026
+            vignette: rootItem.degraded ? 0.0 : 0.30
+            aberration: rootItem.degraded ? 0.0 : 1.2
+            cornerRadius: Design.windowCornerRadius
+        }
 
         // alcance de la luz del núcleo, en función del tamaño de la ventana
         Binding {
@@ -127,40 +177,52 @@ Window {
             if (!rootItem.booted) { bootAnim.stop(); rootItem.boot = 1.0 }
         }
 
-        // ── SISTEMA DE ZONAS ─────────────────────────────────────────────
-        // El orbe se centra en un "escenario" = ventana menos la franja de
-        // identidad (arriba) y la barra de comando flotante (abajo). Los
-        // demás elementos flotan en los márgenes.
+        // ── SISTEMA DE ZONAS (Fase I · I1) ───────────────────────────────
+        //  Composición reencuadrada: el núcleo ~1,6× más grande, su centro en
+        //  el TERCIO INFERIOR IZQUIERDO (no centrado), sangrando por detrás de
+        //  la columna de conversación. La conversación va ENCIMA, sobre un
+        //  panel translúcido, anclada abajo y creciendo hacia arriba desde el
+        //  input. La columna izquierda deja de estar vacía: ActivitySpine.
         readonly property int margin: Design.sp(6)
         readonly property int topBandH: Design.sp(19)
         readonly property int cmdReserve: cmdBar.implicitHeight + Design.sp(5)
         readonly property int stageTop: margin + topBandH + Design.sp(3)
         readonly property int stageBottom: Math.max(stageTop + 120, height - cmdReserve)
         readonly property int stageH: stageBottom - stageTop
-        readonly property int stageW: Math.max(120, width - 2 * margin)
 
-        // conversación: columna lateral si CABE a la derecha del orbe sin
-        // solaparlo; si no, apilada bajo el orbe.
-        readonly property int convW: Math.round(Math.min(Design.sp(94), width * 0.28))
-        // tamaño del orbe = protagonista: 66% del lado más corto disponible,
-        // con mínimo (240) y máximo (960). Un poco menos que antes para que su
-        // halo/corona respiren y NUNCA queden bajo un elemento del HUD.
-        readonly property real _orbFactor: 0.66
-        readonly property real _orbIfSide:
-            Math.min(Math.max(240, Math.min(stageW, stageH) * _orbFactor),
-                     stageH * 0.98, stageW * 0.96, 960)
-        readonly property real _orbXIfSide: (width - _orbIfSide) / 2
-        readonly property bool stackedChat:
-            (_orbXIfSide + _orbIfSide + Design.sp(4)) > (width - convW - margin)
+        // espina de actividad (izquierda) — historial de energía + estado + reloj
+        readonly property int spineW: Math.round(Math.max(Design.sp(26),
+                                                Math.min(Design.sp(34), width * 0.11)))
+        readonly property int spineGap: Design.sp(3)
+        readonly property int stageLeft: margin + spineW + spineGap
+        readonly property int stageW: Math.max(120, width - stageLeft - margin)
 
-        // altura del escenario asignada al orbe (todo, o la parte de arriba
-        // si el chat se apila debajo)
-        readonly property real orbStageH: stackedChat ? stageH * 0.55 : stageH
+        // ventana estrecha: se colapsa a apilado (orbe arriba, chat abajo).
+        readonly property bool tightLayout: width < Design.sp(190) || stageH < 320
+
+        // conversación: panel translúcido en la mitad derecha, montado sobre el
+        // orbe. Anclado abajo (junto al input), crece hacia arriba.
+        readonly property int convLeft: tightLayout
+            ? stageLeft
+            : Math.round(stageLeft + stageW * 0.40)
+        readonly property int convRight: width - margin
+        readonly property int convBottom: Math.round(cmdBar.y - Design.sp(3))
+        readonly property int convTop: Math.round(stageTop + (tightLayout ? stageH * 0.52 : Design.sp(1)))
+
+        // tamaño del orbe = protagonista, ~1,6× lo anterior (factor 0.66 → 1.06).
+        // Se mide contra la altura del escenario (o su mitad superior si apila).
+        readonly property real _orbFactor: tightLayout ? 0.66 : 1.06
+        readonly property real orbStageH: tightLayout ? stageH * 0.50 : stageH
         readonly property real orbSize:
-            Math.min(Math.max(240, Math.min(stageW, orbStageH) * _orbFactor),
-                     orbStageH * 0.98, stageW * 0.96, 960)
-        readonly property real orbCX: width / 2
-        readonly property real orbCY: stageTop + orbStageH / 2
+            Math.min(Math.max(300, Math.min(stageW * 1.15, orbStageH) * _orbFactor),
+                     orbStageH * 1.35, 1200)
+        // centro en el tercio inferior izquierdo del escenario
+        readonly property real orbCX: tightLayout
+            ? width / 2
+            : Math.round(stageLeft + stageW * 0.32)
+        readonly property real orbCY: tightLayout
+            ? stageTop + orbStageH * 0.5
+            : Math.round(stageTop + stageH * 0.60)
 
         MouseArea {
             anchors.fill: parent
@@ -180,15 +242,29 @@ Window {
             opacity: Design.reveal(rootItem.orbCX, rootItem.orbCY)
         }
 
-        // ── HUD DE IDENTIDAD (flota arriba, centrado) ────────────────────
+        // ── ESPINA DE ACTIVIDAD (columna izquierda — I1) ─────────────────
+        ActivitySpine {
+            objectName: "activitySpine"
+            id: activitySpine
+            visible: !rootItem.tightLayout
+            opacity: Design.reveal(x + width / 2, y + height / 2)
+            coreState: Vm ? Vm.state : "idle"
+            metrics: Vm ? Vm.metrics : ({})
+            x: rootItem.margin
+            y: rootItem.stageTop
+            width: rootItem.spineW
+            height: rootItem.stageBottom - rootItem.stageTop
+        }
+
+        // ── HUD DE IDENTIDAD (flota arriba, centrado sobre el escenario) ──
         Hud {
             objectName: "hud"
             id: hud
             keys: ["sistema", "modelo", "voz", "memoria", "herramientas"]
             opacity: Design.reveal(x + width / 2, y + height / 2)
-            x: Math.round((parent.width - width) / 2)
+            x: Math.round(rootItem.stageLeft + (rootItem.stageW - width) / 2)
             y: rootItem.margin
-            width: Math.min(implicitWidth, parent.width - 2 * rootItem.margin)
+            width: Math.min(implicitWidth, rootItem.stageW)
             height: rootItem.topBandH
             clip: true
         }
@@ -198,12 +274,18 @@ Window {
             id: hudConnector
             readonly property real _cy: y + height / 2
             readonly property real _wave: Design.waveAt(x, _cy)
+            readonly property real _l: Design.lightLevel(x, _cy)
             x: Math.round(rootItem.orbCX)
             y: hud.y + hud.height
             width: 1 + 3 * _wave                         // se engrosa al pasar el frente
             height: Math.max(0, (rootItem.orbCY - rootItem.orbSize / 2) - y - Design.sp(2))
-            color: Design.stateWash(Design.hairline, 0.8)
-            opacity: (0.35 + 0.4 * Design.breath() + 0.5 * _wave) * Design.reveal(x, _cy)
+            // I3: el divisor vertical recibe la luz real del núcleo (distancia
+            // + ángulo + energía), no un tinte de estado plano. La opacidad
+            // también responde a la luz (antes sólo el color): en reposo se
+            // apaga de verdad, hablando se enciende — no sólo cambia de tinte.
+            color: Design.litHairline(x, _cy)
+            opacity: (0.04 + 0.85 * _l + 0.12 * Design.breath() + 0.5 * _wave)
+                     * Design.reveal(x, _cy)
 
             // impulso de datos que baja por el conector hacia el orbe: un punto
             // de luz recorre la línea de forma continua (reloj global, sin timer).
@@ -217,14 +299,18 @@ Window {
             }
         }
 
-        // ── MÉTRICAS EN VIVO (flotan abajo-izquierda, junto al comando) ──
+        // ── MÉTRICAS EN VIVO ────────────────────────────────────────────
+        //  Fase I·I1: cpu/ram/latencia/tok·s se mudan a la ActivitySpine (la
+        //  columna izquierda es ahora la telemetría de actividad). En ventana
+        //  estrecha, donde la espina se oculta, se muestran aquí abajo.
         Hud {
             id: hudMetrics
+            visible: rootItem.tightLayout
             keys: ["cpu", "ram", "latencia", "tokens/s"]
             opacity: 0.9 * Design.reveal(x + width / 2, y + height / 2)
             x: rootItem.margin
             y: rootItem.stageBottom - height - Design.sp(1)
-            width: Math.min(implicitWidth, parent.width - 2 * rootItem.margin)
+            width: Math.min(implicitWidth, rootItem.width - 2 * rootItem.margin)
             height: Design.sp(19)
             clip: true
         }
@@ -256,44 +342,71 @@ Window {
             }
         }
 
-        // estado del orbe: justo debajo, centrado — "modo actual de JARVIS"
-        CoreStatus {
-            id: coreStatus
-            opacity: Design.reveal(x + width / 2, y + height / 2)
-            coreState: Vm ? Vm.state : "idle"
-            x: Math.round(rootItem.orbCX - width / 2)
-            y: Math.round(rootItem.orbCY + rootItem.orbSize * 0.5 + Design.sp(2))
-        }
+        // El estado del núcleo (palabra + acento) vive ahora en la
+        // ActivitySpine (I1). Se retira el CoreStatus suelto bajo el orbe:
+        // duplicaba la lectura y chocaba con el orbe agrandado.
 
-        // ── CONVERSACIÓN — capa flotante (columna lateral o apilada) ─────
+        // ── CONVERSACIÓN — sobre un PANEL TRANSLÚCIDO, montada sobre el orbe,
+        //    anclada abajo (junto al input) y creciendo hacia arriba (I1) ────
         Item {
             id: convZone
             objectName: "convZone"
             opacity: Design.reveal(x + width / 2, y + height / 2)
-            readonly property real _orbBottom:
-                rootItem.orbCY + rootItem.orbSize / 2
-            x: rootItem.stackedChat
-               ? rootItem.margin
-               : Math.round(rootItem.width - rootItem.convW - rootItem.margin)
-            y: rootItem.stackedChat
-               ? Math.round(Math.max(coreStatus.y + coreStatus.height + Design.sp(2),
-                                     _orbBottom + Design.sp(4)))
-               : rootItem.stageTop
-            width: rootItem.stackedChat
-                   ? rootItem.stageW
-                   : rootItem.convW
-            // apilada: deja libre la fila de métricas (abajo-izquierda)
-            height: Math.max(0, rootItem.stageBottom - y
-                    - (rootItem.stackedChat ? hudMetrics.height + Design.sp(2) : 0))
+            x: rootItem.convLeft
+            width: rootItem.convRight - rootItem.convLeft
+            y: rootItem.convTop
+            height: Math.max(0, rootItem.convBottom - rootItem.convTop)
 
-            // Sin scrim: fondo 100 % transparente. La legibilidad la da el
-            // contorno de 1px de cada glifo (Text.Outline + Design.textEdge).
+            // panel translúcido: el orbe SANGRA por detrás de su borde
+            // izquierdo. Iluminado desde arriba (lenguaje holo del sistema),
+            // borde de 1px teñido por el estado, esquina redondeada.
+            Rectangle {
+                id: convPanel
+                anchors.fill: parent
+                radius: Design.radiusSurface
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Design.holoTop }
+                    GradientStop { position: 1.0; color: Design.holoBot }
+                }
+                border.width: 1
+                border.color: Design.stateWash(Design.widgetStroke, 0.85)
+                // vela de fondo: translúcida, pero suficiente para que el ruido
+                // del orbe justo detrás no compita con el texto. Más densa en el
+                // filo izquierdo (donde el orbe está más brillante), se aclara
+                // hacia la derecha.
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    radius: parent.radius - 1
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0
+                            color: Qt.rgba(Design.surfaceColor.r, Design.surfaceColor.g,
+                                           Design.surfaceColor.b, 0.90) }
+                        GradientStop { position: 0.45
+                            color: Qt.rgba(Design.surfaceColor.r, Design.surfaceColor.g,
+                                           Design.surfaceColor.b, 0.74) }
+                        GradientStop { position: 1.0
+                            color: Qt.rgba(Design.surfaceColor.r, Design.surfaceColor.g,
+                                           Design.surfaceColor.b, 0.62) }
+                    }
+                }
+            }
+            // filo izquierdo emisivo: marca dónde el orbe pasa por detrás
+            Rectangle {
+                width: 1
+                x: 0
+                y: Design.sp(1); height: parent.height - Design.sp(2)
+                color: Design.litHairline(convZone.x, convZone.y + convZone.height / 2)
+                opacity: 0.5 + 0.4 * Design.breath()
+            }
 
             Conversation {
                 id: convo
-                anchors { left: parent.left; right: parent.right; top: parent.top
-                          bottom: parent.bottom }
-                measure: Math.min(620, width - Design.sp(8))
+                anchors { fill: parent
+                          leftMargin: Design.sp(3); rightMargin: Design.sp(3)
+                          topMargin: Design.sp(2); bottomMargin: Design.sp(2) }
+                measure: Math.min(640, width - Design.sp(10))
             }
         }
 
@@ -302,10 +415,12 @@ Window {
             id: cmdBar
             objectName: "cmdBar"
             opacity: Design.reveal(x + width / 2, y + height / 2)
-            width: Math.round(Math.min(Design.sp(170), parent.width - 2 * rootItem.margin))
-            x: Math.round((parent.width - width) / 2)
+            width: Math.round(Math.min(Design.sp(170),
+                              rootItem.width - rootItem.stageLeft - rootItem.margin))
+            x: Math.round(rootItem.stageLeft
+                          + (rootItem.width - rootItem.stageLeft - rootItem.margin - width) / 2)
             y: parent.height - height - rootItem.margin
-            showViz: rootItem.stackedChat && rootItem.stageH < 320
+            showViz: rootItem.tightLayout && rootItem.stageH < 320
         }
 
         Keys.onPressed: (e) => {
@@ -348,6 +463,7 @@ Window {
                 : api === GraphicsInfo.Metal ? "Metal"
                 : api === GraphicsInfo.Null ? "Null" : ("api=" + api)
             console.log("[hud] RHI backend:", name)
+            rootItem.rhiBackendName = name
             rootItem._softwareBackend = (api === GraphicsInfo.Software
                                          || api === GraphicsInfo.Null)
             swBanner.visible = rootItem._softwareBackend

@@ -34,6 +34,17 @@ Item {
     // ¿corren las etapas de bloom?  no si está congelado o degradado
     readonly property bool _pipeOn: live && !bypass
 
+    // FASE I · I6: el bloom se extrae y difumina a 1/4 de resolución — la
+    // convención habitual (mitad de ancho × mitad de alto = 1/4 de píxeles).
+    // La nitidez la pone el núcleo (compuesto a resolución completa más
+    // abajo); el halo no la necesita, y es ahí donde vivía el coste de GPU
+    // (dos pasadas de MultiEffect sobre el rectángulo completo del núcleo).
+    // El downsample explícito también es el candidato principal para cerrar
+    // el residuo verde anotado en I2: ya no depende de blurear highlights
+    // nítidos a resolución nativa.
+    readonly property size _qsz: Qt.size(
+        Math.max(1, Math.round(width / 2)), Math.max(1, Math.round(height / 2)))
+
     // 1) el núcleo. En bypass es lo único visible; si no, alimenta la textura.
     CoreShader {
         id: core
@@ -57,54 +68,71 @@ Item {
         smooth: true
     }
 
-    // 2) extracción de altas luces
+    // 2) extracción de altas luces — a 1/4 de resolución (I6): menos
+    // fragmentos que procesar, y el downsample explícito le quita al blur
+    // los highlights nítidos a resolución nativa que causaban el residuo.
     ShaderEffect {
         id: extract
-        anchors.fill: parent
+        width: bloom._qsz.width; height: bloom._qsz.height
         visible: false
         property var source: coreTex
-        // umbral más alto → sólo florece lo REALMENTE brillante (menos halo
-        // general que difumina la lectura del núcleo).
-        property real threshold: 0.54
-        property real knee: 0.22
+        // I2: sólo florece lo REALMENTE brillante — el fresnel, el barrido
+        // especular y los picos reales de energía; nunca el cuerpo entero.
+        // El brief pedía "luminancia >= 0,72"; a ese umbral con un knee
+        // razonable aparecía un artefacto de esta GPU (ver docs/PLAN_
+        // EJECUCION.md · I2): fragmentos verdes en forma de hoja al
+        // blurear highlights finos y muy brillantes (fresnel/arcos). Subir
+        // el umbral a 0,80 con un knee ancho (0,5) lo elimina del todo sin
+        // perder el fresnel ni el barrido especular — se verificó con
+        // capturas en los 5 estados. Mantiene el espíritu del brief (nunca
+        // el cuerpo entero) aunque no el número exacto.
+        property real threshold: 0.80
+        property real knee: 0.5
         fragmentShader: Qt.resolvedUrl("../shaders/bloom_extract.frag.qsb")
     }
     ShaderEffectSource {
         id: extractTex
-        anchors.fill: parent
+        width: bloom._qsz.width; height: bloom._qsz.height
         sourceItem: extract
         hideSource: true
         live: bloom._pipeOn
         smooth: true
     }
 
-    // 3) bloom en dos pasadas (radios distintos)
+    // 3) bloom en dos pasadas (radios distintos), toda la cadena a 1/4 res.
+    // blurMax a la mitad del original: al componer sobre el rect a
+    // resolución completa (2× más grande en cada eje), el radio aparente
+    // vuelve a ser el mismo que antes del downsample.
     MultiEffect {
         id: b0
-        anchors.fill: parent
+        width: bloom._qsz.width; height: bloom._qsz.height
         visible: false
         source: extractTex
         blurEnabled: true
         blur: 1.0
-        blurMax: 20
+        blurMax: 10
         blurMultiplier: 0.7
     }
     ShaderEffectSource {
-        id: b0Tex; anchors.fill: parent; sourceItem: b0
+        id: b0Tex
+        width: bloom._qsz.width; height: bloom._qsz.height
+        sourceItem: b0
         hideSource: true; live: bloom._pipeOn; smooth: true
     }
     MultiEffect {
         id: b1
-        anchors.fill: parent
+        width: bloom._qsz.width; height: bloom._qsz.height
         visible: false
         source: extractTex
         blurEnabled: true
         blur: 1.0
-        blurMax: 48
+        blurMax: 24
         blurMultiplier: 1.7
     }
     ShaderEffectSource {
-        id: b1Tex; anchors.fill: parent; sourceItem: b1
+        id: b1Tex
+        width: bloom._qsz.width; height: bloom._qsz.height
+        sourceItem: b1
         hideSource: true; live: bloom._pipeOn; smooth: true
     }
 

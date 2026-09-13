@@ -124,6 +124,34 @@ def test_read_filtra_por_fecha(tmp_path):
     assert "ayer" in de_ayer and "hoy" not in de_ayer
 
 
+def test_last_entry_vacio_devuelve_none(tmp_path):
+    a = _log(tmp_path)
+    assert a.last_entry() is None
+
+
+def test_last_entry_devuelve_la_mas_reciente(tmp_path):
+    a = _log(tmp_path)
+    for i in range(5):
+        p = ActionPlan(action=f"accion_{i}", risk=RiskLevel.EXECUTE)
+        p.status = ActionStatus.EXECUTED
+        a.record_plan(p, source="parser")
+    e = a.last_entry()
+    assert e is not None
+    assert e["tool"] == "accion_4"
+
+
+def test_last_entry_tras_rotacion_lee_el_fichero_activo(tmp_path):
+    a = _log(tmp_path, max_bytes=400, keep=2)
+    for i in range(60):
+        p = ActionPlan(action=f"accion_numero_{i:03d}", params={"relleno": "x" * 20},
+                       risk=RiskLevel.EXECUTE)
+        p.status = ActionStatus.EXECUTED
+        a.record_plan(p, source="parser")
+    e = a.last_entry()
+    assert e is not None
+    assert e["tool"] == "accion_numero_059"
+
+
 if __name__ == "__main__":
     import inspect
     import tempfile

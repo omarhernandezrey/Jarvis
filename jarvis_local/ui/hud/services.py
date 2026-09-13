@@ -119,6 +119,18 @@ def _read_memory():
         return {"auto_recall": False, "count": None}
 
 
+def _read_last_session():
+    """`ts` (ISO) de la última entrada de la auditoría D2, para el estado
+    vacío del HUD (FASE I · I5). `None` si no hay ninguna todavía — la vista
+    lo pinta como "—", nunca inventa una fecha."""
+    try:
+        from jarvis_local.safety.audit import audit
+        entry = audit.last_entry()
+        return entry.get("ts") if entry else None
+    except Exception:
+        return None
+
+
 def sample_all() -> dict:
     cpu, ram = _read_cpu_ram()
     online, model, ping = _read_ollama()
@@ -131,6 +143,7 @@ def sample_all() -> dict:
         "voice": _read_voice(),
         "tools": _read_tools(),
         "memory": _read_memory(),
+        "lastSession": _read_last_session(),
     }
 
 
