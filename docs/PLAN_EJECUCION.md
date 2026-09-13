@@ -932,7 +932,7 @@ usuario fijó tras el análisis G0.
   reglas están activas.
 - Si algo no llega al presupuesto, borrarlo con justificación. Nada en limbo.
 
-## FASE I — Interfaz: composición y acabado del HUD  🚧 EN CURSO (rama `feature/fase-i-interfaz`)
+## FASE I — Interfaz: composición y acabado del HUD  ✅ COMPLETA 2026-09-12 (merge `883367d`)
 
 Addendum 8.2–8.7. Toda captura de evaluación lleva ≥6 mensajes reales dentro
 (`scripts/hud_shot.py` lo siembra).
