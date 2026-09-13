@@ -922,7 +922,7 @@ usuario fijó tras el análisis G0.
       - Prerrequisito `ydotoold` + grupo `input` (OPERACION_MEMORIA.md §6):
         solo relevante si se reabre el teclado.
 
-## FASE H — Código muerto: integrar o borrar  ✅ COMPLETA 2026-09-12 (rama `feature/fase-h-codigo-muerto`)
+## FASE H — Código muerto: integrar o borrar  ✅ COMPLETA 2026-09-13 (merge `f3b6a95`)
 
 `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py`.
 - Visión: solo bajo petición explícita, una captura y un OCR por petición, sin
