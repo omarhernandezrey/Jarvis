@@ -476,6 +476,25 @@ def _parse_auditoria(m: str) -> IntentResult | None:
                         reason="Consultar la auditoría de acciones")
 
 
+# PLAN_EJECUCION FASE J · J3 — traza por petición (capas, tiempos, VERIFY).
+_TRIGGER_TRAZA = re.compile(
+    r'\btraza\s+de\s+(?:la\s+)?(?:tu\s+|mi\s+)?(?:ultima|anterior)?\s*peticion\b'
+    r'|\bque\s+paso\s+con\s+(?:mi|la|tu)\s+(?:ultima\s+)?peticion\b'
+    r'|\bcomo\s+resolviste\s+(?:eso|lo\s+anterior|mi\s+peticion)\b'
+    r'|\bque\s+capas?\s+(?:atravesaste|usaste|paso)\b'
+    r'|\bque\s+herramientas\s+usaste\s+(?:esta\s+vez|para\s+eso|para\s+lo\s+anterior)\b',
+    re.IGNORECASE)
+
+
+def _parse_traza(m: str) -> IntentResult | None:
+    mm = _sin_tildes(m).lower()
+    if not _TRIGGER_TRAZA.search(mm):
+        return None
+    return IntentResult(kind="tool_read", tool="trace_query",
+                        arguments={"n": 1},
+                        reason="Consultar la traza de la última petición")
+
+
 # PLAN_EJECUCION FASE E · E3 — procesos.
 _TRIGGER_LISTAR_PROC = re.compile(
     r'\bque\s+procesos?\b|\bprocesos?\s+(?:que|por|activos|abiertos|corriendo)\b'
@@ -1437,6 +1456,14 @@ def parse_intent(message: str) -> IntentResult:
     if es_multi_accion(m):
         return IntentResult(kind="chat", reason="Peticion multi-accion: la resuelve el agente")
 
+    # FASE J · J3 — traza de la última petición: nombra su objeto ("petición")
+    # de forma explícita, así que NO es una referencia ambigua a un turno
+    # anterior aunque contenga "la última" (lo que dispara `es_anaforica`).
+    # Va antes de esa puerta a propósito, igual que `es_multi_accion`.
+    traza_temprana = _parse_traza(m)
+    if traza_temprana is not None:
+        return traza_temprana
+
     # Referencia a un turno anterior: el parser no tiene contexto y acabaria
     # inventando el argumento. Que la resuelva el agente, que si lo tiene.
     if es_anaforica(m):
@@ -1491,6 +1518,9 @@ def parse_intent(message: str) -> IntentResult:
     auditoria = _parse_auditoria(m)
     if auditoria is not None:
         return auditoria
+
+    # (traza por petición, FASE J · J3: se comprueba ANTES de `es_anaforica`,
+    # ver más arriba en `parse_intent` -- "la última" la dispararía si no.)
 
     # --- BLUETOOTH (FASE F · F3): antes de RED (para que "desconecta los
     #     cascos" no sea net_disconnect) y antes de media/apps ---

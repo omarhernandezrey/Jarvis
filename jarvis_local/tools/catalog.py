@@ -489,6 +489,11 @@ def _audit_query(dia: str = "hoy"):
     return query_audit(dia)
 
 
+def _trace_query(n: int = 1):
+    from jarvis_local.tools.trace_query import query_trace
+    return query_trace(n)
+
+
 def _remember(text: str):
     """Guarda un dato en la memoria permanente, COMPROBANDO que quedó escrito.
 
@@ -938,6 +943,15 @@ CONTRACTS: list[ToolContract] = [
                  _audit_query, RiskLevel.READ, llm_visible=False,
                  verify=_V_LECTURA, revert="n/a",
                  parser_intents=("audit_query",)),
+
+    ToolContract("consultar_traza",
+                 "Dice qué capas de la cascada atravesó la última petición (o "
+                 "las últimas N), cuánto tardó cada una, qué hizo el agente si "
+                 "intervino y qué dijo VERIFY. Solo lectura (FASE J · J3).",
+                 _obj({"n": _int("cuántas peticiones recientes, por defecto 1")}, []),
+                 _trace_query, RiskLevel.READ, llm_visible=False,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("trace_query",)),
 
     ToolContract("leer_archivo",
                  "Lee en voz alta el contenido de un archivo de texto (txt, md, "

@@ -1554,3 +1554,51 @@ juntos.
         lo dice). Test nuevo `test_chat_respuesta_vacia_no_se_disculpa_sin_
         informar`. Lección para el propio proceso de auditoría: sin `-i`,
         un grep de "disculpa" no encuentra la mitad de las disculpas.
+
+- [x] **J3 — Observabilidad: una traza por petición.** No se instrumentó de
+      cero: `jarvis.py` ya sabía qué capa resolvía cada petición
+      (`last_reply_kind`, aunque agrupaba parser/agente/encadenado bajo el
+      mismo valor "tool"), `decisions.jsonl` ya registraba las decisiones
+      del agente y `audit.jsonl` (D2) ya traía el resultado real de VERIFY.
+      Faltaba (a) un registro por petición de qué capas se atravesaron y
+      cuánto tardó cada una, y (b) una vista que uniera los tres.
+      - **Sin id de petición compartido explícito**: una petición de JARVIS
+        es secuencial y rápida, así que la ventana de tiempo del propio
+        turno (`[ts_inicio, ts_fin]`, con 2 s de margen) basta para saber
+        sin ambigüedad qué líneas de `decisions.jsonl`/`audit.jsonl` le
+        pertenecen — no hizo falta tocar las firmas de `log_decision`,
+        `audit.record` ni ningún call-site de herramientas.
+      - `jarvis_local/observability.py` (nuevo): `record()` escribe una
+        línea por petición en `logs/trace.jsonl` (capas atravesadas con su
+        tiempo en ms y si coincidieron, capa que resolvió, resultado,
+        tiempo total); `traza(n)` lee las últimas `n` y las enriquece
+        cruzando por ventana de tiempo con `decisions.jsonl`/`audit.jsonl`;
+        `formatear()` da el texto legible. Nunca lanza excepción — una
+        petición real no se cae porque falle su propia observabilidad.
+      - `jarvis.py::chat()`: cada retorno marca su propia capa
+        (`exacta`/`rapida`/`encadenada`/`parser`/`agente`/`llm_directo`/
+        `bloqueado_secreto`/`error`) en vez de agruparlas todas bajo
+        "tool" (ese campo, `last_reply_kind`, se deja intacto — lo usa el
+        HUD — esto es aditivo); un `finally` en el mismo `try` ya existente
+        llama a `observability.record(...)` sin importar por dónde salió
+        la función, incluidas las tres rutas de excepción.
+      - **Consultable de verdad, no solo por CLI**: nuevo intent de parser
+        ("traza de la última petición", "qué pasó con mi última petición",
+        "qué capas atravesaste") → `jarvis_local/tools/trace_query.py` →
+        `ToolContract("consultar_traza", ..., llm_visible=False)`, mismo
+        patrón que `consultar_auditoria` (D2): solo lectura, camino rápido,
+        el LLM no la ve. También queda `python -m jarvis_local.observability
+        [n]` para inspección directa.
+      - **Hallazgo de parser en el camino**: "la última" en "traza de la
+        última petición" disparaba `es_anaforica()` (el detector genérico de
+        referencias a un turno anterior) y la mandaba al agente en vez de al
+        parser — un falso positivo, porque "petición" nombra su objeto de
+        forma explícita, no depende de contexto previo. Se adelantó el
+        chequeo de traza a ANTES de esa puerta (mismo patrón que
+        `es_multi_accion`), sin tocar `es_anaforica`/`_DEICTICO` en sí:
+        "abreme la última" (genuina referencia ambigua) sigue yendo al
+        agente igual que antes — verificado con test dedicado.
+      - Verificado en vivo de punta a punta (no solo con mocks aislados):
+        una petición real por `Jarvis.chat()` seguida de "traza de la
+        última petición" devuelve el texto formateado con la capa, el
+        tiempo y el resultado de la petición anterior.
