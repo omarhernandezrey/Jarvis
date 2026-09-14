@@ -9,6 +9,7 @@ cuadrar lo dice — nunca lo presenta como hecho.
 import datetime
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -391,27 +392,33 @@ def test_take_note_no_persiste_se_detecta_y_reintenta_con_fsync():
     from jarvis_local.tools import notes
 
     tmpdir = tempfile.mkdtemp()
-    objetivo = os.path.join(tmpdir, f"nota_{datetime.date.today():%Y-%m-%d}.txt")
-    with patch.object(notes, "NOTES_DIR", tmpdir), \
-         patch.object(notes, "_append_line", lambda p, ln: None):
-        plan = notes.take_note("comprar pan", open_notepad=False)
-    assert plan.status == ActionStatus.EXECUTED
-    assert plan.params["verify"]["ok"] is True
-    assert "fsync" in plan.reason
-    assert "comprar pan" in open(objetivo, encoding="utf-8").read()
+    try:
+        objetivo = os.path.join(tmpdir, f"nota_{datetime.date.today():%Y-%m-%d}.txt")
+        with patch.object(notes, "NOTES_DIR", tmpdir), \
+             patch.object(notes, "_append_line", lambda p, ln: None):
+            plan = notes.take_note("comprar pan", open_notepad=False)
+        assert plan.status == ActionStatus.EXECUTED
+        assert plan.params["verify"]["ok"] is True
+        assert "fsync" in plan.reason
+        assert "comprar pan" in open(objetivo, encoding="utf-8").read()
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_take_note_no_persiste_de_ninguna_forma_es_error():
     from jarvis_local.tools import notes
 
     tmpdir = tempfile.mkdtemp()
-    with patch.object(notes, "NOTES_DIR", tmpdir), \
-         patch.object(notes, "_append_line", lambda p, ln: None), \
-         patch.object(notes, "_append_line_fsync", lambda p, ln: None):
-        plan = notes.take_note("nota perdida", open_notepad=False)
-    assert plan.status == ActionStatus.ERROR
-    assert plan.params["verify"]["ok"] is False
-    assert "no aparece" in plan.result.lower()
+    try:
+        with patch.object(notes, "NOTES_DIR", tmpdir), \
+             patch.object(notes, "_append_line", lambda p, ln: None), \
+             patch.object(notes, "_append_line_fsync", lambda p, ln: None):
+            plan = notes.take_note("nota perdida", open_notepad=False)
+        assert plan.status == ActionStatus.ERROR
+        assert plan.params["verify"]["ok"] is False
+        assert "no aparece" in plan.result.lower()
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_remember_persistencia_fallida_se_detecta_y_reintenta():
@@ -442,6 +449,7 @@ def test_remember_persistencia_fallida_se_detecta_y_reintenta():
         assert textos.count("prefiero llamadas cortas") == 1
     finally:
         cfgmod.BASE_DIR = orig_base
+        shutil.rmtree(base, ignore_errors=True)
 
 
 if __name__ == "__main__":
