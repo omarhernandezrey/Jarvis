@@ -1602,3 +1602,69 @@ juntos.
         una petición real por `Jarvis.chat()` seguida de "traza de la
         última petición" devuelve el texto formateado con la capa, el
         tiempo y el resultado de la petición anterior.
+
+- [x] **J4 — Límites de recursos.** Antes de escribir nada se auditó qué ya
+      existía: gran parte del techo ya estaba puesto en fases anteriores, y
+      J4 se centró en cerrar los huecos reales, no en reinventar lo que ya
+      funcionaba.
+      - **Techo de llamadas al LLM por petición: ya existía.**
+        `agent/loop.py`: `MAX_STEPS = 2` (pasos/herramientas encadenadas por
+        cláusula) + `MAX_REINTENTOS = 1` (correcciones ante salida inválida
+        del modelo) acotan el bucle (`for _paso in range(max_steps +
+        MAX_REINTENTOS)`); `MAX_STEPS_ENCADENADO = 4` acota cuántas
+        cláusulas de una petición multi-acción se procesan. Un turno no
+        puede desatar una cadena indefinida de llamadas al modelo. Sin
+        cambios — solo se verificó y se deja documentado aquí porque J4 lo
+        pedía explícitamente.
+      - **Techo de memoria: en gran parte ya existía, con un hueco real.**
+        `agent/memory_guard.py` (FASE E · E0) ya detecta presión de RAM real
+        vía `/proc/meminfo` y descarga el modelo de embeddings si hace
+        falta; `ConversationHistory` (`memory/history.py`) ya recorta el
+        historial a `max_history*2` mensajes; `storage/memory.py` ya limita
+        la memoria persistente a `MAX_MEMORIES = 100` entradas; y
+        `decisions.jsonl`/`trace.jsonl` ya rotaban por número de líneas
+        (FASE C / J3). El hueco real: `safety/logger.py`
+        (`actions.log`/`errors.log`) NO rotaba — y se escribe en CADA
+        `chat()`, así que en una sesión larga crece sin límite. Se añadió
+        `ActionLogger._rotar()`, mismo patrón de rotación por líneas
+        (`_MAX_LINEAS = 5000`) que `decisions.jsonl`. 3 tests nuevos
+        (`test_logger.py`).
+      - **Timeouts en llamadas externas: auditoría completa de
+        `subprocess`/`httpx`/`gdbus`, con el precedente de H (`ImageGrab`
+        colgado sin timeout) como guía.** `httpx.Client` ya lleva
+        `timeout=120` (config `ollama.timeout`) a nivel de cliente, así que
+        toda petición a Ollama hereda un techo aunque la llamada individual
+        no pase `timeout=` explícito — no hacía falta tocar nada ahí.
+        `gdbus` (`tools/ventanas.py`) ya llevaba `timeout=15`. De los 37
+        call-sites de `subprocess.run`/`Popen` del repo, se encontraron y
+        corrigieron 8 sin timeout que sí pueden bloquear el hilo que atiende
+        la petición:
+        - `tools/reader.py` (`xclip -o`, portapapeles): sin timeout.
+        - `tools/power.py`: `shutdown`/`sudo -n shutdown` (Windows y Linux),
+          `loginctl lock-session`, `systemctl suspend`: ninguno llevaba
+          timeout.
+        - `tools/media_controls.py`: `wpctl`, `pactl`, `playerctl`: ninguno
+          llevaba timeout (a diferencia de `network.py`/`brightness.py`/
+          `bluetooth.py`/`services.py`, que ya lo tenían desde D/F/G).
+        Se añadió `timeout=` a los ocho, y se ampliaron los `except OSError`
+        que ya envolvían esas llamadas a `except (OSError,
+        subprocess.TimeoutExpired)` donde hacía falta para no cambiar el
+        comportamiento observable (degradar con gracia en vez de colgar,
+        no en vez de fallar con una excepción sin capturar). Los `Popen`
+        de lanzar aplicaciones (`apps.py`, `desktop_actions.py`,
+        `spotify.py`, `notes.py`) quedan fuera: no se bloquea en ellos (no
+        hay `.wait()`/`.communicate()` sin timeout después), así que no
+        pueden colgar el turno.
+        - **Fuera de alcance, documentado y no tocado**:
+          `ui/hud/shaders/build.py` (script de build manual del desarrollador,
+          `if __name__ == "__main__"`, no se importa ni se ejecuta nunca
+          durante una petición real) se deja sin timeout a propósito — no es
+          una "llamada externa" en el sentido de J4 (nada que un usuario
+          dispare en una petición depende de él).
+        7 tests nuevos (`test_reader.py`, `test_power.py`,
+        `test_media_controls.py`): confirman que el timeout se pasa de
+        verdad a `subprocess.run`, y que un `TimeoutExpired` real (inyectado
+        con monkeypatch, no solo revisado por lectura de código) degrada con
+        gracia en vez de propagar una excepción sin capturar.
+      - Protocolo completo tras cada cambio: `ruff check .` limpio, suite
+        completa sin regresiones.

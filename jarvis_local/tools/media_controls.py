@@ -140,14 +140,16 @@ def _get_endpoint_volume():
 # --- PipeWire: wpctl (Linux) ---
 
 def _wpctl(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["wpctl", *args], capture_output=True, text=True)
+    return subprocess.run(["wpctl", *args], capture_output=True, text=True,
+                          timeout=10)
 
 
 def _pactl(*args: str) -> subprocess.CompletedProcess:
     """Estrategia DISTINTA a wpctl para el reintento de VERIFY (D1): habla el
     protocolo pulse (PipeWire lo expone vía pipewire-pulse). Si no está
     instalado, lanza FileNotFoundError y el llamador lo trata como "no pude"."""
-    return subprocess.run(["pactl", *args], capture_output=True, text=True)
+    return subprocess.run(["pactl", *args], capture_output=True, text=True,
+                          timeout=10)
 
 
 _PA_SINK = "@DEFAULT_SINK@"
@@ -165,7 +167,7 @@ def _get_volume_linux() -> tuple[int | None, bool]:
         nivel = round(float(partes[1]) * 100)
         muteado = "[MUTED]" in out.stdout
         return nivel, muteado
-    except (OSError, ValueError, IndexError):
+    except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
         return None, False
 
 
@@ -429,7 +431,8 @@ def volume_mute(mute: bool = True) -> ActionPlan:
 
 
 def _playerctl(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["playerctl", *args], capture_output=True, text=True)
+    return subprocess.run(["playerctl", *args], capture_output=True, text=True,
+                          timeout=10)
 
 
 def _player_status() -> str | None:
@@ -439,7 +442,7 @@ def _player_status() -> str | None:
         return None
     try:
         out = _playerctl("status")
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout.strip() if out.returncode == 0 else None
 
@@ -452,7 +455,7 @@ def _player_fingerprint() -> str | None:
     try:
         out = _playerctl("metadata", "--format",
                          "{{title}}|{{artist}}|{{mpris:trackid}}")
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout.strip() if out.returncode == 0 else None
 

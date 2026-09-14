@@ -9,6 +9,11 @@ from pathlib import Path
 from jarvis_local.config import BASE_DIR, get_config
 from jarvis_local.safety.secrets import redact_secrets
 
+# PLAN_EJECUCION FASE J · J4 — techo de memoria: sin esto, actions.log/
+# errors.log crecen sin limite en una sesion larga (se escriben en CADA
+# chat()). Rotacion simple por lineas, igual que decisions.jsonl y trace.jsonl.
+_MAX_LINEAS = 5000
+
 
 def _clean(text: str | None) -> str | None:
     """Redacta secretos antes de que un texto llegue al log en disco.
@@ -53,6 +58,16 @@ class ActionLogger:
     def _append_json(self, path: Path, entry: dict):
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self._rotar(path)
+
+    def _rotar(self, path: Path) -> None:
+        try:
+            lineas = path.read_text(encoding="utf-8").splitlines()
+            if len(lineas) > _MAX_LINEAS:
+                path.write_text("\n".join(lineas[-_MAX_LINEAS:]) + "\n",
+                                encoding="utf-8")
+        except OSError:
+            pass
 
     def read_actions(self, limit: int = 50) -> list[dict]:
         return self._read_json_lines(self.actions_path, limit)
