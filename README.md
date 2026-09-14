@@ -244,6 +244,14 @@ Habla o escribe con naturalidad — o usa comandos directos:
 salir
 ```
 
+### Lanzador de escritorio (sin terminal)
+
+`bash scripts/install_desktop_entry.sh` añade "JARVIS" al menú de
+aplicaciones de GNOME, con icono propio y comprobación de precondiciones
+(Ollama vivo, memoria suficiente) antes de abrir la ventana. Detalle
+completo, incluidas las opciones de autoarranque (no activado por defecto)
+y su coste de memoria, en [`docs/LANZADOR_ESCRITORIO.md`](docs/LANZADOR_ESCRITORIO.md).
+
 ---
 
 ## 🏗️ Estructura

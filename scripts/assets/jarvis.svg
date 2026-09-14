@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Icono de JARVIS: el orbe del HUD, paleta tomada 1:1 de
+       jarvis_local/ui/hud/qml/Design.qml (bgVoid/coreDeep/azure/cyan/coreHot).
+       Oscuro en el centro, fresnel cian en el limbo, highlight arriba a la
+       izquierda: misma lógica visual que el núcleo del HUD (FASE I, I2). -->
+  <defs>
+    <radialGradient id="orb" cx="50%" cy="50%" r="52%">
+      <stop offset="0%"  stop-color="#04070D"/>
+      <stop offset="55%" stop-color="#0A2A6E"/>
+      <stop offset="88%" stop-color="#1D5CFF"/>
+      <stop offset="100%" stop-color="#37D2FF"/>
+    </radialGradient>
+  </defs>
+  <circle cx="64" cy="64" r="52" fill="url(#orb)"/>
+  <circle cx="64" cy="64" r="52" fill="none" stroke="#37D2FF" stroke-width="2" opacity="0.55"/>
+  <circle cx="47" cy="45" r="7" fill="#DCF6FF"/>
+  <circle cx="47" cy="45" r="3" fill="#FFFFFF"/>
+</svg>

@@ -158,6 +158,11 @@ def main() -> int:
     app = QGuiApplication(sys.argv)
     app.setApplicationName("JARVIS")
     app.setOrganizationName("JARVIS")
+    # Identifica la ventana ante el compositor con el mismo id que el
+    # .desktop instalado (scripts/jarvis.desktop -> jarvis.desktop): sin
+    # esto, Qt usa el nombre del ejecutable ("python3") como WM_CLASS/app_id
+    # y GNOME no puede agrupar la ventana con su icono en el dash/dock.
+    app.setDesktopFileName("jarvis")
 
     engine = create_engine(app)
     if not engine.rootObjects():

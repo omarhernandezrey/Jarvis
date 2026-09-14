@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=JARVIS
+Comment=Asistente de IA local por voz
+Exec=__REPO__/scripts/jarvis_launch.sh
+Icon=jarvis
+Terminal=false
+Categories=Utility;
+StartupWMClass=jarvis
+StartupNotify=true
