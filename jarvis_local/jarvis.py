@@ -409,7 +409,13 @@ class Jarvis:
                 response = "".join(tokens)
 
             if not response:
-                response = "Lo siento, no pude generar una respuesta. Intenta de nuevo."
+                # FASE J · J2: nunca disculparse sin decir qué pasó. Aquí lo
+                # único que se sabe de verdad es que el modelo respondió sin
+                # texto (no es una excepción; esa va por el except de abajo).
+                response = ("El modelo no devolvió texto, senor. Puede ser un "
+                            "vacío puntual del streaming: repita la pregunta; "
+                            "si sigue pasando, revise `ollama logs` o pruebe "
+                            "con una frase más corta.")
 
             response = response.strip()
             self.history.add_assistant(response)

@@ -158,8 +158,11 @@ def main():
             with _silencio():
                 try:
                     respuesta = jarvis.chat(texto)
-                except Exception:
-                    respuesta = "Disculpe senor, tuve un inconveniente tecnico."
+                except Exception as e:
+                    # FASE J · J2: una disculpa sin información no dice nada
+                    # accionable — se informa el fallo real, no se pide perdón.
+                    _log(f"[error en chat] {e}")
+                    respuesta = f"Tuve un problema tecnico, senor: {e}"
 
             if respuesta:
                 _log(f"[JARVIS] {respuesta[:100]}")

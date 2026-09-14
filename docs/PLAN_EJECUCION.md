@@ -1541,3 +1541,16 @@ juntos.
         error en vez de una frase hueca. Test nuevo
         (`test_run_agent_ollama_caido_da_accion_concreta`) y el existente
         actualizado para no depender de la frase vieja.
+      - **Corrección sobre esta misma auditoría**: el primer grep de J2 salió
+        sin `-i`, así que "Lo siento" (con mayúscula) no apareció y el
+        "cero coincidencias" reportado arriba fue incompleto. Repetido bien
+        (case-insensitive) apareció el resto de disculpas vacías del
+        sistema: `jarvis.py:412` — streaming sin texto daba *"Lo siento, no
+        pude generar una respuesta. Intenta de nuevo"* (no decía qué se
+        sabía, ahora dice que el modelo no devolvió texto y qué probar); y
+        `voz.py:162` — cualquier excepción en `chat()` desde el bucle de voz
+        daba *"Disculpe senor, tuve un inconveniente tecnico"* tragándose el
+        error real con un `except Exception:` desnudo (ahora lo registra y
+        lo dice). Test nuevo `test_chat_respuesta_vacia_no_se_disculpa_sin_
+        informar`. Lección para el propio proceso de auditoría: sin `-i`,
+        un grep de "disculpa" no encuentra la mitad de las disculpas.
