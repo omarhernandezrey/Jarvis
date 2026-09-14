@@ -46,8 +46,14 @@ ollama:
   agent_num_ctx: 2048
   agent_num_predict: 60
   host: http://localhost:11434
-  # C4: mantener el modelo en RAM entre turnos (evita ~10 s de recarga)
-  keep_alive: 30m
+  # C4: mantener el modelo en RAM entre turnos (evita recarga)
+  # Bajado de 30m a 10m (2026-09-14): la recarga aislada de ambos modelos
+  # (load_duration medido con la API directa) es ~12 s, frente a liberar
+  # ~3,6 GB 20 min antes en una maquina con solo ~1,5 GB de margen antes de
+  # paginar. Detalle completo, incluida la investigacion de por que el
+  # primer chat "en caliente" de una sesion puede tardar mucho mas que eso
+  # (no es keep_alive), en docs/OPERACION_MEMORIA.md.
+  keep_alive: 10m
   # Modelo unico de JARVIS: llama3.2:3b para routing (agent_model) y para el
   # chat (model). JARVIS funciona solo con este modelo instalado.
   #   agent_model -> tool calling / router      model -> conversacion

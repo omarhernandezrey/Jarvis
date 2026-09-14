@@ -133,3 +133,76 @@ Resolver esto **antes** de escribir el código de G (instalar, arrancar
 no a mitad de la implementación. Si no se puede dejar operativo, G se
 implementa igual pero se marca NO VERIFICABLE en vivo desde el principio, como
 F2/F3.
+
+## 5. `keep_alive` bajado de 30m a 10m (2026-09-14) — medición y lo que se encontró de paso
+
+Se bajó `ollama.keep_alive` de 30m a 10m para liberar los ~3,6 GB de
+bge-m3+llama3.2:3b residentes 20 min antes tras un solo uso. Antes de
+decidir se midió el coste real de la recarga.
+
+### La recarga en sí: barata
+
+Aislada con la API directa de Ollama (`load_duration` de la respuesta, sin
+generación de por medio): **bge-m3 ~5,7 s + llama3.2:3b ~6,4 s ≈ 12 s**
+combinados. Ese es el coste real y limpio de `keep_alive` expirando — barato
+frente a los 10-20 minutos de RAM que se ahorran.
+
+### Lo que casi se malinterpreta: "71 s en caliente" no era eso
+
+La primera medición end-to-end (`Jarvis().chat()`, modelos ya en RAM) dio
+**71-92 s hasta la respuesta completa**, muy por encima de los "≤3 s al
+primer token" de FASE C. Antes de concluir que era una regresión, se separó
+**primer token** de **generación completa** (que es lo que medía FASE C, no
+lo mismo) usando la traza de J3 y un parche temporal a `OllamaClient.chat`
+que cronometra el primer chunk del streaming:
+
+- La traza (`python -m jarvis_local.observability`) confirmó que la petición
+  pasó por **chat directo** (`llm_directo`), no por el agente — `_try_agent`
+  se comprobó y salió con `llm_calls=0` (nunca tocó el LLM).
+- Separando primer token de generación completa, el "71 s" resultó ser
+  **tiempo hasta la respuesta ENTERA**, no hasta el primer token — exactamente
+  la confusión de métrica que FASE C ya advertía que era fácil cometer.
+
+### La causa real del primer-token lento: no es keep_alive, son dos cosas del entorno de medición
+
+1. **Historial acumulado**: `data/history.json` había llegado a su tope de
+   40 mensajes (de uso/pruebas reales de esta sesión de trabajo). Cada
+   proceso nuevo reenvía el historial completo; con 40 mensajes de por
+   medio, incluso "en caliente" el primer token tardaba 46-92 s.
+   Con el historial realmente vacío (probado en un directorio aparte, sin
+   tocar los datos reales), el turno 1 bajó a **10,8 s**.
+2. **Contención de CPU**: esta misma máquina corría a la vez la sesión de
+   Claude Code que hizo la medición, Chrome, y el propio `ollama serve` —
+   `load average` de ~2,4 sobre 4 CPUs durante la prueba. Con historial
+   limpio, 3 turnos seguidos dieron **10,8 s / 85,8 s / 3,7 s** — variación
+   de más de 20× entre turnos por lo demás iguales. El turno más rápido
+   (3,7 s) cae dentro del objetivo de FASE C; el pico de 85,8 s es ruido de
+   contención, no un fallo del caché.
+
+**Verificado que el caché de prefijo de C4 sigue funcionando de verdad**:
+aislado con la API directa de Ollama, sin JARVIS de por medio, prefill de un
+prompt de ~414 tokens tardó 26,2 s en el turno 1 y **1,3-1,5 s** en los
+turnos 2 y 3 (mismo prompt, creciendo solo por el mensaje nuevo) — el
+mecanismo de C4 está intacto. Se probó también que intercalar una llamada a
+bge-m3 (como hace `auto_recall` en cada turno real) NO invalida el caché de
+llama3.2:3b.
+
+**Conclusión: no hay regresión de código en C4.** Lo que sí es real y vale
+la pena tener presente: el primer token de una sesión con historial ya
+acumulado (normal tras un rato de uso) va a tardar más que en una sesión
+recién empezada, y esta máquina no tiene margen para absorber trabajo de
+CPU concurrente sin que la latencia se dispare — ninguna de las dos cosas
+es nueva (la segunda ya la nombraba el protocolo de `PLAN_EJECUCION.md`:
+"un lanzamiento de GUI por sesión... sin subagentes en paralelo"), pero
+esta medición las hizo visibles con números concretos.
+
+**Límite de esta medición**: no se puede volver a medir "limpio" (sin
+contención) con Claude Code corriendo, porque la propia medición requiere
+Claude Code. Un número definitivo de primer-token en condiciones reales de
+uso (JARVIS solo, nada más corriendo) queda pendiente para quien quiera
+repetirlo fuera de una sesión de agente.
+
+**Nota de higiene**: las preguntas de prueba de esta investigación se
+colaron en el `data/history.json` real (persistencia entre procesos); se
+limpiaron después, dejando el historial real tal como estaba antes de
+empezar a medir.

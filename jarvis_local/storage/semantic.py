@@ -57,7 +57,7 @@ def embed(texts: list[str]) -> list[list[float]] | None:
         # chat_with_tools() ya evitan. Mismo valor que el resto de llamadas.
         r = requests.post(f"{_host()}/api/embed",
                           json={"model": EMBED_MODEL, "input": texts,
-                                "keep_alive": get_config()["ollama"].get("keep_alive", "30m")},
+                                "keep_alive": get_config()["ollama"].get("keep_alive", "10m")},
                           timeout=_TIMEOUT)
         r.raise_for_status()
         vectores = r.json().get("embeddings", [])

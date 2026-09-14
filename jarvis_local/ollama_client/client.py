@@ -155,8 +155,10 @@ class OllamaClient:
             "messages": messages,
             "stream": stream,
             # C4: mantener el modelo cargado en RAM entre turnos; la primera
-            # llamada tras inactividad pagaba ~10 s de recarga.
-            "keep_alive": cfg.get("keep_alive", "30m"),
+            # llamada tras inactividad paga ~12 s de recarga (load_duration
+            # de bge-m3 + llama3.2:3b medidos en esta maquina) ademas del
+            # prefill normal (docs/OPERACION_MEMORIA.md).
+            "keep_alive": cfg.get("keep_alive", "10m"),
             "options": {
                 "num_ctx": cfg.get("num_ctx", 2048),
                 "num_predict": cfg.get("num_predict", 120),
@@ -258,7 +260,7 @@ class OllamaClient:
             "messages": messages,
             "tools": tools,
             "stream": False,
-            "keep_alive": cfg.get("keep_alive", "30m"),   # C4
+            "keep_alive": cfg.get("keep_alive", "10m"),   # C4
             "options": {
                 "num_ctx": cfg.get("agent_num_ctx", 2048),
                 # C4: el router ELIGE una herramienta, no redacta. 60 tokens
@@ -303,7 +305,7 @@ class OllamaClient:
             "messages": messages,
             "format": schema,
             "stream": False,
-            "keep_alive": cfg.get("keep_alive", "30m"),
+            "keep_alive": cfg.get("keep_alive", "10m"),
             "options": {
                 "num_ctx": cfg.get("agent_num_ctx", 2048),
                 # el JSON de decisión es más largo que un tool_call suelto:

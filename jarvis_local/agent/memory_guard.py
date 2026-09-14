@@ -3,8 +3,9 @@
 `docs/OPERACION_MEMORIA.md` documenta la política; esto la implementa. Sin
 `psutil` ni `fork`: una lectura de `/proc/meminfo`.
 
-Con bge-m3 (~1,3 GB) + llama3.2:3b (~2,3 GB) residentes (`keep_alive: 30m` de
-C4/C5) sobre un escritorio ya pesado, este equipo entra en swap y cada turno
+Con bge-m3 (~1,3 GB) + llama3.2:3b (~2,3 GB) residentes (`keep_alive: 10m`
+desde 2026-09-14; `30m` original de C4/C5) sobre un escritorio ya pesado,
+este equipo entra en swap y cada turno
 del agente pasa de segundos a minutos. La FASE E añade trabajo por turno, así
 que:
 
