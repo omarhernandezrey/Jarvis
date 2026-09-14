@@ -1512,3 +1512,32 @@ juntos.
         contra hardware real".
       - No se duplicó ni se re-escribió la cobertura existente — habría sido
         trabajo redundante sobre algo que ya funciona.
+
+- [x] **J2 — Comportamiento ante el fallo.** Auditoría del sistema completo,
+      con atención especial a F y G (que no tuvieron el barrido dedicado que
+      D sí tuvo — `test_outcome_honesto.py`). Método: lectura directa de
+      cada punto de salida `ERROR`/`BLOCKED` en `brightness.py`,
+      `network.py`, `bluetooth.py`, `ventanas.py`, `clipboard.py` (28 puntos
+      de salida en total), más `grep` dirigido a tres patrones concretos en
+      todo `jarvis_local/`: lenguaje de disculpa sin información ("lo
+      siento", "disculpa"), mensajes vagos genéricos ("hubo un error",
+      "algo salió mal") y fugas de excepción cruda sin contexto.
+      - **F y G: limpio.** Cero coincidencias en los tres greps. Cada punto
+        de salida revisado nombra la herramienta que falta, el motivo
+        concreto y, cuando aplica, el comando exacto para arreglarlo
+        (`instala brightnessctl`, `sudo apt install libglib2.0-bin`, el
+        camino de instalación de la extensión de ventanas con el archivo de
+        recuperación). El único `except Exception` que no es un `bool`
+        fail-open de config (`ventanas.py:118`, interpretar la respuesta de
+        la extensión) incluye el detalle del error real, no un genérico.
+      - **Hallazgo real, fuera de F/G**: `agent/loop.py`, la ruta cuando el
+        LLM falla técnicamente (no timeout) daba *"Tuve un inconveniente al
+        comunicarme con el modelo, senor."* — ni decía qué pasó ni qué
+        hacer, la propia disculpa vacía que J2 pide eliminar. Es además la
+        ruta que se dispara con el fallo más común en la práctica: Ollama
+        no está corriendo. Corregido en su propio bloque: si el error es de
+        conexión rehusada (Ollama caído), mensaje con la causa Y la acción
+        (`ollama serve`); cualquier otro fallo técnico, el detalle real del
+        error en vez de una frase hueca. Test nuevo
+        (`test_run_agent_ollama_caido_da_accion_concreta`) y el existente
+        actualizado para no depender de la frase vieja.
