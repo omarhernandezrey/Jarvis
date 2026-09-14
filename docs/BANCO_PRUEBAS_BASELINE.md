@@ -636,6 +636,17 @@ desconocido" (verify `None` → salvedad, jamás éxito). Emparejar dispositivos
 Bluetooth nuevos y encender/apagar el adaptador quedan **fuera** de F3: el
 parser lo detecta y lo explica en vez de fingir.
 
+> **No verificable en vivo (límite de hardware, no del código)**: las filas
+> EFECTO/FALLO FORZADO de WiFi y Bluetooth de arriba ejercitan `nmcli`/
+> `bluetoothctl` **simulados** (`monkeypatch`), no una radio real — esta
+> máquina no tiene WiFi operativo (Broadcom BCM43228 sin driver `wl`/
+> `broadcom-sta`, ninguna interfaz `wl*`) ni un dispositivo Bluetooth que
+> llegue a quedar emparejado (*bonded*) el tiempo suficiente para ejercitar
+> `bt_connect`/`bt_disconnect` de verdad. Es un límite PERMANENTE de esta
+> máquina, documentado con el detalle completo en `PLAN_EJECUCION.md` ·
+> FASE F2/F3 — no confundir "test verde" con "verificado contra hardware
+> real" para estos dos casos.
+
 ### 15.6 FASE F (segunda mitad) — ventanas en Wayland (F4.2)
 
 | Clase | Caso | Desenlace exigido |

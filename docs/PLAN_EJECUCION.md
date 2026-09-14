@@ -1488,14 +1488,27 @@ juntos.
   de la atmósfera; revisadas de refilón en las mismas capturas sin nada que
   objetar.
 
-## FASE J — Endurecer
+## FASE J — Endurecer  🚧 EN CURSO (rama `feature/fase-j-endurecer`)
 
-- Ampliar el banco a las capacidades de E, F, G.
-- Cada ruta de error: JARVIS dice qué falló, por qué y qué hacer. Nunca inventa
-  éxito ni se disculpa en vez de informar.
-- Una traza por petición: capas, tiempo por capa, herramientas, resultado de
-  las verificaciones.
-- Techo de memoria, techo de llamadas al LLM por petición, timeouts en toda
-  llamada externa.
-- `test_alarma_suena`: inyectarle el reloj (un test flaky normaliza los fallos).
-- Cerrar con evaluación honesta de dónde sigue frágil JARVIS.
+Última fase. Un commit por punto. Si se alarga, se para donde se esté y STOP.
+
+- [x] **J1 — Banco ampliado.** Premisa de partida ("faltan las capacidades de
+      F y G") **incorrecta — comprobado antes de escribir nada**: esa
+      cobertura ya existía, hecha durante las propias FASE F y G, no en esta
+      fase. `test/test_banco_efecto_fallo.py` ya tenía 41 casos (D5 + FASE E
+      + FASE F + FASE G) con EFECTO y FALLO FORZADO para brillo, red/WiFi,
+      Bluetooth, ventanas y portapapeles — verificado corriéndolos: los 41
+      pasan, más `test_brightness.py`/`test_network.py`/`test_bluetooth.py`/
+      `test_ventanas.py`/`test_clipboard.py` (108 casos en total,
+      `docs/BANCO_PRUEBAS_BASELINE.md` §15.4-15.7). El límite de hardware de
+      WiFi/Bluetooth ("no verificable en vivo, límite permanente, Broadcom
+      BCM43228 sin driver") también ya estaba documentado, con detalle, en
+      la sección F2/F3 de este mismo archivo.
+      - **Único hueco real encontrado**: esa nota de "no verificable en vivo"
+        vivía solo aquí, no en `BANCO_PRUEBAS_BASELINE.md` — quien lea SOLO
+        el doc del banco no la veía. Añadida una nota cruzada en §15.5,
+        junto a las filas de WiFi/Bluetooth, para que el banco sea
+        autocontenido en este punto: "test verde" ahí no es "verificado
+        contra hardware real".
+      - No se duplicó ni se re-escribió la cobertura existente — habría sido
+        trabajo redundante sobre algo que ya funciona.
