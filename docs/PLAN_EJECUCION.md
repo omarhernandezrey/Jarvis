@@ -1,8 +1,17 @@
 # PLAN DE EJECUCIÓN — JARVIS
 
-> Plan maestro del trabajo que queda. **Una fase por sesión.** Al cerrar cada
-> fase: commit, push, marcar aquí, resumen de 10 líneas, STOP.
-> Cuando el usuario escriba "continúa": leer este archivo, tomar la primera
+> **2026-09-14 — PLAN COMPLETO.** Las diez fases (A→J) están mergeadas a
+> `main`. No queda ninguna fase pendiente en este documento — el estado
+> real del proyecto y cómo trabajar en él de aquí en adelante está en
+> `CLAUDE.md` (raíz del repo), no aquí. Este archivo queda como registro
+> histórico de cómo se hizo cada fase; la evaluación honesta de dónde sigue
+> frágil el proyecto y qué deuda queda abierta está en la sección **J6 —
+> Cierre**, al final.
+>
+> Lo que sigue (líneas originales, ya no aplican salvo para leer el
+> historial): plan maestro del trabajo que quedaba. Una fase por sesión. Al
+> cerrar cada fase: commit, push, marcar aquí, resumen de 10 líneas, STOP.
+> Cuando el usuario escribía "continúa": leer este archivo, tomar la primera
 > fase sin marcar y ejecutarla. Nunca encadenar dos fases.
 
 ## PROTOCOLO PERMANENTE
@@ -32,11 +41,12 @@
 | G | Interacción: portapapeles de escritura (teclado sintético aplazado con motivo, ratón descartado) | ✅ 2026-09-09 (merge `9270a24`) |
 | H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ✅ 2026-09-13 (merge `f3b6a95`) — los seis borrados, ninguno integrado |
 | I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ✅ 2026-09-13 (merge `883367d`) |
-| J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ✅ 2026-09-13 (rama `feature/fase-j-endurecer`, ver sección J6 para el cierre y el hash de merge) |
+| J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ✅ 2026-09-14 (merge `2017ec3`) |
 
-**PLAN COMPLETO: A → J, sin fases pendientes.** El cierre honesto (qué sigue
-frágil, qué deuda queda abierta, qué haría a continuación) está en la
-sección **J6 — Cierre**, al final de este documento.
+**PLAN COMPLETO: A → J, sin fases pendientes. Mergeado a `main` el
+2026-09-14 (`2017ec3`).** El cierre honesto (qué sigue frágil, qué deuda
+queda abierta, qué haría a continuación) está en la sección **J6 —
+Cierre**, al final de este documento.
 
 ---
 
@@ -1492,7 +1502,7 @@ juntos.
   de la atmósfera; revisadas de refilón en las mismas capturas sin nada que
   objetar.
 
-## FASE J — Endurecer  🚧 EN CURSO (rama `feature/fase-j-endurecer`)
+## FASE J — Endurecer  ✅ COMPLETA 2026-09-14 (merge `2017ec3`)
 
 Última fase. Un commit por punto. Si se alarga, se para donde se esté y STOP.
 
