@@ -1668,3 +1668,58 @@ juntos.
         gracia en vez de propagar una excepción sin capturar.
       - Protocolo completo tras cada cambio: `ruff check .` limpio, suite
         completa sin regresiones.
+
+- [x] **J5 — Tests frágiles.**
+      - **`test_alarma_suena` (flaky, corregido inyectando el reloj).**
+        La causa: armaba un recordatorio real a ~1,8 s (`minutes=0.03`) y
+        esperaba con `time.sleep(2)` — solo 200 ms de margen entre el
+        temporizador real y el sleep del test, insuficiente bajo carga de
+        CI (el hilo del `threading.Timer` puede tardar en ser planificado).
+        Un test que falla a veces no se "reintenta hasta que pase": eso
+        normaliza los fallos de verdad, exactamente lo que J5 pedía evitar.
+        Arreglo: `jarvis_local/tools/reminders.py` gana un punto de
+        inyección, `_schedule(seconds, fn, args)` — el único sitio donde
+        `_arm()` programa el disparo (antes era un `threading.Timer(...)`
+        inline). El test sustituye `_schedule` para CAPTURAR la llamada en
+        vez de dejarla correr sola, y la invoca él mismo cuando quiere
+        simular "pasó el tiempo": cero `sleep`, cero carrera, resultado
+        100% determinista. Verificado corriendo el test 30 veces seguidas
+        sin ningún fallo (antes dependía de la suerte del scheduler del
+        SO). El resto de la suite de recordatorios (que sí usa
+        `threading.Timer` real, sin mockear `_schedule`) sigue pasando sin
+        cambios.
+        - Nota: `test_rearme_tras_reinicio` (mismo fichero) también espera
+          con `time.sleep(3)` sobre un temporizador real de 2 s (1 s de
+          margen, más holgado que el caso anterior). El punto J5 nombraba
+          específicamente `test_alarma_suena`; ese otro test no se tocó —
+          si en el futuro también resulta flaky, el mismo punto de
+          inyección (`_schedule`) sirve para arreglarlo igual.
+      - **CI de Windows: se ELIMINA el job, no se arregla.** Estaba en rojo
+        desde antes de FASE B sin que nadie pudiera diagnosticarlo por qué
+        — el propio comentario del workflow ya lo decía. Antes de decidir
+        se intentó, de verdad, conseguir el log real del job que falla:
+        - `curl` a la API pública de GitHub
+          (`.../actions/jobs/<id>/logs`) → `403 Must have admin rights to
+          Repository` (los logs de un job NO son públicos aunque el repo lo
+          sea y aunque se pueda leer el resultado del run).
+        - `gh auth status` → no hay ninguna cuenta de GitHub logueada en
+          este entorno.
+        - No hay máquina Windows a mano para reproducirlo directo.
+        Sin log, sin máquina, sin cuenta con permisos: exactamente el caso
+        que `CLAUDE.md` prevé ("si algo no se puede arreglar del todo —
+        cuenta externa, hardware — documenta el límite y deja el error
+        accionable"). El job era `continue-on-error` (nunca bloqueó nada),
+        pero un CI permanentemente rojo e indiagnosticable tampoco informa
+        nada — ni da confianza en un eventual soporte Windows, ni distingue
+        una regresión real de ruido de fondo. Se eliminó el job
+        `test-windows` de `.github/workflows/tests.yml` (queda el
+        comentario explicando la decisión y el límite exacto, en el mismo
+        sitio donde estaba el job). **Para revivirlo en el futuro**: hace
+        falta acceso admin al repo (para leer logs de jobs) o una máquina
+        Windows real donde correr `pytest test -v --tb=short` y ver el
+        fallo de primera mano — sin eso, cualquier "arreglo" sería
+        adivinar a ciegas.
+      - Protocolo completo tras el cambio: `ruff check .` limpio, suite
+        completa sin regresiones (verificado además que
+        `test_alarma_suena` no depende de temporización real corriéndolo
+        30 veces seguidas).

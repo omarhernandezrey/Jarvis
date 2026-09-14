@@ -105,12 +105,32 @@ def test_intent_borrar_archivo_no_robado():
 # --- Herramienta: la alarma DE VERDAD suena ---
 
 
-def test_alarma_suena():
+def test_alarma_suena(monkeypatch):
+    """PLAN_EJECUCION FASE J · J5: antes dependia de ganarle una carrera a un
+    threading.Timer real (armar ~1.8 s y esperar con `time.sleep(2)` -- solo
+    200 ms de margen, flaky bajo carga de CI). Se inyecta el reloj: se
+    sustituye `rem._schedule` (el unico punto donde `_arm` programa el
+    disparo) para CAPTURAR la llamada en vez de dejarla correr sola, y el
+    test la invoca el mismo cuando quiere simular "paso el tiempo". Cero
+    sleeps, cero carrera, 100% determinista."""
+    programado = {}
+
+    def _schedule_falso(seconds, fn, args):
+        programado["fn"], programado["args"] = fn, args
+
+        class _TimerFalso:
+            def cancel(self):
+                pass
+        return _TimerFalso()
+
+    monkeypatch.setattr(rem, "_schedule", _schedule_falso)
+
     def caso(avisos):
-        plan = rem.set_reminder("probar la alarma", minutes=0.03)  # ~1.8 s
+        plan = rem.set_reminder("probar la alarma", minutes=0.03)
         assert plan.status == ActionStatus.EXECUTED
         assert len(rem._load_store()) == 1
-        time.sleep(2)
+        assert "fn" in programado, "no se armo ningun temporizador"
+        programado["fn"](*programado["args"])  # simula que paso el tiempo
         assert avisos, "la alarma nunca disparo"
         assert "probar la alarma" in avisos[0]
         assert rem._load_store() == []  # se limpia al disparar
