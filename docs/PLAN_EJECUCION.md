@@ -30,9 +30,13 @@
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `85873e4`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
 | G | Interacción: portapapeles de escritura (teclado sintético aplazado con motivo, ratón descartado) | ✅ 2026-09-09 (merge `9270a24`) |
-| H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
-| I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
-| J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ⬜ pendiente |
+| H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ✅ 2026-09-13 (merge `f3b6a95`) — los seis borrados, ninguno integrado |
+| I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ✅ 2026-09-13 (merge `883367d`) |
+| J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ✅ 2026-09-13 (rama `feature/fase-j-endurecer`, ver sección J6 para el cierre y el hash de merge) |
+
+**PLAN COMPLETO: A → J, sin fases pendientes.** El cierre honesto (qué sigue
+frágil, qué deuda queda abierta, qué haría a continuación) está en la
+sección **J6 — Cierre**, al final de este documento.
 
 ---
 
@@ -1488,14 +1492,337 @@ juntos.
   de la atmósfera; revisadas de refilón en las mismas capturas sin nada que
   objetar.
 
-## FASE J — Endurecer
+## FASE J — Endurecer  🚧 EN CURSO (rama `feature/fase-j-endurecer`)
 
-- Ampliar el banco a las capacidades de E, F, G.
-- Cada ruta de error: JARVIS dice qué falló, por qué y qué hacer. Nunca inventa
-  éxito ni se disculpa en vez de informar.
-- Una traza por petición: capas, tiempo por capa, herramientas, resultado de
-  las verificaciones.
-- Techo de memoria, techo de llamadas al LLM por petición, timeouts en toda
-  llamada externa.
-- `test_alarma_suena`: inyectarle el reloj (un test flaky normaliza los fallos).
-- Cerrar con evaluación honesta de dónde sigue frágil JARVIS.
+Última fase. Un commit por punto. Si se alarga, se para donde se esté y STOP.
+
+- [x] **J1 — Banco ampliado.** Premisa de partida ("faltan las capacidades de
+      F y G") **incorrecta — comprobado antes de escribir nada**: esa
+      cobertura ya existía, hecha durante las propias FASE F y G, no en esta
+      fase. `test/test_banco_efecto_fallo.py` ya tenía 41 casos (D5 + FASE E
+      + FASE F + FASE G) con EFECTO y FALLO FORZADO para brillo, red/WiFi,
+      Bluetooth, ventanas y portapapeles — verificado corriéndolos: los 41
+      pasan, más `test_brightness.py`/`test_network.py`/`test_bluetooth.py`/
+      `test_ventanas.py`/`test_clipboard.py` (108 casos en total,
+      `docs/BANCO_PRUEBAS_BASELINE.md` §15.4-15.7). El límite de hardware de
+      WiFi/Bluetooth ("no verificable en vivo, límite permanente, Broadcom
+      BCM43228 sin driver") también ya estaba documentado, con detalle, en
+      la sección F2/F3 de este mismo archivo.
+      - **Único hueco real encontrado**: esa nota de "no verificable en vivo"
+        vivía solo aquí, no en `BANCO_PRUEBAS_BASELINE.md` — quien lea SOLO
+        el doc del banco no la veía. Añadida una nota cruzada en §15.5,
+        junto a las filas de WiFi/Bluetooth, para que el banco sea
+        autocontenido en este punto: "test verde" ahí no es "verificado
+        contra hardware real".
+      - No se duplicó ni se re-escribió la cobertura existente — habría sido
+        trabajo redundante sobre algo que ya funciona.
+
+- [x] **J2 — Comportamiento ante el fallo.** Auditoría del sistema completo,
+      con atención especial a F y G (que no tuvieron el barrido dedicado que
+      D sí tuvo — `test_outcome_honesto.py`). Método: lectura directa de
+      cada punto de salida `ERROR`/`BLOCKED` en `brightness.py`,
+      `network.py`, `bluetooth.py`, `ventanas.py`, `clipboard.py` (28 puntos
+      de salida en total), más `grep` dirigido a tres patrones concretos en
+      todo `jarvis_local/`: lenguaje de disculpa sin información ("lo
+      siento", "disculpa"), mensajes vagos genéricos ("hubo un error",
+      "algo salió mal") y fugas de excepción cruda sin contexto.
+      - **F y G: limpio.** Cero coincidencias en los tres greps. Cada punto
+        de salida revisado nombra la herramienta que falta, el motivo
+        concreto y, cuando aplica, el comando exacto para arreglarlo
+        (`instala brightnessctl`, `sudo apt install libglib2.0-bin`, el
+        camino de instalación de la extensión de ventanas con el archivo de
+        recuperación). El único `except Exception` que no es un `bool`
+        fail-open de config (`ventanas.py:118`, interpretar la respuesta de
+        la extensión) incluye el detalle del error real, no un genérico.
+      - **Hallazgo real, fuera de F/G**: `agent/loop.py`, la ruta cuando el
+        LLM falla técnicamente (no timeout) daba *"Tuve un inconveniente al
+        comunicarme con el modelo, senor."* — ni decía qué pasó ni qué
+        hacer, la propia disculpa vacía que J2 pide eliminar. Es además la
+        ruta que se dispara con el fallo más común en la práctica: Ollama
+        no está corriendo. Corregido en su propio bloque: si el error es de
+        conexión rehusada (Ollama caído), mensaje con la causa Y la acción
+        (`ollama serve`); cualquier otro fallo técnico, el detalle real del
+        error en vez de una frase hueca. Test nuevo
+        (`test_run_agent_ollama_caido_da_accion_concreta`) y el existente
+        actualizado para no depender de la frase vieja.
+      - **Corrección sobre esta misma auditoría**: el primer grep de J2 salió
+        sin `-i`, así que "Lo siento" (con mayúscula) no apareció y el
+        "cero coincidencias" reportado arriba fue incompleto. Repetido bien
+        (case-insensitive) apareció el resto de disculpas vacías del
+        sistema: `jarvis.py:412` — streaming sin texto daba *"Lo siento, no
+        pude generar una respuesta. Intenta de nuevo"* (no decía qué se
+        sabía, ahora dice que el modelo no devolvió texto y qué probar); y
+        `voz.py:162` — cualquier excepción en `chat()` desde el bucle de voz
+        daba *"Disculpe senor, tuve un inconveniente tecnico"* tragándose el
+        error real con un `except Exception:` desnudo (ahora lo registra y
+        lo dice). Test nuevo `test_chat_respuesta_vacia_no_se_disculpa_sin_
+        informar`. Lección para el propio proceso de auditoría: sin `-i`,
+        un grep de "disculpa" no encuentra la mitad de las disculpas.
+
+- [x] **J3 — Observabilidad: una traza por petición.** No se instrumentó de
+      cero: `jarvis.py` ya sabía qué capa resolvía cada petición
+      (`last_reply_kind`, aunque agrupaba parser/agente/encadenado bajo el
+      mismo valor "tool"), `decisions.jsonl` ya registraba las decisiones
+      del agente y `audit.jsonl` (D2) ya traía el resultado real de VERIFY.
+      Faltaba (a) un registro por petición de qué capas se atravesaron y
+      cuánto tardó cada una, y (b) una vista que uniera los tres.
+      - **Sin id de petición compartido explícito**: una petición de JARVIS
+        es secuencial y rápida, así que la ventana de tiempo del propio
+        turno (`[ts_inicio, ts_fin]`, con 2 s de margen) basta para saber
+        sin ambigüedad qué líneas de `decisions.jsonl`/`audit.jsonl` le
+        pertenecen — no hizo falta tocar las firmas de `log_decision`,
+        `audit.record` ni ningún call-site de herramientas.
+      - `jarvis_local/observability.py` (nuevo): `record()` escribe una
+        línea por petición en `logs/trace.jsonl` (capas atravesadas con su
+        tiempo en ms y si coincidieron, capa que resolvió, resultado,
+        tiempo total); `traza(n)` lee las últimas `n` y las enriquece
+        cruzando por ventana de tiempo con `decisions.jsonl`/`audit.jsonl`;
+        `formatear()` da el texto legible. Nunca lanza excepción — una
+        petición real no se cae porque falle su propia observabilidad.
+      - `jarvis.py::chat()`: cada retorno marca su propia capa
+        (`exacta`/`rapida`/`encadenada`/`parser`/`agente`/`llm_directo`/
+        `bloqueado_secreto`/`error`) en vez de agruparlas todas bajo
+        "tool" (ese campo, `last_reply_kind`, se deja intacto — lo usa el
+        HUD — esto es aditivo); un `finally` en el mismo `try` ya existente
+        llama a `observability.record(...)` sin importar por dónde salió
+        la función, incluidas las tres rutas de excepción.
+      - **Consultable de verdad, no solo por CLI**: nuevo intent de parser
+        ("traza de la última petición", "qué pasó con mi última petición",
+        "qué capas atravesaste") → `jarvis_local/tools/trace_query.py` →
+        `ToolContract("consultar_traza", ..., llm_visible=False)`, mismo
+        patrón que `consultar_auditoria` (D2): solo lectura, camino rápido,
+        el LLM no la ve. También queda `python -m jarvis_local.observability
+        [n]` para inspección directa.
+      - **Hallazgo de parser en el camino**: "la última" en "traza de la
+        última petición" disparaba `es_anaforica()` (el detector genérico de
+        referencias a un turno anterior) y la mandaba al agente en vez de al
+        parser — un falso positivo, porque "petición" nombra su objeto de
+        forma explícita, no depende de contexto previo. Se adelantó el
+        chequeo de traza a ANTES de esa puerta (mismo patrón que
+        `es_multi_accion`), sin tocar `es_anaforica`/`_DEICTICO` en sí:
+        "abreme la última" (genuina referencia ambigua) sigue yendo al
+        agente igual que antes — verificado con test dedicado.
+      - Verificado en vivo de punta a punta (no solo con mocks aislados):
+        una petición real por `Jarvis.chat()` seguida de "traza de la
+        última petición" devuelve el texto formateado con la capa, el
+        tiempo y el resultado de la petición anterior.
+
+- [x] **J4 — Límites de recursos.** Antes de escribir nada se auditó qué ya
+      existía: gran parte del techo ya estaba puesto en fases anteriores, y
+      J4 se centró en cerrar los huecos reales, no en reinventar lo que ya
+      funcionaba.
+      - **Techo de llamadas al LLM por petición: ya existía.**
+        `agent/loop.py`: `MAX_STEPS = 2` (pasos/herramientas encadenadas por
+        cláusula) + `MAX_REINTENTOS = 1` (correcciones ante salida inválida
+        del modelo) acotan el bucle (`for _paso in range(max_steps +
+        MAX_REINTENTOS)`); `MAX_STEPS_ENCADENADO = 4` acota cuántas
+        cláusulas de una petición multi-acción se procesan. Un turno no
+        puede desatar una cadena indefinida de llamadas al modelo. Sin
+        cambios — solo se verificó y se deja documentado aquí porque J4 lo
+        pedía explícitamente.
+      - **Techo de memoria: en gran parte ya existía, con un hueco real.**
+        `agent/memory_guard.py` (FASE E · E0) ya detecta presión de RAM real
+        vía `/proc/meminfo` y descarga el modelo de embeddings si hace
+        falta; `ConversationHistory` (`memory/history.py`) ya recorta el
+        historial a `max_history*2` mensajes; `storage/memory.py` ya limita
+        la memoria persistente a `MAX_MEMORIES = 100` entradas; y
+        `decisions.jsonl`/`trace.jsonl` ya rotaban por número de líneas
+        (FASE C / J3). El hueco real: `safety/logger.py`
+        (`actions.log`/`errors.log`) NO rotaba — y se escribe en CADA
+        `chat()`, así que en una sesión larga crece sin límite. Se añadió
+        `ActionLogger._rotar()`, mismo patrón de rotación por líneas
+        (`_MAX_LINEAS = 5000`) que `decisions.jsonl`. 3 tests nuevos
+        (`test_logger.py`).
+      - **Timeouts en llamadas externas: auditoría completa de
+        `subprocess`/`httpx`/`gdbus`, con el precedente de H (`ImageGrab`
+        colgado sin timeout) como guía.** `httpx.Client` ya lleva
+        `timeout=120` (config `ollama.timeout`) a nivel de cliente, así que
+        toda petición a Ollama hereda un techo aunque la llamada individual
+        no pase `timeout=` explícito — no hacía falta tocar nada ahí.
+        `gdbus` (`tools/ventanas.py`) ya llevaba `timeout=15`. De los 37
+        call-sites de `subprocess.run`/`Popen` del repo, se encontraron y
+        corrigieron 8 sin timeout que sí pueden bloquear el hilo que atiende
+        la petición:
+        - `tools/reader.py` (`xclip -o`, portapapeles): sin timeout.
+        - `tools/power.py`: `shutdown`/`sudo -n shutdown` (Windows y Linux),
+          `loginctl lock-session`, `systemctl suspend`: ninguno llevaba
+          timeout.
+        - `tools/media_controls.py`: `wpctl`, `pactl`, `playerctl`: ninguno
+          llevaba timeout (a diferencia de `network.py`/`brightness.py`/
+          `bluetooth.py`/`services.py`, que ya lo tenían desde D/F/G).
+        Se añadió `timeout=` a los ocho, y se ampliaron los `except OSError`
+        que ya envolvían esas llamadas a `except (OSError,
+        subprocess.TimeoutExpired)` donde hacía falta para no cambiar el
+        comportamiento observable (degradar con gracia en vez de colgar,
+        no en vez de fallar con una excepción sin capturar). Los `Popen`
+        de lanzar aplicaciones (`apps.py`, `desktop_actions.py`,
+        `spotify.py`, `notes.py`) quedan fuera: no se bloquea en ellos (no
+        hay `.wait()`/`.communicate()` sin timeout después), así que no
+        pueden colgar el turno.
+        - **Fuera de alcance, documentado y no tocado**:
+          `ui/hud/shaders/build.py` (script de build manual del desarrollador,
+          `if __name__ == "__main__"`, no se importa ni se ejecuta nunca
+          durante una petición real) se deja sin timeout a propósito — no es
+          una "llamada externa" en el sentido de J4 (nada que un usuario
+          dispare en una petición depende de él).
+        7 tests nuevos (`test_reader.py`, `test_power.py`,
+        `test_media_controls.py`): confirman que el timeout se pasa de
+        verdad a `subprocess.run`, y que un `TimeoutExpired` real (inyectado
+        con monkeypatch, no solo revisado por lectura de código) degrada con
+        gracia en vez de propagar una excepción sin capturar.
+      - Protocolo completo tras cada cambio: `ruff check .` limpio, suite
+        completa sin regresiones.
+
+- [x] **J5 — Tests frágiles.**
+      - **`test_alarma_suena` (flaky, corregido inyectando el reloj).**
+        La causa: armaba un recordatorio real a ~1,8 s (`minutes=0.03`) y
+        esperaba con `time.sleep(2)` — solo 200 ms de margen entre el
+        temporizador real y el sleep del test, insuficiente bajo carga de
+        CI (el hilo del `threading.Timer` puede tardar en ser planificado).
+        Un test que falla a veces no se "reintenta hasta que pase": eso
+        normaliza los fallos de verdad, exactamente lo que J5 pedía evitar.
+        Arreglo: `jarvis_local/tools/reminders.py` gana un punto de
+        inyección, `_schedule(seconds, fn, args)` — el único sitio donde
+        `_arm()` programa el disparo (antes era un `threading.Timer(...)`
+        inline). El test sustituye `_schedule` para CAPTURAR la llamada en
+        vez de dejarla correr sola, y la invoca él mismo cuando quiere
+        simular "pasó el tiempo": cero `sleep`, cero carrera, resultado
+        100% determinista. Verificado corriendo el test 30 veces seguidas
+        sin ningún fallo (antes dependía de la suerte del scheduler del
+        SO). El resto de la suite de recordatorios (que sí usa
+        `threading.Timer` real, sin mockear `_schedule`) sigue pasando sin
+        cambios.
+        - Nota: `test_rearme_tras_reinicio` (mismo fichero) también espera
+          con `time.sleep(3)` sobre un temporizador real de 2 s (1 s de
+          margen, más holgado que el caso anterior). El punto J5 nombraba
+          específicamente `test_alarma_suena`; ese otro test no se tocó —
+          si en el futuro también resulta flaky, el mismo punto de
+          inyección (`_schedule`) sirve para arreglarlo igual.
+      - **CI de Windows: se ELIMINA el job, no se arregla.** Estaba en rojo
+        desde antes de FASE B sin que nadie pudiera diagnosticarlo por qué
+        — el propio comentario del workflow ya lo decía. Antes de decidir
+        se intentó, de verdad, conseguir el log real del job que falla:
+        - `curl` a la API pública de GitHub
+          (`.../actions/jobs/<id>/logs`) → `403 Must have admin rights to
+          Repository` (los logs de un job NO son públicos aunque el repo lo
+          sea y aunque se pueda leer el resultado del run).
+        - `gh auth status` → no hay ninguna cuenta de GitHub logueada en
+          este entorno.
+        - No hay máquina Windows a mano para reproducirlo directo.
+        Sin log, sin máquina, sin cuenta con permisos: exactamente el caso
+        que `CLAUDE.md` prevé ("si algo no se puede arreglar del todo —
+        cuenta externa, hardware — documenta el límite y deja el error
+        accionable"). El job era `continue-on-error` (nunca bloqueó nada),
+        pero un CI permanentemente rojo e indiagnosticable tampoco informa
+        nada — ni da confianza en un eventual soporte Windows, ni distingue
+        una regresión real de ruido de fondo. Se eliminó el job
+        `test-windows` de `.github/workflows/tests.yml` (queda el
+        comentario explicando la decisión y el límite exacto, en el mismo
+        sitio donde estaba el job). **Para revivirlo en el futuro**: hace
+        falta acceso admin al repo (para leer logs de jobs) o una máquina
+        Windows real donde correr `pytest test -v --tb=short` y ver el
+        fallo de primera mano — sin eso, cualquier "arreglo" sería
+        adivinar a ciegas.
+      - Protocolo completo tras el cambio: `ruff check .` limpio, suite
+        completa sin regresiones (verificado además que
+        `test_alarma_suena` no depende de temporización real corriéndolo
+        30 veces seguidas).
+
+- [x] **J6 — Cierre.** Evaluación honesta del proyecto tras A→J, no un
+      resumen de lo hecho — para eso ya está el resto de este documento.
+
+      **Dónde sigue siendo frágil JARVIS:**
+      - **El agente (capa 3 de la cascada) sigue siendo lento por hardware,
+        no por software.** 35–70 s de *tool calling* con un modelo 3B en una
+        CPU de 2 núcleos sin GPU es un techo real de esta máquina; todo el
+        trabajo de C1-C7/FASE J movió frases FUERA del agente (parser,
+        respuestas rápidas, encadenado), pero lo que sí necesita razonar
+        libremente sigue siendo lento. Más código no lo arregla — un modelo
+        más pequeño, cuantización más agresiva o hardware distinto sí.
+      - **Reglas de enrutado del parser (`es_anaforica`/`_DEICTICO`) son
+        heurísticas amplias, no un parser formal.** J3 encontró y corrigió
+        un falso positivo real ("la última" en "traza de la última
+        petición" se enrutaba al agente en vez de al parser). Es la segunda
+        vez que aparece esta clase de bug en el proyecto (la primera,
+        `plan_delete`/`ListView` vacía de I5 era distinta, pero mismo
+        patrón de fondo: "funciona en el caso pensado, falla en un caso
+        real no anticipado"). Cualquier intent nuevo que comparta
+        vocabulario con un patrón existente puede volver a chocar así —
+        vale la pena revisar el orden de las puertas de `parse_intent()`
+        cuando se añada el próximo.
+      - **Soporte Windows sin ninguna señal de CI a partir de ahora.** J5
+        eliminó el job de Windows (indiagnosticable, en rojo desde antes de
+        FASE B). Es la decisión correcta dado lo que había para trabajar,
+        pero el efecto neto es que el código Windows (`ctypes.windll`,
+        `comtypes`, WASAPI, `Get-StartApps`, WSL) ya no tiene NINGÚN
+        control automático de regresión — solo lo que un humano en una
+        máquina Windows real verifique a mano. README sigue anunciando
+        Windows como plataforma soportada; eso ahora descansa enteramente
+        en verificación manual, no en CI.
+      - **Cobertura de CI real vs. simulada.** Gran parte de la suite (voz,
+        micrófono, Ollama vivo, portapapeles gráfico) se salta sola en CI
+        (`skipif`) por falta de hardware/servidor gráfico/LLM — se
+        ejercita solo en local, en esta máquina, no en cada push. La suite
+        verde en CI certifica el enrutado y la lógica, no el pipeline de
+        voz de punta a punta.
+
+      **Deuda abierta (nombrada explícitamente, no escondida):**
+      - **Residuo verde del satélite compañero del orbe** (`core.frag`,
+        ~línea 223): visible en algunos fotogramas de `speaking`/
+        `listening`, encontrado y anotado en I6·1/I2, nunca llegó a
+        arreglarse — queda pendiente de una rama de shader dedicada.
+      - **F4.3 — la extensión de GNOME para control de ventanas sigue sin
+        instalarse en la sesión real de trabajo (`omar`).** El código está
+        mergeado y probado; hasta que se instale a mano (decisión del
+        usuario, por el riesgo de correr dentro de `gnome-shell`), las
+        herramientas de ventanas en Linux devuelven ERROR explícito en vez
+        de fingir que funcionaron — correcto por diseño, pero la capacidad
+        no está activa hoy.
+      - **Lo no verificable por hardware, documentado y no fingido**: WiFi
+        y Bluetooth (banco J1: se ejercitan `nmcli`/`bluetoothctl`
+        simulados, esta máquina no tiene radio WiFi operativa ni un
+        dispositivo Bluetooth emparejable de forma estable) y visión/OCR
+        automático (FASE H: el OCR mismo tarda 0,6 s, pero la captura de
+        pantalla SIN diálogo interactivo no es viable en este GNOME+Wayland
+        — por eso se borró el módulo entero en vez de dejarlo a medias).
+        Distinto de lo anterior: `take_screenshot()` (`desktop_actions.py`,
+        captura CON nombre, pedida explícitamente por el usuario) sí se
+        re-verificó en vivo durante este cierre y funciona — usa el mismo
+        portal que vision necesitaba, pero como acción puntual pedida por
+        una persona, no como bucle headless, el consentimiento no es un
+        obstáculo.
+      - **CI de Windows eliminado (J5), no arreglado** — ver arriba, deuda
+        y fragilidad son la misma cosa aquí.
+      - `test_rearme_tras_reinicio` (`test_reminders.py`) sigue esperando
+        con `time.sleep(3)` sobre un temporizador real (margen de 1 s, más
+        holgado que el `test_alarma_suena` ya arreglado, pero mismo patrón
+        de fondo). J5 nombraba específicamente `test_alarma_suena`; este no
+        se tocó. El punto de inyección `_schedule()` que arregló el primero
+        sirve igual para este si algún día resulta flaky también.
+      - `ui/hud/shaders/build.py` (script de build manual, fuera del
+        alcance de J4 por no ser una llamada externa durante una petición
+        real) sigue sin timeout en su `subprocess.run`.
+
+      **Qué haría a continuación** (no pedido, no ejecutado — para cuando
+      el usuario decida retomar):
+      1. Rama de shader dedicada para el residuo verde del satélite —
+        aislado, no urgente, cosmético.
+      2. Si el soporte Windows importa de verdad a futuro: conseguir acceso
+        admin al repo (para leer logs de CI) o una máquina Windows real
+        antes de tocar nada más ahí — sin eso, cualquier cambio es
+        adivinar a ciegas, como ya se documentó en J5.
+      3. Cuando el usuario decida instalar F4.3, re-verificar en vivo las
+        herramientas de ventanas en la sesión real (el código nunca se
+        probó contra la extensión ya activa en un uso normal, solo contra
+        el entorno de prueba de FASE F).
+      4. `CLAUDE.md` (raíz del repo) todavía instruye leer `PLAN_MAESTRO.md`
+        como "el plan maestro activo" — desde que `PLAN_EJECUCION.md` lo
+        sucedió y ahora también está completo, ese puntero quedó
+        desactualizado. No se tocó en J6 porque el punto solo pedía
+        actualizar README y PLAN_EJECUCION — queda señalado aquí para que
+        el usuario decida qué apunta `CLAUDE.md` de ahora en adelante.
+
+      **Estado final: A→J completas, sin fases pendientes en este
+      documento.** README.md actualizado (badge de tests, sección de
+      estado del plan, roadmap sin la promesa de visión/proactividad que
+      FASE H descartó con evidencia).

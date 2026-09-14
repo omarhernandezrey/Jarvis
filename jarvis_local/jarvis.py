@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from jarvis_local import observability
 from jarvis_local.config import BASE_DIR, get_config
 from jarvis_local.fast_response import fast_respond
 from jarvis_local.memory.history import ConversationHistory
@@ -305,6 +306,27 @@ class Jarvis:
     def chat(self, user_input: str) -> str:
         instruction = user_input[:100]
         self.spoke_last_response = False
+        # FASE J · J3 — una traza por petición: qué capas de la cascada se
+        # atravesaron, cuánto tardó cada una, y con qué se resolvió. Se cruza
+        # después (jarvis_local/observability.py) por ventana de tiempo con
+        # decisions.jsonl (agente) y audit.jsonl (D2, VERIFY) — ninguno de
+        # los dos se toca aquí, solo se registra lo que esta función ya sabe.
+        import time
+        import uuid
+        from datetime import datetime as _dt
+
+        request_id = uuid.uuid4().hex[:10]
+        _ts_inicio = _dt.now()
+        _t0 = time.perf_counter()
+        _capas: list[dict] = []
+        _capa_resuelta = "vacio"
+        _resultado_txt = ""
+
+        def _traza(nombre: str, t_capa0: float, coincidio: bool) -> None:
+            _capas.append({"capa": nombre,
+                          "ms": round((time.perf_counter() - t_capa0) * 1000, 2),
+                          "coincidio": coincidio})
+
         try:
             if user_input.strip() == "":
                 return ""
@@ -315,6 +337,8 @@ class Jarvis:
                     instruction="[SECRETO DETECTADO - BLOQUEADO]",
                     result="Se bloqueo el envio al modelo",
                 )
+                _capa_resuelta = "bloqueado_secreto"
+                _resultado_txt = "Se bloqueo el envio al modelo (secreto detectado)."
                 return (
                     "He detectado informacion sensible en tu mensaje "
                     "(como una contrasena, API key o token). "
@@ -325,6 +349,7 @@ class Jarvis:
             exact = _exact_response(safe_input)
             if exact is not None:
                 self.last_reply_kind = "exact"
+                _capa_resuelta, _resultado_txt = "exacta", exact
                 self.history.add_user(safe_input)
                 self.history.add_assistant(exact)
                 self._persist_message("user", safe_input)
@@ -336,6 +361,7 @@ class Jarvis:
             fast = fast_respond(safe_input)
             if fast is not None:
                 self.last_reply_kind = "fast"
+                _capa_resuelta, _resultado_txt = "rapida", fast
                 self.history.add_user(safe_input)
                 self.history.add_assistant(fast)
                 self._persist_message("user", safe_input)
@@ -348,28 +374,38 @@ class Jarvis:
             # lo resolvia el agente por dentro, y la segunda clausula ("abre
             # Chrome") iba directa al LLM, saltandose el parser que la resolvia
             # perfecto: el modelo pequeno a veces no la ejecutaba.
+            _tc = time.perf_counter()
             encadenada = self._chat_encadenado(safe_input, instruction)
+            _traza("encadenada", _tc, encadenada is not None)
             if encadenada is not None:
                 self.last_reply_kind = "tool"
+                _capa_resuelta, _resultado_txt = "encadenada", encadenada
                 return encadenada
 
             # Camino rapido: el parser deterministico reconoce la frase
             # (instantaneo, sin gastar el LLM)
+            _tc = time.perf_counter()
             intent = _parse_and_execute(safe_input, self)
+            _traza("parser", _tc, intent is not None)
             if intent is not None:
                 self.last_reply_kind = "tool"
+                _capa_resuelta, _resultado_txt = "parser", intent
                 self._persist_message("user", safe_input)
                 self._persist_message("assistant", intent)
                 return intent
 
             # Camino agentico: el LLM decide que herramientas usar.
             # Cubre las frases que el parser no anticipo y encadena acciones.
+            _tc = time.perf_counter()
             agent_reply = self._try_agent(safe_input, instruction)
+            _traza("agente", _tc, agent_reply is not None)
             if agent_reply is not None:
                 self.last_reply_kind = "tool"
+                _capa_resuelta, _resultado_txt = "agente", agent_reply
                 return agent_reply
 
             self.last_reply_kind = "llm"
+            _capa_resuelta = "llm_directo"
             self.history.add_user(safe_input)
             self._persist_message("user", safe_input)
 
@@ -409,11 +445,18 @@ class Jarvis:
                 response = "".join(tokens)
 
             if not response:
-                response = "Lo siento, no pude generar una respuesta. Intenta de nuevo."
+                # FASE J · J2: nunca disculparse sin decir qué pasó. Aquí lo
+                # único que se sabe de verdad es que el modelo respondió sin
+                # texto (no es una excepción; esa va por el except de abajo).
+                response = ("El modelo no devolvió texto, senor. Puede ser un "
+                            "vacío puntual del streaming: repita la pregunta; "
+                            "si sigue pasando, revise `ollama logs` o pruebe "
+                            "con una frase más corta.")
 
             response = response.strip()
             self.history.add_assistant(response)
             self._persist_message("assistant", response)
+            _resultado_txt = response
 
             result_snippet = response[:150]
             logger.log_action(
@@ -423,15 +466,24 @@ class Jarvis:
             return response
 
         except ConnectionError as e:
+            _capa_resuelta, _resultado_txt = "error", f"ConnectionError: {e}"
             logger.log_error("chat", str(e))
             raise
         except RuntimeError as e:
+            _capa_resuelta, _resultado_txt = "error", f"RuntimeError: {e}"
             logger.log_error("chat", str(e))
             raise
         except Exception as e:
+            _capa_resuelta, _resultado_txt = "error", f"Exception: {e}"
             logger.log_error("chat", str(e))
             raise RuntimeError(
                 f"Error inesperado al comunicarse con Ollama: {e}") from e
+        finally:
+            observability.record(
+                request_id=request_id, entrada=user_input, capas=_capas,
+                capa_resuelta=_capa_resuelta, resultado=_resultado_txt,
+                elapsed_ms=(time.perf_counter() - _t0) * 1000,
+                ts_inicio=_ts_inicio, ts_fin=_dt.now())
 
     def _chat_encadenado(self, safe_input: str, instruction: str) -> str | None:
         """Resuelve una peticion de varias acciones, clausula por clausula.

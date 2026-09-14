@@ -39,11 +39,11 @@ def _get_clipboard_text_linux() -> str | None:
     """Texto del portapapeles via xclip. None si no se pudo leer."""
     try:
         out = subprocess.run(["xclip", "-selection", "clipboard", "-o"],
-                             capture_output=True, text=True)
+                             capture_output=True, text=True, timeout=5)
         # xclip devuelve codigo != 0 cuando el portapapeles esta vacio de
         # texto (p.ej. tiene una imagen): no es un fallo real, es "".
         return out.stdout if out.returncode == 0 else ""
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
 
 

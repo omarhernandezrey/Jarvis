@@ -21,7 +21,8 @@ DEFAULT_DELAY_SECONDS = 60
 
 def _run_shutdown(args: list[str]) -> subprocess.CompletedProcess:
     """Unico punto que toca shutdown.exe en Windows (los tests lo reemplazan)."""
-    return subprocess.run(["shutdown", *args], capture_output=True, text=True)
+    return subprocess.run(["shutdown", *args], capture_output=True, text=True,
+                          timeout=10)
 
 
 def _run_shutdown_linux(args: list[str]) -> subprocess.CompletedProcess:
@@ -30,7 +31,7 @@ def _run_shutdown_linux(args: list[str]) -> subprocess.CompletedProcess:
     contrasena configurado, falla con un error legible en vez de colgarse
     esperando un password que nunca vendra."""
     return subprocess.run(["sudo", "-n", "shutdown", *args],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, timeout=10)
 
 
 def _lock_workstation() -> bool:
@@ -39,7 +40,7 @@ def _lock_workstation() -> bool:
 
 def _lock_session_linux() -> bool:
     out = subprocess.run(["loginctl", "lock-session"],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, timeout=10)
     return out.returncode == 0
 
 
@@ -143,7 +144,7 @@ def suspend_pc() -> ActionPlan:
                 raise OSError("SetSuspendState devolvio 0")
         else:
             out = subprocess.run(["systemctl", "suspend"],
-                                 capture_output=True, text=True)
+                                 capture_output=True, text=True, timeout=15)
             if out.returncode != 0:
                 raise OSError(out.stderr.strip() or "systemctl suspend fallo")
         plan.result = "Suspendiendo el equipo, senor."

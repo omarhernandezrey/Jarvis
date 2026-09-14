@@ -112,7 +112,23 @@ def test_run_agent_sin_fallback_da_error_claro(monkeypatch):
     c.chat_with_tools = MagicMock(side_effect=_NoResponde("boom"))
     r = run_agent(c, "que clima hace en Cali")
     assert r.tools_used == []
-    assert "inconveniente" in r.text.lower() or "tardo demasiado" in r.text.lower()
+    texto = r.text.lower()
+    assert "problema técnico" in texto or "tardo demasiado" in texto
+    assert "boom" in r.text  # el detalle del error real queda, no se oculta
+
+
+def test_run_agent_ollama_caido_da_accion_concreta(monkeypatch):
+    """FASE J · J2: el caso más común (Ollama no está corriendo) tenía un
+    mensaje genérico ('tuve un inconveniente') que no decía qué hacer. Ahora
+    lo detecta y da la acción concreta."""
+    monkeypatch.setattr(agent_loop, "_router_fallback", lambda: "")
+    c = MagicMock()
+    c.chat_with_tools = MagicMock(
+        side_effect=_NoResponde("[Errno 111] Connection refused"))
+    r = run_agent(c, "que clima hace en Cali")
+    assert r.tools_used == []
+    assert "ollama serve" in r.text.lower()
+    assert "no está corriendo" in r.text.lower()
 
 
 if __name__ == "__main__":

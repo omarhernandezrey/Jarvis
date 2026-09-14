@@ -27,6 +27,7 @@ _sin_portapapeles = pytest.mark.skipif(
     reason="sin portapapeles funcional (falta xclip/wl-clipboard o servidor gráfico)")
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus
+from jarvis_local.tools import reader
 from jarvis_local.tools.reader import (
     _get_clipboard_text,
     read_clipboard,
@@ -191,6 +192,22 @@ def test_formato_no_soportado():
         assert "texto" in plan.result.lower()
     finally:
         os.remove(path)
+
+
+# --- PLAN_EJECUCION FASE J · J4: xclip nunca puede colgar el turno ---
+
+
+@pytest.mark.skipif(IS_WINDOWS, reason="xclip es solo Linux")
+def test_xclip_lleva_timeout_y_no_cuelga(monkeypatch):
+    """`xclip` puede quedarse colgado (p.ej. sin servidor X detras). El
+    subprocess.run debe llevar timeout, y un TimeoutExpired real se trata
+    igual que un xclip no disponible: None, no una excepcion sin capturar."""
+    def _cuelga(*a, **kw):
+        assert kw.get("timeout"), "xclip debe llamarse con timeout"
+        raise subprocess.TimeoutExpired(cmd=a[0], timeout=kw["timeout"])
+
+    monkeypatch.setattr(reader.subprocess, "run", _cuelga)
+    assert reader._get_clipboard_text_linux() is None
 
 
 if __name__ == "__main__":

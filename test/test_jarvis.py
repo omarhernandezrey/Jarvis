@@ -192,6 +192,18 @@ def test_chat_intercept_multiple_spaces():
     assert r == "el sistema de voz listo"
     assert mc.chat.call_count == 0
 
+def test_chat_respuesta_vacia_no_se_disculpa_sin_informar():
+    """FASE J · J2: un streaming vacío daba 'Lo siento, no pude generar una
+    respuesta' — disculpa sin decir qué pasó. Ahora dice lo que se sabe de
+    verdad y qué hacer, sin pedir perdón."""
+    j = _make_jarvis()
+    mc = _mc(j)
+    mc.chat.return_value = iter([])
+    r = j.chat("explica el algoritmo de quicksort en detalle")
+    assert "lo siento" not in r.lower()
+    assert "modelo no devolvió texto" in r.lower()
+
+
 def test_chat_not_matched_uses_ollama():
     j = _make_jarvis()
     mc = _mc(j)

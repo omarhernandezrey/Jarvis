@@ -5,19 +5,24 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 [![Tests](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml/badge.svg)](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-772%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1362%20passing-brightgreen)
 ![Offline](https://img.shields.io/badge/LLM-100%25%20local-orange)
 ![OS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux-informational)
 
 ---
 
-## 📋 Plan de Mejoras en Curso
+## 📋 Estado del plan
 
-> **Si eres un agente IA o desarrollador**, lee obligatoriamente [`PLAN_MAESTRO.md`](PLAN_MAESTRO.md) antes de hacer cualquier cambio. Es el plan maestro activo (eficacia de cada funcionalidad), con tareas en orden estricto: una rama por tarea, batería de pruebas completa hasta verde, y merge a `main`.
->
-> [`IMPLEMENTACION_DE_MEJORAS.md`](IMPLEMENTACION_DE_MEJORAS.md) está archivado (86/86 tareas completadas).
+> Los tres planes de trabajo del proyecto están **completos y archivados**:
+> [`IMPLEMENTACION_DE_MEJORAS.md`](IMPLEMENTACION_DE_MEJORAS.md) (86/86),
+> [`PLAN_MAESTRO.md`](PLAN_MAESTRO.md) (26/26, eficacia funcional) y
+> [`docs/PLAN_EJECUCION.md`](docs/PLAN_EJECUCION.md) (A→J, VERIFY/auditoría,
+> control de máquina, HUD, endurecimiento). Ninguno tiene tareas pendientes.
+> La sección **J6 — Cierre** de `PLAN_EJECUCION.md` es la evaluación honesta
+> más reciente del proyecto: qué sigue frágil, qué deuda queda abierta y qué
+> seguiría a continuación.
 
-Plan activo: **PLAN_MAESTRO** | Tareas: 26 | Fases: 5 (0, A, B, C, D) | Base: [`docs/AUDITORIA_2026-09.md`](docs/AUDITORIA_2026-09.md)
+Última auditoría funcional: [`docs/AUDITORIA_2026-09.md`](docs/AUDITORIA_2026-09.md).
 
 ---
 
@@ -295,8 +300,9 @@ Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `log
 - ✅ **Fase 5**: Selenium + búsqueda de empleo multi-portal
 - ✅ **Fase 6**: **Agente con tool calling**, memoria semántica, voz por streaming, CI
 - ✅ **Fase 7**: **Soporte Linux** (Ubuntu/GNOME): terminal, energía, volumen, portapapeles y apps con su API nativa; degradado explícito de la gestión de ventanas en Wayland
-- 🔄 **Fase 8 — eficacia** ([`PLAN_MAESTRO.md`](PLAN_MAESTRO.md)): auditoría funcionalidad por funcionalidad y arreglo con test que lo blinde. Fases A–D: huecos del parser (clima, notas, cálculo, ubicaciones), re-autorización accionable de Calendar/Spotify, apps que no se abren dos veces, instrumentación y poda de la latencia del agente, `jarvis doctor`, tests `live` + nocturno, prueba de voz e2e
-- ⏳ **Siguiente**: visión (que JARVIS *vea* tu pantalla), proactividad, instalador
+- ✅ **Fase 8 — eficacia** ([`PLAN_MAESTRO.md`](PLAN_MAESTRO.md)): auditoría funcionalidad por funcionalidad y arreglo con test que lo blinde. Fases A–D: huecos del parser (clima, notas, cálculo, ubicaciones), re-autorización accionable de Calendar/Spotify, apps que no se abren dos veces, instrumentación y poda de la latencia del agente, `jarvis doctor`, tests `live` + nocturno, prueba de voz e2e
+- ✅ **Fase 9 — endurecimiento** ([`docs/PLAN_EJECUCION.md`](docs/PLAN_EJECUCION.md), A→J): VERIFY post-acción + auditoría append-only + salida estructurada (D), control de máquina — procesos/systemd/notificaciones (E), ventanas Wayland/brillo/red/Bluetooth (F), portapapeles (G), poda de código muerto — **visión y proactividad evaluadas y descartadas**, no integradas (H, ver más abajo), rediseño e iluminación del HUD (I), y endurecimiento final: banco de pruebas ampliado, rutas de error revisadas, traza por petición consultable, techos de recursos y timeouts, tests deterministas (J)
+- 💡 **Ideas evaluadas y descartadas** (no en el roadmap, por límites reales de esta máquina/escritorio — detalle en `docs/PLAN_EJECUCION.md` FASE H y sección J6): **visión** (OCR funciona en 0,6 s, pero la captura de pantalla automática y sin diálogos no es viable en GNOME+Wayland sin un compositor con `wlr-screencopy` o consentimiento interactivo en cada llamada) y **proactividad en segundo plano** (cualquier regla que consultara el LLM sin que el usuario preguntara violaba el requisito de "consumo en reposo indistinguible de cero"). Un **instalador** empaquetado sigue siendo una idea abierta, sin evaluar todavía.
 
 ## 📄 Licencia
 

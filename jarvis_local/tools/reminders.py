@@ -89,14 +89,23 @@ def _fire(rid: int) -> None:
         _notify(f"Recordatorio, senor: {actual['text']}")
 
 
+def _schedule(seconds: float, fn, args: tuple) -> threading.Timer:
+    """Punto de inyeccion para los tests (PLAN_EJECUCION FASE J · J5):
+    `test_alarma_suena` sustituye esto para disparar `fn` al instante en vez
+    de depender de que un `threading.Timer` real dispare a tiempo bajo carga
+    de CI -- la flakiness no era del temporizador, era de comprobarlo con un
+    `time.sleep` de margen fijo."""
+    t = threading.Timer(seconds, fn, args=args)
+    t.daemon = True
+    t.start()
+    return t
+
+
 def _arm(rid: int, when: datetime, atrasado: bool = False) -> None:
     seconds = max(1.0, (when - datetime.now()).total_seconds())
     if atrasado:
         seconds = 2.0
-    t = threading.Timer(seconds, _fire, args=(rid,))
-    t.daemon = True
-    t.start()
-    _TIMERS[rid] = t
+    _TIMERS[rid] = _schedule(seconds, _fire, args=(rid,))
 
 
 def ensure_loaded() -> None:

@@ -208,6 +208,61 @@ def test_bloquear_con_mock_linux():
         power._lock_session_linux = original
 
 
+# --- PLAN_EJECUCION FASE J · J4: ninguna llamada externa cuelga el turno ---
+
+
+@solo_linux
+def test_run_shutdown_linux_lleva_timeout(monkeypatch):
+    llamadas = []
+
+    def fake_run(args, **kw):
+        llamadas.append(kw)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(power.subprocess, "run", fake_run)
+    power._run_shutdown_linux(["-c"])
+    assert llamadas[0].get("timeout")
+
+
+@solo_linux
+def test_lock_session_linux_lleva_timeout(monkeypatch):
+    llamadas = []
+
+    def fake_run(args, **kw):
+        llamadas.append(kw)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(power.subprocess, "run", fake_run)
+    power._lock_session_linux()
+    assert llamadas[0].get("timeout")
+
+
+@solo_linux
+def test_suspender_no_cuelga_si_systemctl_no_responde(monkeypatch):
+    """systemctl suspend colgado no debe dejar el turno esperando para
+    siempre: un TimeoutExpired real se trata como cualquier otro fallo."""
+    def _cuelga(args, **kw):
+        assert kw.get("timeout"), "systemctl suspend debe llevar timeout"
+        raise subprocess.TimeoutExpired(cmd=args, timeout=kw["timeout"])
+
+    monkeypatch.setattr(power.subprocess, "run", _cuelga)
+    plan = power.suspend_pc()
+    assert plan.status == ActionStatus.ERROR
+
+
+@solo_windows
+def test_run_shutdown_windows_lleva_timeout(monkeypatch):
+    llamadas = []
+
+    def fake_run(args, **kw):
+        llamadas.append(kw)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(power.subprocess, "run", fake_run)
+    power._run_shutdown(["/a"])
+    assert llamadas[0].get("timeout")
+
+
 def _skip_marcado(fn) -> bool:
     """Respeta @solo_windows/@solo_linux tambien al correr este archivo
     directo (sin pytest) -- si no, llamaria de verdad a shutdown/loginctl."""

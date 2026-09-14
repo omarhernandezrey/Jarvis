@@ -562,9 +562,23 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
                 return AgentResult(
                     text="El modelo tardo demasiado en responder, senor. Intente de nuevo.",
                     confidence=conf)
+            # FASE J · J2: "tuve un inconveniente" no decía qué pasó ni qué
+            # hacer — el caso más común (Ollama caído) sí se puede detectar
+            # y dar una acción concreta, no una disculpa vacía.
+            if ("connection refused" in error_msg or "connect call failed" in error_msg
+                    or "connecterror" in error_msg or "conexión rehusada" in error_msg
+                    or "no connection could be made" in error_msg):
+                log_decision(user_message, conf, usadas, resultados, f"sin_conexion_ollama{_suf}", llm_calls=_llm_calls, llm_secs=_llm_secs)
+                return AgentResult(
+                    text="No pude hablar con Ollama, senor: parece que no está "
+                         "corriendo. Arránquelo con `ollama serve` (o revise que "
+                         "el servicio esté activo) e intente de nuevo.",
+                    confidence=conf)
             log_decision(user_message, conf, usadas, resultados, f"error_llm{_suf}:{e}", llm_calls=_llm_calls, llm_secs=_llm_secs)
             return AgentResult(
-                text="Tuve un inconveniente al comunicarme con el modelo, senor.",
+                text=f"Tuve un problema técnico hablando con el modelo, senor: {e}. "
+                     "Intente de nuevo; si persiste, revise que Ollama esté "
+                     "corriendo y accesible.",
                 confidence=conf)
         calls = msg.get("tool_calls") or []
         contenido = msg.get("content", "")

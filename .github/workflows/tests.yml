@@ -76,50 +76,17 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest test -v --tb=short
 
-  # Windows: histórico (el proyecto empezó ahí), pero HOY no es el objetivo de
-  # desarrollo ni se puede diagnosticar desde este entorno (sin máquina
-  # Windows, sin acceso a los logs del runner). En rojo desde antes de FASE B
-  # sin que se supiera por qué: un CI que siempre falla no informa nada.
-  # `continue-on-error` para que un fallo aquí NO bloquee el workflow ni el
-  # merge; sigue corriendo y reportando, por si alguien retoma soporte
-  # Windows más adelante y quiere partir de una señal, no de una caja negra.
-  test-windows:
-    name: Tests (Windows, Python ${{ matrix.python-version }}) [no bloqueante]
-    runs-on: windows-latest
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configurar Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements.txt
-
-      - name: Instalar dependencias
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov ruff
-
-      - name: Lint (ruff)
-        run: ruff check . --output-format=github
-        continue-on-error: true
-
-      - name: Tests
-        # Sin Ollama ni micro en el runner: los tests que los necesitan se
-        # saltan solos (skipif) o usan dobles de prueba.
-        env:
-          PYTHONIOENCODING: utf-8
-        run: python -m pytest test -v --tb=short
-
+  # PLAN_EJECUCION FASE J · J5 — el job de Windows se ELIMINÓ aquí (estaba
+  # antes de "live"). Llevaba en rojo desde antes de FASE B sin que nadie
+  # pudiera diagnosticarlo: sin máquina Windows a mano, y sin acceso a los
+  # logs del runner (la API de logs de un job devuelve 403 "Must have admin
+  # rights to Repository" incluso leyendo runs públicos; `gh auth` tampoco
+  # está disponible en este entorno). Era `continue-on-error`, así que nunca
+  # bloqueó nada — pero un CI permanentemente rojo e indiagnosticable no
+  # informa nada tampoco: ni ayuda a confiar en el soporte Windows ni avisa
+  # de una regresión real. docs/PLAN_EJECUCION.md (sección J5) documenta el
+  # límite exacto y cómo revivirlo si alguien retoma soporte Windows con
+  # acceso admin al repo o una máquina Windows real donde reproducirlo.
   live:
     name: Integracion live (nocturno)
     # Solo en el cron nocturno o lanzado a mano; nunca en push/PR.
