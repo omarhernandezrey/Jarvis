@@ -30,9 +30,13 @@
 | E | Control de máquina oleada 1: procesos, systemd, notificaciones (+ modelo de permisos) | ✅ 2026-09-07 (merge `a3d8afc`) |
 | F | Control de máquina oleada 2: ventanas Wayland, brillo, red/WiFi, Bluetooth | ✅ 2026-09-08 — primera mitad merge `ed6da4a`, ventanas Wayland merge `85873e4`. Falta solo F4.3: instalar la extensión en la sesión de `omar` (paso manual, decisión del usuario) |
 | G | Interacción: portapapeles de escritura (teclado sintético aplazado con motivo, ratón descartado) | ✅ 2026-09-09 (merge `9270a24`) |
-| H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ⬜ pendiente |
-| I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ⬜ pendiente |
-| J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ⬜ pendiente |
+| H | Código muerto: `vision/`, `proactive/`, `plugins/`, `profiles.py`, `performance.py` → integrar o borrar | ✅ 2026-09-13 (merge `f3b6a95`) — los seis borrados, ninguno integrado |
+| I | Interfaz: composición y acabado del HUD (rama `rediseno-presentacion`, addendum 8.2–8.7) | ✅ 2026-09-13 (merge `883367d`) |
+| J | Endurecer: ampliar banco a E/F/G, rutas de error, traza por petición, techos de recursos, `test_alarma_suena` | ✅ 2026-09-13 (rama `feature/fase-j-endurecer`, ver sección J6 para el cierre y el hash de merge) |
+
+**PLAN COMPLETO: A → J, sin fases pendientes.** El cierre honesto (qué sigue
+frágil, qué deuda queda abierta, qué haría a continuación) está en la
+sección **J6 — Cierre**, al final de este documento.
 
 ---
 
@@ -1723,3 +1727,102 @@ juntos.
         completa sin regresiones (verificado además que
         `test_alarma_suena` no depende de temporización real corriéndolo
         30 veces seguidas).
+
+- [x] **J6 — Cierre.** Evaluación honesta del proyecto tras A→J, no un
+      resumen de lo hecho — para eso ya está el resto de este documento.
+
+      **Dónde sigue siendo frágil JARVIS:**
+      - **El agente (capa 3 de la cascada) sigue siendo lento por hardware,
+        no por software.** 35–70 s de *tool calling* con un modelo 3B en una
+        CPU de 2 núcleos sin GPU es un techo real de esta máquina; todo el
+        trabajo de C1-C7/FASE J movió frases FUERA del agente (parser,
+        respuestas rápidas, encadenado), pero lo que sí necesita razonar
+        libremente sigue siendo lento. Más código no lo arregla — un modelo
+        más pequeño, cuantización más agresiva o hardware distinto sí.
+      - **Reglas de enrutado del parser (`es_anaforica`/`_DEICTICO`) son
+        heurísticas amplias, no un parser formal.** J3 encontró y corrigió
+        un falso positivo real ("la última" en "traza de la última
+        petición" se enrutaba al agente en vez de al parser). Es la segunda
+        vez que aparece esta clase de bug en el proyecto (la primera,
+        `plan_delete`/`ListView` vacía de I5 era distinta, pero mismo
+        patrón de fondo: "funciona en el caso pensado, falla en un caso
+        real no anticipado"). Cualquier intent nuevo que comparta
+        vocabulario con un patrón existente puede volver a chocar así —
+        vale la pena revisar el orden de las puertas de `parse_intent()`
+        cuando se añada el próximo.
+      - **Soporte Windows sin ninguna señal de CI a partir de ahora.** J5
+        eliminó el job de Windows (indiagnosticable, en rojo desde antes de
+        FASE B). Es la decisión correcta dado lo que había para trabajar,
+        pero el efecto neto es que el código Windows (`ctypes.windll`,
+        `comtypes`, WASAPI, `Get-StartApps`, WSL) ya no tiene NINGÚN
+        control automático de regresión — solo lo que un humano en una
+        máquina Windows real verifique a mano. README sigue anunciando
+        Windows como plataforma soportada; eso ahora descansa enteramente
+        en verificación manual, no en CI.
+      - **Cobertura de CI real vs. simulada.** Gran parte de la suite (voz,
+        micrófono, Ollama vivo, portapapeles gráfico) se salta sola en CI
+        (`skipif`) por falta de hardware/servidor gráfico/LLM — se
+        ejercita solo en local, en esta máquina, no en cada push. La suite
+        verde en CI certifica el enrutado y la lógica, no el pipeline de
+        voz de punta a punta.
+
+      **Deuda abierta (nombrada explícitamente, no escondida):**
+      - **Residuo verde del satélite compañero del orbe** (`core.frag`,
+        ~línea 223): visible en algunos fotogramas de `speaking`/
+        `listening`, encontrado y anotado en I6·1/I2, nunca llegó a
+        arreglarse — queda pendiente de una rama de shader dedicada.
+      - **F4.3 — la extensión de GNOME para control de ventanas sigue sin
+        instalarse en la sesión real de trabajo (`omar`).** El código está
+        mergeado y probado; hasta que se instale a mano (decisión del
+        usuario, por el riesgo de correr dentro de `gnome-shell`), las
+        herramientas de ventanas en Linux devuelven ERROR explícito en vez
+        de fingir que funcionaron — correcto por diseño, pero la capacidad
+        no está activa hoy.
+      - **Lo no verificable por hardware, documentado y no fingido**: WiFi
+        y Bluetooth (banco J1: se ejercitan `nmcli`/`bluetoothctl`
+        simulados, esta máquina no tiene radio WiFi operativa ni un
+        dispositivo Bluetooth emparejable de forma estable) y visión/OCR
+        automático (FASE H: el OCR mismo tarda 0,6 s, pero la captura de
+        pantalla SIN diálogo interactivo no es viable en este GNOME+Wayland
+        — por eso se borró el módulo entero en vez de dejarlo a medias).
+        Distinto de lo anterior: `take_screenshot()` (`desktop_actions.py`,
+        captura CON nombre, pedida explícitamente por el usuario) sí se
+        re-verificó en vivo durante este cierre y funciona — usa el mismo
+        portal que vision necesitaba, pero como acción puntual pedida por
+        una persona, no como bucle headless, el consentimiento no es un
+        obstáculo.
+      - **CI de Windows eliminado (J5), no arreglado** — ver arriba, deuda
+        y fragilidad son la misma cosa aquí.
+      - `test_rearme_tras_reinicio` (`test_reminders.py`) sigue esperando
+        con `time.sleep(3)` sobre un temporizador real (margen de 1 s, más
+        holgado que el `test_alarma_suena` ya arreglado, pero mismo patrón
+        de fondo). J5 nombraba específicamente `test_alarma_suena`; este no
+        se tocó. El punto de inyección `_schedule()` que arregló el primero
+        sirve igual para este si algún día resulta flaky también.
+      - `ui/hud/shaders/build.py` (script de build manual, fuera del
+        alcance de J4 por no ser una llamada externa durante una petición
+        real) sigue sin timeout en su `subprocess.run`.
+
+      **Qué haría a continuación** (no pedido, no ejecutado — para cuando
+      el usuario decida retomar):
+      1. Rama de shader dedicada para el residuo verde del satélite —
+        aislado, no urgente, cosmético.
+      2. Si el soporte Windows importa de verdad a futuro: conseguir acceso
+        admin al repo (para leer logs de CI) o una máquina Windows real
+        antes de tocar nada más ahí — sin eso, cualquier cambio es
+        adivinar a ciegas, como ya se documentó en J5.
+      3. Cuando el usuario decida instalar F4.3, re-verificar en vivo las
+        herramientas de ventanas en la sesión real (el código nunca se
+        probó contra la extensión ya activa en un uso normal, solo contra
+        el entorno de prueba de FASE F).
+      4. `CLAUDE.md` (raíz del repo) todavía instruye leer `PLAN_MAESTRO.md`
+        como "el plan maestro activo" — desde que `PLAN_EJECUCION.md` lo
+        sucedió y ahora también está completo, ese puntero quedó
+        desactualizado. No se tocó en J6 porque el punto solo pedía
+        actualizar README y PLAN_EJECUCION — queda señalado aquí para que
+        el usuario decida qué apunta `CLAUDE.md` de ahora en adelante.
+
+      **Estado final: A→J completas, sin fases pendientes en este
+      documento.** README.md actualizado (badge de tests, sección de
+      estado del plan, roadmap sin la promesa de visión/proactividad que
+      FASE H descartó con evidencia).
