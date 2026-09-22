@@ -122,7 +122,7 @@ Cada mensaje baja por esta cascada y se detiene en la primera capa que lo resuel
 - **Noticias**: titulares del día.
 - **Calculadora segura** (AST, sin `eval`) con lenguaje natural (*"raíz cuadrada de 144"*, *"15% de 80"*, *"5 al cubo"*) y **ecuaciones lineales resueltas en local**: *"resuelve x + 135 - 234 = 345"* → *x = 444*. **WolframAlpha** para lo que no se puede en local (derivadas, sistemas).
 - **Navegador automatizado** (Selenium): JARVIS controla su propia ventana de Chrome.
-- **Spotify**: *"pon bohemian rhapsody"* → la busca y reproduce con tu cuenta (Premium) en cualquier dispositivo Spotify Connect activo. Setup en [`docs/spotify.md`](docs/spotify.md). Si el token caduca, lo dice claro y te da el comando exacto (`--reauth-spotify`) en vez de fallar en silencio.
+- **Spotify**: *"pon bohemian rhapsody"* → la busca y reproduce con tu cuenta (Premium) en cualquier dispositivo Spotify Connect activo. Setup en [`docs/spotify.md`](docs/spotify.md). Si el token caduca, lo dice claro y te da el comando exacto (`--reauth-spotify`) en vez de fallar en silencio. Control avanzado por API: *"pausa spotify"* (funciona aunque suene en el celular), *"pon mi playlist de running"*, *"que dispositivos de spotify hay"*, *"guardame esta cancion"* — ver [4. Control avanzado](docs/spotify.md#4-control-avanzado-pro).
 </details>
 
 <details open>

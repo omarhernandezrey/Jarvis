@@ -429,6 +429,91 @@ def _spotify(song: str):
     return play_song(song)
 
 
+def _spotify_pause():
+    from jarvis_local.tools.spotify import pause_playback
+    return pause_playback()
+
+
+def _spotify_resume():
+    from jarvis_local.tools.spotify import resume_playback
+    return resume_playback()
+
+
+def _spotify_next():
+    from jarvis_local.tools.spotify import next_track
+    return next_track()
+
+
+def _spotify_previous():
+    from jarvis_local.tools.spotify import previous_track
+    return previous_track()
+
+
+def _spotify_volume(nivel: int):
+    from jarvis_local.tools.spotify import set_volume
+    return set_volume(nivel)
+
+
+def _spotify_shuffle(activar: bool = True):
+    from jarvis_local.tools.spotify import set_shuffle
+    return set_shuffle(activar)
+
+
+def _spotify_repeat(modo: str):
+    from jarvis_local.tools.spotify import set_repeat
+    return set_repeat(modo)
+
+
+def _spotify_now_playing():
+    from jarvis_local.tools.spotify import now_playing
+    return now_playing()
+
+
+def _spotify_queue(song: str):
+    from jarvis_local.tools.spotify import add_to_queue
+    return add_to_queue(song)
+
+
+def _spotify_playlist(name: str):
+    from jarvis_local.tools.spotify import play_playlist
+    return play_playlist(name)
+
+
+def _spotify_album(query: str):
+    from jarvis_local.tools.spotify import play_album
+    return play_album(query)
+
+
+def _spotify_radio(query: str):
+    from jarvis_local.tools.spotify import play_radio
+    return play_radio(query)
+
+
+def _spotify_devices():
+    from jarvis_local.tools.spotify import list_devices
+    return list_devices()
+
+
+def _spotify_device_set(device: str):
+    from jarvis_local.tools.spotify import transfer_playback
+    return transfer_playback(device)
+
+
+def _spotify_like():
+    from jarvis_local.tools.spotify import like_current_track
+    return like_current_track()
+
+
+def _spotify_recent(limite: int = 10):
+    from jarvis_local.tools.spotify import recently_played
+    return recently_played(limite)
+
+
+def _spotify_resume_last():
+    from jarvis_local.tools.spotify import resume_last_played
+    return resume_last_played()
+
+
 def _play_music(song: str = ""):
     from jarvis_local.tools.desktop_actions import play_music
     return play_music(song)
@@ -1450,6 +1535,156 @@ CONTRACTS: list[ToolContract] = [
                  verify="La API de Spotify reporta reproducción activa de la pista.",
                  revert="Pausar (controlar_musica accion=pausar).",
                  parser_intents=("spotify_play",)),
+
+    # ---- Spotify (Pro) ----
+    ToolContract("pausar_spotify",
+                 "Pausa la reproduccion en Spotify hablando directo con la API "
+                 "oficial. A diferencia de controlar_musica, funciona aunque el "
+                 "dispositivo activo sea remoto (celular, parlante Connect).",
+                 _obj({}, []), _spotify_pause, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta reproduccion pausada.",
+                 revert="reanudar_spotify.",
+                 parser_intents=("spotify_pause",)),
+
+    ToolContract("reanudar_spotify",
+                 "Reanuda la reproduccion en Spotify hablando directo con la API "
+                 "oficial, aunque el dispositivo activo sea remoto.",
+                 _obj({}, []), _spotify_resume, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta reproduccion activa.",
+                 revert="pausar_spotify.",
+                 parser_intents=("spotify_resume",)),
+
+    ToolContract("siguiente_cancion_spotify",
+                 "Salta a la siguiente cancion en Spotify via la API oficial, "
+                 "aunque el dispositivo activo sea remoto.",
+                 _obj({}, []), _spotify_next, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta una pista distinta sonando.",
+                 revert="cancion_anterior_spotify.",
+                 parser_intents=("spotify_next",)),
+
+    ToolContract("cancion_anterior_spotify",
+                 "Vuelve a la cancion anterior en Spotify via la API oficial, "
+                 "aunque el dispositivo activo sea remoto.",
+                 _obj({}, []), _spotify_previous, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta una pista distinta sonando.",
+                 revert="siguiente_cancion_spotify.",
+                 parser_intents=("spotify_previous",)),
+
+    ToolContract("volumen_spotify",
+                 "Fija el volumen de reproduccion en Spotify (0-100) en el "
+                 "dispositivo Connect activo, incluso si es un celular o "
+                 "parlante remoto (distinto del volumen del sistema operativo).",
+                 _obj({"nivel": _int("Nivel de 0 a 100")}, ["nivel"]),
+                 _spotify_volume, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta el nuevo nivel de volumen.",
+                 revert="volumen_spotify con el nivel anterior.",
+                 parser_intents=("spotify_volume",)),
+
+    ToolContract("aleatorio_spotify",
+                 "Activa o desactiva el modo aleatorio (shuffle) de la "
+                 "reproduccion actual en Spotify.",
+                 _obj({"activar": _bool("true=activar aleatorio, false=desactivarlo")},
+                     ["activar"]),
+                 _spotify_shuffle, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta el estado de shuffle actualizado.",
+                 revert="aleatorio_spotify con el valor contrario.",
+                 parser_intents=("spotify_shuffle",)),
+
+    ToolContract("repetir_spotify",
+                 "Fija el modo de repeticion en Spotify: 'cancion' repite la "
+                 "pista actual, 'lista' repite la playlist/album/contexto, 'no' "
+                 "lo desactiva.",
+                 _obj({"modo": _str("Uno de: cancion, lista, no",
+                                    ["cancion", "lista", "no"])}),
+                 _spotify_repeat, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta el modo de repeticion actualizado.",
+                 revert="repetir_spotify con el modo anterior.",
+                 parser_intents=("spotify_repeat",)),
+
+    ToolContract("que_suena_spotify",
+                 "Informa que cancion esta sonando ahora mismo en Spotify: "
+                 "nombre, artista, dispositivo y si esta en pausa o sonando.",
+                 _obj({}, []), _spotify_now_playing, RiskLevel.READ,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("spotify_now_playing",)),
+
+    ToolContract("agregar_a_cola_spotify",
+                 "Busca una cancion y la agrega a la cola de reproduccion de "
+                 "Spotify sin interrumpir lo que esta sonando.",
+                 _obj({"song": _str("Cancion o artista a agregar a la cola")}),
+                 _spotify_queue, RiskLevel.EXECUTE,
+                 verify="La API no expone forma confiable de leer la cola; se "
+                        "confia en que add_to_queue no lanzo error.",
+                 revert="n/a (no hay forma de quitar una cancion de la cola).",
+                 parser_intents=("spotify_queue",)),
+
+    ToolContract("reproducir_playlist_spotify",
+                 "Busca entre las playlists propias del usuario por nombre "
+                 "parcial y reproduce la que coincida en Spotify.",
+                 _obj({"name": _str("Nombre o parte del nombre de la playlist")}),
+                 _spotify_playlist, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta reproduccion activa del contexto.",
+                 revert="Pausar (pausar_spotify).",
+                 parser_intents=("spotify_playlist",)),
+
+    ToolContract("reproducir_album_spotify",
+                 "Busca y reproduce un album completo en Spotify.",
+                 _obj({"query": _str("Album o 'album de artista' a reproducir")}),
+                 _spotify_album, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta reproduccion activa del album.",
+                 revert="Pausar (pausar_spotify).",
+                 parser_intents=("spotify_album",)),
+
+    ToolContract("radio_spotify",
+                 "Inicia una 'radio' de recomendaciones basada en un artista o "
+                 "cancion en Spotify. Si el endpoint de recomendaciones no esta "
+                 "disponible para la cuenta, cae a reproducir el catalogo del "
+                 "artista o la cancion buscada.",
+                 _obj({"query": _str("Artista o cancion en la que basar la radio")}),
+                 _spotify_radio, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta reproduccion activa.",
+                 revert="Pausar (pausar_spotify).",
+                 parser_intents=("spotify_radio",)),
+
+    ToolContract("listar_dispositivos_spotify",
+                 "Lista los dispositivos Spotify Connect disponibles ahora "
+                 "(celular, parlantes, este PC) y cual esta activo.",
+                 _obj({}, []), _spotify_devices, RiskLevel.READ,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("spotify_devices",)),
+
+    ToolContract("cambiar_dispositivo_spotify",
+                 "Cambia a que dispositivo Spotify Connect suena la musica, "
+                 "por nombre parcial (celular, parlante, este PC...).",
+                 _obj({"device": _str("Nombre o parte del nombre del dispositivo")}),
+                 _spotify_device_set, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta el nuevo dispositivo activo.",
+                 revert="cambiar_dispositivo_spotify con el dispositivo anterior.",
+                 parser_intents=("spotify_device_set",)),
+
+    ToolContract("guardar_en_favoritos_spotify",
+                 "Guarda la cancion que esta sonando ahora en Spotify dentro de "
+                 "la biblioteca personal del usuario (Me Gusta / Liked Songs).",
+                 _obj({}, []), _spotify_like, RiskLevel.CREATE,
+                 verify="La API de Spotify confirma la cancion agregada a la biblioteca.",
+                 revert="No implementado: quitar de Me Gusta no fue solicitado.",
+                 parser_intents=("spotify_like",)),
+
+    ToolContract("reproducido_recientemente_spotify",
+                 "Lista las canciones reproducidas recientemente en Spotify.",
+                 _obj({"limite": _int("Cuantas canciones listar, 1-50 (por defecto 10)")}, []),
+                 _spotify_recent, RiskLevel.READ,
+                 verify=_V_LECTURA, revert="n/a",
+                 parser_intents=("spotify_recent",)),
+
+    ToolContract("reanudar_ultimo_spotify",
+                 "Reanuda lo ultimo reproducido en Spotify: retoma el contexto "
+                 "activo si quedo pausado, o cae al historial reciente si la "
+                 "sesion se perdio del todo.",
+                 _obj({}, []), _spotify_resume_last, RiskLevel.EXECUTE,
+                 verify="La API de Spotify reporta reproduccion activa.",
+                 revert="Pausar (pausar_spotify).",
+                 parser_intents=("spotify_resume_last",)),
 
     ToolContract("reproducir_en_youtube",
                  "Busca y reproduce un video en YouTube. Usar solo cuando el "

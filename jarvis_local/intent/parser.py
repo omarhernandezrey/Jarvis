@@ -932,19 +932,24 @@ def _parse_media(low: str) -> IntentResult | None:
     """Volumen y control multimedia. Corre ANTES de fase4: 'quita el
     silencio' caeria en el patron de BORRAR ('quita...') si no."""
     # --- VOLUMEN A NIVEL EXACTO ---
+    # "spotify" en la frase: el volumen es del dispositivo Connect, no del
+    # sistema -- lo resuelve _parse_spotify_control, que corre despues.
     m_vol = re.search(r'\bvolumen\b[^0-9%]*?(\d{1,3})\s*(?:por\s*ciento|%)?', low)
-    if m_vol:
+    if m_vol and "spotify" not in low:
         return IntentResult(kind="tool_execute", tool="volume_set",
                             arguments={"level": int(m_vol.group(1))},
                             reason=f"Fijar volumen al {m_vol.group(1)}%")
 
     # --- SUBIR / BAJAR VOLUMEN ---
-    if re.search(r'\b(?:sube(?:le|me)?|aumenta|incrementa)\b.*\bvolumen\b', low) \
-            or re.search(r'\bmas\s+volumen\b', low):
+    # Mismo motivo que arriba: "sube el volumen de spotify a 40" no debe
+    # colar aqui como volume_up antes de que _parse_spotify_control lo lea
+    # como un nivel exacto.
+    if (re.search(r'\b(?:sube(?:le|me)?|aumenta|incrementa)\b.*\bvolumen\b', low)
+            or re.search(r'\bmas\s+volumen\b', low)) and "spotify" not in low:
         return IntentResult(kind="tool_execute", tool="volume_up",
                             reason="Subir volumen")
-    if re.search(r'\b(?:baja(?:le|me)?|disminuye|reduce)\b.*\bvolumen\b', low) \
-            or re.search(r'\bmenos\s+volumen\b', low):
+    if (re.search(r'\b(?:baja(?:le|me)?|disminuye|reduce)\b.*\bvolumen\b', low)
+            or re.search(r'\bmenos\s+volumen\b', low)) and "spotify" not in low:
         return IntentResult(kind="tool_execute", tool="volume_down",
                             reason="Bajar volumen")
 
@@ -985,6 +990,117 @@ def _parse_media(low: str) -> IntentResult | None:
             or re.search(r'\b(?:devuelve|regresa)\s+la\s+(?:cancion|pista)\b', low):
         return IntentResult(kind="tool_execute", tool="media_previous",
                             reason="Cancion anterior")
+
+    return None
+
+
+def _parse_spotify_control(low: str) -> IntentResult | None:
+    """Control de Spotify EXCLUSIVO de la Web API -- shuffle/repeat/cola/
+    qué suena/dispositivos/me gusta/recientes no existen via MPRIS, y
+    pausa/siguiente/anterior/volumen aqui exigen mencionar "spotify" o un
+    dispositivo explicito para no competir con _parse_media (arriba, MPRIS
+    generico, sigue resolviendo "pausa"/"sube el volumen" a secas)."""
+    # QUE SUENA
+    if re.search(r'\bque\s+(?:esta\s+)?(?:suena|sonando)\s+en\s+spotify\b', low) \
+            or re.fullmatch(r'\s*que\s+suena[?.!]?\s*', low):
+        return IntentResult(kind="tool_read", tool="spotify_now_playing",
+                            reason="Consultar que suena en Spotify")
+
+    # DISPOSITIVOS: LISTAR
+    if re.search(r'\b(?:que\s+)?dispositivos\s+(?:de\s+)?spotify\b', low):
+        return IntentResult(kind="tool_read", tool="spotify_devices",
+                            reason="Listar dispositivos Spotify Connect")
+
+    # DISPOSITIVOS: CAMBIAR
+    m_dev = re.search(r'\b(?:pasa|cambia|manda)\s+(?:la\s+)?(?:musica|spotify)\s+'
+                      r'(?:al?|para|a)\s+(.+)', low)
+    if m_dev:
+        return IntentResult(kind="tool_execute", tool="spotify_device_set",
+                            arguments={"device": m_dev.group(1).strip().rstrip('.!?')},
+                            reason="Cambiar dispositivo de reproduccion en Spotify")
+
+    # VOLUMEN DE SPOTIFY (requiere "volumen" + "spotify" + numero)
+    m_num = re.search(r'(\d{1,3})\s*(?:por\s*ciento|%)?', low)
+    if "volumen" in low and "spotify" in low and m_num:
+        return IntentResult(kind="tool_execute", tool="spotify_volume",
+                            arguments={"nivel": int(m_num.group(1))},
+                            reason="Fijar volumen de Spotify")
+
+    # ALEATORIO / SHUFFLE
+    if re.search(r'\b(?:activa|pon(?:me|le)?|enciende)\b.*\b(?:aleatorio|shuffle)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_shuffle",
+                            arguments={"activar": True}, reason="Activar aleatorio en Spotify")
+    if re.search(r'\b(?:desactiva|quita|apaga)\b.*\b(?:aleatorio|shuffle)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_shuffle",
+                            arguments={"activar": False}, reason="Desactivar aleatorio en Spotify")
+
+    # REPETIR
+    if re.search(r'\brepite\s+(?:esta\s+)?(?:cancion|tema|pista)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_repeat",
+                            arguments={"modo": "cancion"}, reason="Repetir cancion en Spotify")
+    if re.search(r'\brepite\s+(?:toda\s+)?la\s+(?:lista|playlist|album)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_repeat",
+                            arguments={"modo": "lista"}, reason="Repetir lista en Spotify")
+    if re.search(r'\b(?:desactiva|quita|apaga)\b.*\brepeti\w*\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_repeat",
+                            arguments={"modo": "no"}, reason="Desactivar repeticion en Spotify")
+
+    # COLA
+    m_cola = re.search(r'\b(?:agrega|anade|pon)\w*\s+(.+?)\s+a\s+la\s+cola\b', low)
+    if m_cola:
+        return IntentResult(kind="tool_execute", tool="spotify_queue",
+                            arguments={"song": m_cola.group(1).strip().rstrip('.!?')},
+                            reason="Agregar cancion a la cola de Spotify")
+
+    # ME GUSTA
+    if re.search(r'\bguarda(?:me)?\s+esta\s+cancion\b', low) \
+            or re.search(r'\bme\s+gusta\s+esta\s+cancion\b', low) \
+            or re.search(r'\bagrega\w*\s+(?:esta\s+cancion\s+)?a\s+(?:mis\s+)?me\s+gusta\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_like",
+                            reason="Guardar cancion actual en Me Gusta")
+
+    # RECIENTES
+    if re.search(r'\breproducid[oa]s?\s+recientemente\b', low) \
+            or re.search(r'\bhistorial\s+de\s+spotify\b', low) \
+            or re.search(r'\bque\s+(?:escuche|reproduje)\s+(?:ultimo|recientemente)\b', low):
+        return IntentResult(kind="tool_read", tool="spotify_recent",
+                            reason="Consultar reproducido recientemente")
+
+    # REANUDAR LO ULTIMO
+    if re.search(r'\b(?:retoma|reanuda|sigue\s+con)\b.*'
+                r'\blo\s+(?:ultimo|que\s+(?:sonaba|estaba\s+sonando))\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_resume_last",
+                            reason="Reanudar lo ultimo reproducido en Spotify")
+
+    # PAUSA/REANUDA/SIGUIENTE/ANTERIOR EXPLICITOS DE SPOTIFY: mencionan
+    # spotify o un dispositivo remoto -- "pausa"/"siguiente cancion"/
+    # "cancion anterior" a secas (o con "musica"/"cancion" pegado) ya los
+    # resolvio _parse_media arriba via MPRIS, sin llegar aqui. No hay
+    # variante "siguiente cancion en spotify"/"cancion anterior en spotify":
+    # esas frases SIEMPRE contienen "siguiente cancion"/"cancion anterior"
+    # adyacentes, que _parse_media ya intercepta antes -- serian
+    # inalcanzables aqui, asi que no se escriben (codigo muerto).
+    if re.search(r'\bpausa\w*\s+spotify\b|\bspotify\s+pausa\w*\b', low) \
+            or re.search(r'\bpausa\w*\b.*\ben\s+(?:el\s+)?'
+                        r'(?:celular|telefono|parlante|altavoz)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_pause",
+                            reason="Pausar Spotify via API")
+    if re.search(r'\breanuda\w*\s+spotify\b|\bspotify\s+reanuda\w*\b', low) \
+            or re.search(r'\breanuda\w*\b.*\ben\s+(?:el\s+)?'
+                        r'(?:celular|telefono|parlante|altavoz)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_resume",
+                            reason="Reanudar Spotify via API")
+    if re.search(r'\bsalta\w*\s+(?:la\s+cancion\s+)?en\s+(?:el\s+)?'
+                r'(?:celular|parlante|altavoz)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_next",
+                            reason="Siguiente en Spotify")
+    # "la anterior"/"el anterior" dispara _DEICTICO (anaforica) mucho antes
+    # en la cascada -- esta frase evita "anterior" para seguir siendo
+    # alcanzable aqui.
+    if re.search(r'\bretrocede\w*\s+(?:la\s+cancion\s+)?en\s+(?:el\s+)?'
+                r'(?:celular|telefono|parlante|altavoz)\b', low):
+        return IntentResult(kind="tool_execute", tool="spotify_previous",
+                            reason="Anterior en Spotify")
 
     return None
 
@@ -1151,6 +1267,35 @@ def _parse_fase4(m: str) -> IntentResult | None:
         return IntentResult(kind="tool_execute", tool="youtube_play",
                             arguments={"query": m_yt.group(1).strip()},
                             reason="Reproducir en YouTube")
+    # Playlist/album/radio ANTES del catch-all de cancion suelta (m_play/
+    # m_pon mas abajo): si no, "pon mi playlist de running" se tragaria como
+    # nombre de cancion.
+    m_playlist = re.search(
+        r'(?:pon(?:me|le)?|reproduce(?:me)?|toca)\s+(?:mi\s+|la\s+)?'
+        r'(?:playlist|lista\s+de\s+reproduccion)\s+(?:de\s+)?(.+)', low)
+    if m_playlist:
+        return IntentResult(kind="tool_execute", tool="spotify_playlist",
+                            arguments={"name": m_playlist.group(1).strip().rstrip('.!?')},
+                            reason="Reproducir playlist en Spotify")
+
+    m_album = re.search(
+        r'(?:pon(?:me|le)?|reproduce(?:me)?|toca)\s+(?:el\s+)?'
+        r'(?:album|disco)\s+(?:de\s+)?(.+)', low)
+    if m_album:
+        return IntentResult(kind="tool_execute", tool="spotify_album",
+                            arguments={"query": m_album.group(1).strip().rstrip('.!?')},
+                            reason="Reproducir album en Spotify")
+
+    # "wifi" excluido: "enciende la radio wifi" ya la resuelve _parse_red,
+    # que corre antes en la cascada -- este chequeo extra es solo cinturon.
+    m_radio = re.search(
+        r'(?:pon(?:me|le)?|reproduce(?:me)?|activa|quiero|inicia)\s+'
+        r'(?:una?\s+)?radio\s+(?:de\s+|basada\s+en\s+)?(.+)', low)
+    if m_radio and "wifi" not in low:
+        return IntentResult(kind="tool_execute", tool="spotify_radio",
+                            arguments={"query": m_radio.group(1).strip().rstrip('.!?')},
+                            reason="Iniciar radio en Spotify")
+
     if re.search(r'\b(?:pon|toca|reproduce)\s+(?:algo de\s+)?musica\b', low):
         m_descriptor = re.search(r'musica\s+(?:de\s+)?(.+)', low)
         descriptor = m_descriptor.group(1).strip().rstrip('.!?') if m_descriptor else ""
@@ -1549,6 +1694,14 @@ def parse_intent(message: str) -> IntentResult:
     media = _parse_media(m.lower())
     if media is not None:
         return media
+
+    # --- CONTROL DE SPOTIFY VIA WEB API (shuffle/repeat/cola/que suena/
+    #     dispositivos/me gusta/recientes son exclusivos de aqui; corre
+    #     justo despues de _parse_media para no competir con "pausa"/
+    #     "sube el volumen" genericos, que ya se resolvieron arriba) ---
+    spotify_ctrl = _parse_spotify_control(m.lower())
+    if spotify_ctrl is not None:
+        return spotify_ctrl
 
     # --- ENERGIA DEL EQUIPO (despues de media: "apaga el sonido"
     #     es volumen; antes de fase4) ---
