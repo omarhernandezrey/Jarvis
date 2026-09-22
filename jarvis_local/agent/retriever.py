@@ -173,6 +173,57 @@ _EJEMPLOS: dict[str, list[str]] = {
         "quiero escuchar imagine dragons", "ponme musica de bad bunny",
         "reproduce la cancion here comes the sun", "pon algo de rock en spotify",
     ],
+    "pausar_spotify": [
+        "pausa spotify", "pausa la musica en el celular", "deten spotify",
+    ],
+    "reanudar_spotify": [
+        "reanuda spotify", "sigue la musica en el parlante",
+    ],
+    "siguiente_cancion_spotify": [
+        "siguiente cancion en spotify", "salta la cancion en el celular",
+    ],
+    "cancion_anterior_spotify": [
+        "cancion anterior en spotify", "vuelve a la cancion pasada en el parlante",
+    ],
+    "volumen_spotify": [
+        "sube el volumen de spotify a 60", "pon el volumen de spotify en 30",
+    ],
+    "aleatorio_spotify": [
+        "activa el aleatorio", "pon shuffle", "quita el aleatorio",
+    ],
+    "repetir_spotify": [
+        "repite esta cancion", "repite toda la lista", "desactiva la repeticion",
+    ],
+    "que_suena_spotify": [
+        "que suena", "que cancion esta sonando", "que esta sonando en spotify",
+    ],
+    "agregar_a_cola_spotify": [
+        "agrega esta cancion a la cola", "pon bohemian rhapsody en la cola",
+    ],
+    "reproducir_playlist_spotify": [
+        "pon mi playlist de running", "reproduce la lista de favoritos",
+    ],
+    "reproducir_album_spotify": [
+        "pon el album de dark side of the moon", "reproduce el disco abbey road",
+    ],
+    "radio_spotify": [
+        "pon radio de bad bunny", "quiero una radio basada en esta cancion",
+    ],
+    "listar_dispositivos_spotify": [
+        "que dispositivos de spotify hay", "donde puedo poner la musica",
+    ],
+    "cambiar_dispositivo_spotify": [
+        "cambia la musica al celular", "pasa spotify al parlante de la sala",
+    ],
+    "guardar_en_favoritos_spotify": [
+        "guardame esta cancion", "agregala a mis me gusta",
+    ],
+    "reproducido_recientemente_spotify": [
+        "que escuche recientemente", "historial de spotify",
+    ],
+    "reanudar_ultimo_spotify": [
+        "retoma lo ultimo que sonaba", "sigue con lo que estaba escuchando",
+    ],
     "reproducir_en_youtube": [
         "pon musica en youtube", "ponme un video de",
         "quiero escuchar una cancion en youtube", "busca ese video en youtube",

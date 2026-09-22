@@ -34,51 +34,68 @@
   ],
   "registry_conf": {
     "abrir_aplicacion": false,
-    "abrir_oferta_empleo": false,
-    "abrir_sitio_web": false,
-    "borrar_archivo": true,
-    "buscar_archivo": false,
-    "buscar_empleo": false,
-    "buscar_en_google": false,
-    "calcular": false,
-    "cambiar_ventana": false,
-    "cancelar_recordatorio": false,
-    "captura_de_pantalla": false,
     "cerrar_aplicacion": false,
-    "cerrar_navegador": false,
     "cerrar_todas_aplicaciones": false,
-    "clima": false,
-    "contar_chiste": false,
-    "controlar_musica": false,
     "controlar_volumen": false,
-    "crear_archivo": false,
-    "crear_carpeta": false,
+    "controlar_musica": false,
     "crear_recordatorio": false,
-    "ejecutar_comando": false,
-    "energia_del_equipo": false,
-    "enviar_correo": true,
-    "enviar_whatsapp": false,
-    "estado_del_sistema": false,
-    "leer_archivo": false,
-    "leer_portapapeles": false,
-    "listar_archivos": false,
     "listar_recordatorios": false,
-    "mi_direccion_ip": false,
-    "mostrar_ofertas_empleo": false,
-    "navegar_con_selenium": false,
-    "noticias": false,
-    "ocultar_archivos": true,
+    "cancelar_recordatorio": false,
+    "enviar_whatsapp": false,
     "organizar_ventanas": false,
+    "resumen_del_dia": false,
+    "leer_portapapeles": false,
+    "leer_archivo": false,
+    "energia_del_equipo": false,
+    "estado_del_sistema": false,
+    "ejecutar_comando": false,
+    "listar_archivos": false,
+    "buscar_archivo": false,
+    "crear_carpeta": false,
+    "crear_archivo": false,
+    "borrar_archivo": true,
+    "ocultar_archivos": true,
+    "clima": false,
+    "ubicar_lugar": false,
+    "wikipedia": false,
+    "noticias": false,
+    "calcular": false,
     "preguntar_wolframalpha": false,
+    "mi_direccion_ip": false,
     "proximos_eventos": false,
-    "recordar": false,
+    "contar_chiste": false,
+    "abrir_sitio_web": false,
+    "buscar_en_google": false,
     "reproducir_en_spotify": false,
+    "pausar_spotify": false,
+    "reanudar_spotify": false,
+    "siguiente_cancion_spotify": false,
+    "cancion_anterior_spotify": false,
+    "volumen_spotify": false,
+    "aleatorio_spotify": false,
+    "repetir_spotify": false,
+    "que_suena_spotify": false,
+    "agregar_a_cola_spotify": false,
+    "reproducir_playlist_spotify": false,
+    "reproducir_album_spotify": false,
+    "radio_spotify": false,
+    "listar_dispositivos_spotify": false,
+    "cambiar_dispositivo_spotify": false,
+    "guardar_en_favoritos_spotify": false,
+    "reproducido_recientemente_spotify": false,
+    "reanudar_ultimo_spotify": false,
     "reproducir_en_youtube": false,
     "reproducir_musica_local": false,
-    "resumen_del_dia": false,
+    "navegar_con_selenium": false,
+    "cerrar_navegador": false,
+    "buscar_empleo": false,
+    "abrir_oferta_empleo": false,
+    "mostrar_ofertas_empleo": false,
     "tomar_nota": false,
-    "ubicar_lugar": false,
-    "wikipedia": false
+    "captura_de_pantalla": false,
+    "cambiar_ventana": false,
+    "enviar_correo": true,
+    "recordar": false
   },
   "registry_names": [
     "abrir_aplicacion",
@@ -115,6 +132,23 @@
     "abrir_sitio_web",
     "buscar_en_google",
     "reproducir_en_spotify",
+    "pausar_spotify",
+    "reanudar_spotify",
+    "siguiente_cancion_spotify",
+    "cancion_anterior_spotify",
+    "volumen_spotify",
+    "aleatorio_spotify",
+    "repetir_spotify",
+    "que_suena_spotify",
+    "agregar_a_cola_spotify",
+    "reproducir_playlist_spotify",
+    "reproducir_album_spotify",
+    "radio_spotify",
+    "listar_dispositivos_spotify",
+    "cambiar_dispositivo_spotify",
+    "guardar_en_favoritos_spotify",
+    "reproducido_recientemente_spotify",
+    "reanudar_ultimo_spotify",
     "reproducir_en_youtube",
     "reproducir_musica_local",
     "navegar_con_selenium",
@@ -130,314 +164,65 @@
   ],
   "registry_schemas": {
     "abrir_aplicacion": {
+      "type": "function",
       "function": {
-        "description": "Abre cualquier aplicacion instalada en el computador por su nombre (Chrome, WhatsApp, Word, VS Code, Spotify, WSL/Ubuntu, calculadora...). Usar cuando el usuario pida abrir, lanzar o iniciar un programa.",
         "name": "abrir_aplicacion",
+        "description": "Abre cualquier aplicacion instalada en el computador por su nombre (Chrome, WhatsApp, Word, VS Code, Spotify, WSL/Ubuntu, calculadora...). Usar cuando el usuario pida abrir, lanzar o iniciar un programa.",
         "parameters": {
+          "type": "object",
           "properties": {
             "app": {
-              "description": "Nombre de la aplicacion, ej: 'whatsapp', 'chrome', 'word'",
-              "type": "string"
+              "type": "string",
+              "description": "Nombre de la aplicacion, ej: 'whatsapp', 'chrome', 'word'"
             }
           },
           "required": [
             "app"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
-    },
-    "abrir_oferta_empleo": {
-      "function": {
-        "description": "Abre en el navegador una de las ofertas de la ultima busqueda de empleo.",
-        "name": "abrir_oferta_empleo",
-        "parameters": {
-          "properties": {
-            "number": {
-              "description": "Numero de la oferta en la lista (1, 2, 3...)",
-              "type": "integer"
-            }
-          },
-          "required": [
-            "number"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "abrir_sitio_web": {
-      "function": {
-        "description": "Abre una pagina web en el navegador del usuario.",
-        "name": "abrir_sitio_web",
-        "parameters": {
-          "properties": {
-            "site": {
-              "description": "Dominio o URL, ej: 'github.com', 'youtube.com'",
-              "type": "string"
-            }
-          },
-          "required": [
-            "site"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "borrar_archivo": {
-      "function": {
-        "description": "Prepara el borrado de un archivo. NO borra de inmediato: crea un plan que el usuario debe confirmar con /confirmar.",
-        "name": "borrar_archivo",
-        "parameters": {
-          "properties": {
-            "path": {
-              "description": "Ruta del archivo a borrar",
-              "type": "string"
-            }
-          },
-          "required": [
-            "path"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "buscar_archivo": {
-      "function": {
-        "description": "Busca archivos por nombre dentro de una carpeta permitida.",
-        "name": "buscar_archivo",
-        "parameters": {
-          "properties": {
-            "name": {
-              "description": "Nombre o parte del nombre del archivo",
-              "type": "string"
-            },
-            "path": {
-              "description": "Carpeta donde buscar. Vacio = Documentos",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "buscar_empleo": {
-      "function": {
-        "description": "Busca ofertas de trabajo en Computrabajo y LinkedIn, ordenadas de la mas reciente a la mas antigua, con empresa, salario y ubicacion.",
-        "name": "buscar_empleo",
-        "parameters": {
-          "properties": {
-            "ciudad": {
-              "description": "Ciudad. Vacio = toda Colombia",
-              "type": "string"
-            },
-            "puesto": {
-              "description": "Cargo buscado, ej: 'desarrollador', 'contador'",
-              "type": "string"
-            }
-          },
-          "required": [
-            "puesto"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "buscar_en_google": {
-      "function": {
-        "description": "Busca cualquier cosa en Google y abre los resultados en el navegador.",
-        "name": "buscar_en_google",
-        "parameters": {
-          "properties": {
-            "query": {
-              "description": "Lo que se quiere buscar",
-              "type": "string"
-            }
-          },
-          "required": [
-            "query"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "calcular": {
-      "function": {
-        "description": "Resuelve una operacion o ecuacion matematica. Acepta lenguaje natural ('5 mas 3 por 2') y ecuaciones ('x + 135 - 234 = 345').",
-        "name": "calcular",
-        "parameters": {
-          "properties": {
-            "expression": {
-              "description": "La expresion o ecuacion a resolver",
-              "type": "string"
-            }
-          },
-          "required": [
-            "expression"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "cambiar_ventana": {
-      "function": {
-        "description": "Cambia a la ventana anterior del escritorio (Alt+Tab).",
-        "name": "cambiar_ventana",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "cancelar_recordatorio": {
-      "function": {
-        "description": "Cancela recordatorios pendientes: por numero, por texto o todos.",
-        "name": "cancelar_recordatorio",
-        "parameters": {
-          "properties": {
-            "cual": {
-              "description": "Numero del recordatorio, parte del texto, o 'todos'",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "captura_de_pantalla": {
-      "function": {
-        "description": "Toma una captura de la pantalla y la guarda como imagen PNG.",
-        "name": "captura_de_pantalla",
-        "parameters": {
-          "properties": {
-            "name": {
-              "description": "Nombre del archivo. Vacio = fecha y hora",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
+      }
     },
     "cerrar_aplicacion": {
+      "type": "function",
       "function": {
-        "description": "Cierra una aplicacion o programa abierto por su nombre (Word, Chrome, WhatsApp, Spotify, calculadora...). Usar cuando el usuario pida cerrar, terminar o salir de un programa.",
         "name": "cerrar_aplicacion",
+        "description": "Cierra una aplicacion o programa abierto por su nombre (Word, Chrome, WhatsApp, Spotify, calculadora...). Usar cuando el usuario pida cerrar, terminar o salir de un programa.",
         "parameters": {
+          "type": "object",
           "properties": {
             "app": {
-              "description": "Nombre de la aplicacion a cerrar, ej: 'word', 'chrome'",
-              "type": "string"
+              "type": "string",
+              "description": "Nombre de la aplicacion a cerrar, ej: 'word', 'chrome'"
             }
           },
           "required": [
             "app"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
-    },
-    "cerrar_navegador": {
-      "function": {
-        "description": "Cierra el navegador Chrome controlado por JARVIS.",
-        "name": "cerrar_navegador",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
+      }
     },
     "cerrar_todas_aplicaciones": {
+      "type": "function",
       "function": {
-        "description": "Cierra de una sola vez todos los programas que JARVIS abrio en esta sesion. Usar cuando el usuario pida cerrar todo o todos los programas.",
         "name": "cerrar_todas_aplicaciones",
+        "description": "Cierra de una sola vez todos los programas que JARVIS abrio en esta sesion. Usar cuando el usuario pida cerrar todo o todos los programas.",
         "parameters": {
+          "type": "object",
           "properties": {},
-          "required": [],
-          "type": "object"
+          "required": []
         }
-      },
-      "type": "function"
-    },
-    "clima": {
-      "function": {
-        "description": "Dice el clima actual de cualquier ciudad del mundo: temperatura, humedad, viento y pronostico del dia.",
-        "name": "clima",
-        "parameters": {
-          "properties": {
-            "city": {
-              "description": "Ciudad. Vacio = ciudad actual del usuario",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "contar_chiste": {
-      "function": {
-        "description": "Cuenta un chiste para entretener al usuario.",
-        "name": "contar_chiste",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "controlar_musica": {
-      "function": {
-        "description": "Controla la reproduccion multimedia en curso (Spotify, YouTube, etc.): pausar/reanudar, siguiente cancion o cancion anterior.",
-        "name": "controlar_musica",
-        "parameters": {
-          "properties": {
-            "accion": {
-              "description": "Una de: pausar, siguiente, anterior",
-              "enum": [
-                "pausar",
-                "siguiente",
-                "anterior"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "accion"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
+      }
     },
     "controlar_volumen": {
+      "type": "function",
       "function": {
-        "description": "Controla el volumen del computador: subir, bajar, silenciar, activar el sonido o fijarlo a un nivel exacto (0-100).",
         "name": "controlar_volumen",
+        "description": "Controla el volumen del computador: subir, bajar, silenciar, activar el sonido o fijarlo a un nivel exacto (0-100).",
         "parameters": {
+          "type": "object",
           "properties": {
             "accion": {
+              "type": "string",
               "description": "Una de: subir, bajar, silenciar, activar, nivel",
               "enum": [
                 "subir",
@@ -445,355 +230,133 @@
                 "silenciar",
                 "activar",
                 "nivel"
-              ],
-              "type": "string"
+              ]
             },
             "nivel": {
-              "description": "Nivel 0-100, solo si accion=nivel",
-              "type": "integer"
+              "type": "integer",
+              "description": "Nivel 0-100, solo si accion=nivel"
             }
           },
           "required": [
             "accion"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
+      }
     },
-    "crear_archivo": {
+    "controlar_musica": {
+      "type": "function",
       "function": {
-        "description": "Crea un archivo de texto con contenido en una ruta permitida.",
-        "name": "crear_archivo",
+        "name": "controlar_musica",
+        "description": "Controla la reproduccion multimedia en curso (Spotify, YouTube, etc.): pausar/reanudar, siguiente cancion o cancion anterior.",
         "parameters": {
+          "type": "object",
           "properties": {
-            "content": {
-              "description": "Contenido del archivo",
-              "type": "string"
-            },
-            "path": {
-              "description": "Ruta completa del archivo",
-              "type": "string"
+            "accion": {
+              "type": "string",
+              "description": "Una de: pausar, siguiente, anterior",
+              "enum": [
+                "pausar",
+                "siguiente",
+                "anterior"
+              ]
             }
           },
           "required": [
-            "path"
-          ],
-          "type": "object"
+            "accion"
+          ]
         }
-      },
-      "type": "function"
-    },
-    "crear_carpeta": {
-      "function": {
-        "description": "Crea una carpeta nueva en una ruta permitida.",
-        "name": "crear_carpeta",
-        "parameters": {
-          "properties": {
-            "path": {
-              "description": "Ruta completa de la carpeta a crear",
-              "type": "string"
-            }
-          },
-          "required": [
-            "path"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
+      }
     },
     "crear_recordatorio": {
+      "type": "function",
       "function": {
-        "description": "Programa un recordatorio con alarma que sonara y hablara a la hora indicada. Usar cuando el usuario diga 'recuerdame en X minutos...' o 'avisame a las 3...'.",
         "name": "crear_recordatorio",
+        "description": "Programa un recordatorio con alarma que sonara y hablara a la hora indicada. Usar cuando el usuario diga 'recuerdame en X minutos...' o 'avisame a las 3...'.",
         "parameters": {
+          "type": "object",
           "properties": {
-            "hora": {
-              "description": "Hora exacta en formato 24h HH:MM, ej '15:30'. Vacio si se usan minutos",
-              "type": "string"
+            "texto": {
+              "type": "string",
+              "description": "Que hay que recordar"
             },
             "minutos": {
-              "description": "Dentro de cuantos minutos avisar (0 si se usa hora)",
-              "type": "integer"
+              "type": "integer",
+              "description": "Dentro de cuantos minutos avisar (0 si se usa hora)"
             },
-            "texto": {
-              "description": "Que hay que recordar",
-              "type": "string"
+            "hora": {
+              "type": "string",
+              "description": "Hora exacta en formato 24h HH:MM, ej '15:30'. Vacio si se usan minutos"
             }
           },
           "required": [
             "texto"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
+      }
     },
-    "ejecutar_comando": {
+    "listar_recordatorios": {
+      "type": "function",
       "function": {
-        "description": "Ejecuta un comando de PowerShell en el computador. Solo para comandos de consulta seguros (dir, ipconfig, git status). Los comandos destructivos estan bloqueados.",
-        "name": "ejecutar_comando",
+        "name": "listar_recordatorios",
+        "description": "Lista los recordatorios y alarmas pendientes del usuario.",
         "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "cancelar_recordatorio": {
+      "type": "function",
+      "function": {
+        "name": "cancelar_recordatorio",
+        "description": "Cancela recordatorios pendientes: por numero, por texto o todos.",
+        "parameters": {
+          "type": "object",
           "properties": {
-            "command": {
-              "description": "El comando de PowerShell a ejecutar",
-              "type": "string"
+            "cual": {
+              "type": "string",
+              "description": "Numero del recordatorio, parte del texto, o 'todos'"
             }
           },
-          "required": [
-            "command"
-          ],
-          "type": "object"
+          "required": []
         }
-      },
-      "type": "function"
-    },
-    "energia_del_equipo": {
-      "function": {
-        "description": "Bloquear la sesion, apagar, reiniciar o suspender el computador, o cancelar un apagado programado. Apagar y reiniciar dan 60 segundos cancelables. NO usar para cerrar programas ni para apagar el sonido.",
-        "name": "energia_del_equipo",
-        "parameters": {
-          "properties": {
-            "accion": {
-              "description": "Una de: bloquear, apagar, reiniciar, suspender, cancelar",
-              "enum": [
-                "bloquear",
-                "apagar",
-                "reiniciar",
-                "suspender",
-                "cancelar"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "accion"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "enviar_correo": {
-      "function": {
-        "description": "Prepara el envio de un correo electronico. NO lo envia de inmediato: el usuario debe confirmar con /confirmar.",
-        "name": "enviar_correo",
-        "parameters": {
-          "properties": {
-            "body": {
-              "description": "Cuerpo del mensaje",
-              "type": "string"
-            },
-            "subject": {
-              "description": "Asunto del correo",
-              "type": "string"
-            },
-            "to": {
-              "description": "Destinatario: direccion de correo o nombre de contacto",
-              "type": "string"
-            }
-          },
-          "required": [
-            "to",
-            "subject",
-            "body"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
+      }
     },
     "enviar_whatsapp": {
+      "type": "function",
       "function": {
-        "description": "Abre WhatsApp con un mensaje ya escrito para un contacto o numero. NO lo envia: el usuario solo pulsa enviar. Usar cuando pidan mandar un whatsapp o mensaje a alguien.",
         "name": "enviar_whatsapp",
+        "description": "Abre WhatsApp con un mensaje ya escrito para un contacto o numero. NO lo envia: el usuario solo pulsa enviar. Usar cuando pidan mandar un whatsapp o mensaje a alguien.",
         "parameters": {
+          "type": "object",
           "properties": {
-            "mensaje": {
-              "description": "El texto del mensaje",
-              "type": "string"
-            },
             "para": {
-              "description": "Nombre del contacto o numero de telefono",
-              "type": "string"
+              "type": "string",
+              "description": "Nombre del contacto o numero de telefono"
+            },
+            "mensaje": {
+              "type": "string",
+              "description": "El texto del mensaje"
             }
           },
           "required": [
             "para",
             "mensaje"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
-    },
-    "estado_del_sistema": {
-      "function": {
-        "description": "Informa el uso de CPU, memoria RAM, disco y el estado de la bateria de este computador.",
-        "name": "estado_del_sistema",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "leer_archivo": {
-      "function": {
-        "description": "Lee en voz alta el contenido de un archivo de texto (txt, md, csv, json) de las carpetas permitidas.",
-        "name": "leer_archivo",
-        "parameters": {
-          "properties": {
-            "ruta": {
-              "description": "Ruta o nombre del archivo, ej 'notas.txt'",
-              "type": "string"
-            }
-          },
-          "required": [
-            "ruta"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "leer_portapapeles": {
-      "function": {
-        "description": "Lee en voz alta el texto que el usuario tiene copiado en el portapapeles.",
-        "name": "leer_portapapeles",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "listar_archivos": {
-      "function": {
-        "description": "Lista los archivos y carpetas de un directorio permitido (Documentos, Descargas, Escritorio, Musica, Imagenes, Videos).",
-        "name": "listar_archivos",
-        "parameters": {
-          "properties": {
-            "path": {
-              "description": "Ruta de la carpeta. Vacio = Documentos",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "listar_recordatorios": {
-      "function": {
-        "description": "Lista los recordatorios y alarmas pendientes del usuario.",
-        "name": "listar_recordatorios",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "mi_direccion_ip": {
-      "function": {
-        "description": "Informa la direccion IP local y publica de este computador.",
-        "name": "mi_direccion_ip",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "mostrar_ofertas_empleo": {
-      "function": {
-        "description": "Abre los portales de empleo (Computrabajo, El Empleo, LinkedIn) en el navegador, cada uno en su pestana, con la busqueda aplicada.",
-        "name": "mostrar_ofertas_empleo",
-        "parameters": {
-          "properties": {
-            "ciudad": {
-              "description": "Ciudad",
-              "type": "string"
-            },
-            "puesto": {
-              "description": "Cargo. Vacio = ultima busqueda",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "navegar_con_selenium": {
-      "function": {
-        "description": "Abre una pagina en el navegador Chrome que JARVIS controla (automatizado). Usar solo si piden control del navegador.",
-        "name": "navegar_con_selenium",
-        "parameters": {
-          "properties": {
-            "url": {
-              "description": "URL a la que navegar",
-              "type": "string"
-            }
-          },
-          "required": [
-            "url"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "noticias": {
-      "function": {
-        "description": "Lee los titulares principales de las noticias de hoy.",
-        "name": "noticias",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "ocultar_archivos": {
-      "function": {
-        "description": "Oculta (o vuelve visibles) todos los archivos de una carpeta. Requiere confirmacion del usuario.",
-        "name": "ocultar_archivos",
-        "parameters": {
-          "properties": {
-            "hide": {
-              "description": "true para ocultar, false para mostrar",
-              "type": "boolean"
-            },
-            "path": {
-              "description": "Ruta de la carpeta",
-              "type": "string"
-            }
-          },
-          "required": [
-            "path"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
+      }
     },
     "organizar_ventanas": {
+      "type": "function",
       "function": {
-        "description": "Organiza las ventanas del escritorio: minimizar todas, o poner la ventana activa a la izquierda, derecha, maximizarla o minimizarla.",
         "name": "organizar_ventanas",
+        "description": "Organiza las ventanas del escritorio: minimizar todas, o poner la ventana activa a la izquierda, derecha, maximizarla o minimizarla.",
         "parameters": {
+          "type": "object",
           "properties": {
             "accion": {
+              "type": "string",
               "description": "Una de: minimizar_todo, izquierda, derecha, maximizar, minimizar",
               "enum": [
                 "minimizar_todo",
@@ -801,191 +364,932 @@
                 "derecha",
                 "maximizar",
                 "minimizar"
-              ],
-              "type": "string"
+              ]
             }
           },
           "required": [
             "accion"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
-    },
-    "preguntar_wolframalpha": {
-      "function": {
-        "description": "Responde preguntas de datos y ciencia (distancias, poblaciones, conversiones, formulas) via WolframAlpha. Funciona mejor en ingles.",
-        "name": "preguntar_wolframalpha",
-        "parameters": {
-          "properties": {
-            "question": {
-              "description": "La pregunta factual",
-              "type": "string"
-            }
-          },
-          "required": [
-            "question"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "proximos_eventos": {
-      "function": {
-        "description": "Lista los proximos eventos del calendario de Google del usuario.",
-        "name": "proximos_eventos",
-        "parameters": {
-          "properties": {},
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "recordar": {
-      "function": {
-        "description": "Guarda en la memoria permanente un dato que el usuario quiere que JARVIS recuerde para siempre (preferencias, datos personales, gustos).",
-        "name": "recordar",
-        "parameters": {
-          "properties": {
-            "text": {
-              "description": "El dato a recordar",
-              "type": "string"
-            }
-          },
-          "required": [
-            "text"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "reproducir_en_spotify": {
-      "function": {
-        "description": "Busca y reproduce cualquier cancion o artista en Spotify, usando la cuenta del usuario. Es la forma preferida de poner musica cuando el usuario pide una cancion o artista especifico, salvo que pida explicitamente YouTube o musica local.",
-        "name": "reproducir_en_spotify",
-        "parameters": {
-          "properties": {
-            "song": {
-              "description": "Cancion o artista a reproducir, ej: 'bohemian rhapsody'",
-              "type": "string"
-            }
-          },
-          "required": [
-            "song"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "reproducir_en_youtube": {
-      "function": {
-        "description": "Busca y reproduce un video en YouTube. Usar solo cuando el usuario pida YouTube explicitamente, no para pedidos genericos de musica.",
-        "name": "reproducir_en_youtube",
-        "parameters": {
-          "properties": {
-            "query": {
-              "description": "Cancion, artista o video a reproducir",
-              "type": "string"
-            }
-          },
-          "required": [
-            "query"
-          ],
-          "type": "object"
-        }
-      },
-      "type": "function"
-    },
-    "reproducir_musica_local": {
-      "function": {
-        "description": "Reproduce musica guardada en la carpeta Musica del computador.",
-        "name": "reproducir_musica_local",
-        "parameters": {
-          "properties": {
-            "song": {
-              "description": "Nombre de la cancion. Vacio = aleatoria",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "type": "object"
-        }
-      },
-      "type": "function"
+      }
     },
     "resumen_del_dia": {
+      "type": "function",
       "function": {
-        "description": "Da un resumen completo del dia: fecha, clima actual, agenda del calendario y titulares de noticias, todo en una sola respuesta.",
         "name": "resumen_del_dia",
+        "description": "Da un resumen completo del dia: fecha, clima actual, agenda del calendario y titulares de noticias, todo en una sola respuesta.",
         "parameters": {
+          "type": "object",
           "properties": {},
-          "required": [],
-          "type": "object"
+          "required": []
         }
-      },
-      "type": "function"
+      }
     },
-    "tomar_nota": {
+    "leer_portapapeles": {
+      "type": "function",
       "function": {
-        "description": "Guarda una nota de texto con la fecha y hora, y la abre en el Bloc de notas.",
-        "name": "tomar_nota",
+        "name": "leer_portapapeles",
+        "description": "Lee en voz alta el texto que el usuario tiene copiado en el portapapeles.",
         "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "leer_archivo": {
+      "type": "function",
+      "function": {
+        "name": "leer_archivo",
+        "description": "Lee en voz alta el contenido de un archivo de texto (txt, md, csv, json) de las carpetas permitidas.",
+        "parameters": {
+          "type": "object",
           "properties": {
-            "text": {
-              "description": "El texto de la nota",
-              "type": "string"
+            "ruta": {
+              "type": "string",
+              "description": "Ruta o nombre del archivo, ej 'notas.txt'"
             }
           },
           "required": [
-            "text"
-          ],
-          "type": "object"
+            "ruta"
+          ]
         }
-      },
-      "type": "function"
+      }
+    },
+    "energia_del_equipo": {
+      "type": "function",
+      "function": {
+        "name": "energia_del_equipo",
+        "description": "Bloquear la sesion, apagar, reiniciar o suspender el computador, o cancelar un apagado programado. Apagar y reiniciar dan 60 segundos cancelables. NO usar para cerrar programas ni para apagar el sonido.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "accion": {
+              "type": "string",
+              "description": "Una de: bloquear, apagar, reiniciar, suspender, cancelar",
+              "enum": [
+                "bloquear",
+                "apagar",
+                "reiniciar",
+                "suspender",
+                "cancelar"
+              ]
+            }
+          },
+          "required": [
+            "accion"
+          ]
+        }
+      }
+    },
+    "estado_del_sistema": {
+      "type": "function",
+      "function": {
+        "name": "estado_del_sistema",
+        "description": "Informa el uso de CPU, memoria RAM, disco y el estado de la bateria de este computador.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "ejecutar_comando": {
+      "type": "function",
+      "function": {
+        "name": "ejecutar_comando",
+        "description": "Ejecuta un comando de PowerShell en el computador. Solo para comandos de consulta seguros (dir, ipconfig, git status). Los comandos destructivos estan bloqueados.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "El comando de PowerShell a ejecutar"
+            }
+          },
+          "required": [
+            "command"
+          ]
+        }
+      }
+    },
+    "listar_archivos": {
+      "type": "function",
+      "function": {
+        "name": "listar_archivos",
+        "description": "Lista los archivos y carpetas de un directorio permitido (Documentos, Descargas, Escritorio, Musica, Imagenes, Videos).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Ruta de la carpeta. Vacio = Documentos"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "buscar_archivo": {
+      "type": "function",
+      "function": {
+        "name": "buscar_archivo",
+        "description": "Busca archivos por nombre dentro de una carpeta permitida.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Nombre o parte del nombre del archivo"
+            },
+            "path": {
+              "type": "string",
+              "description": "Carpeta donde buscar. Vacio = Documentos"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      }
+    },
+    "crear_carpeta": {
+      "type": "function",
+      "function": {
+        "name": "crear_carpeta",
+        "description": "Crea una carpeta nueva en una ruta permitida.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Ruta completa de la carpeta a crear"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    "crear_archivo": {
+      "type": "function",
+      "function": {
+        "name": "crear_archivo",
+        "description": "Crea un archivo de texto con contenido en una ruta permitida.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Ruta completa del archivo"
+            },
+            "content": {
+              "type": "string",
+              "description": "Contenido del archivo"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    "borrar_archivo": {
+      "type": "function",
+      "function": {
+        "name": "borrar_archivo",
+        "description": "Prepara el borrado de un archivo. NO borra de inmediato: crea un plan que el usuario debe confirmar con /confirmar.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Ruta del archivo a borrar"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    "ocultar_archivos": {
+      "type": "function",
+      "function": {
+        "name": "ocultar_archivos",
+        "description": "Oculta (o vuelve visibles) todos los archivos de una carpeta. Requiere confirmacion del usuario.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Ruta de la carpeta"
+            },
+            "hide": {
+              "type": "boolean",
+              "description": "true para ocultar, false para mostrar"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    "clima": {
+      "type": "function",
+      "function": {
+        "name": "clima",
+        "description": "Dice el clima actual de cualquier ciudad del mundo: temperatura, humedad, viento y pronostico del dia.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "Ciudad. Vacio = ciudad actual del usuario"
+            }
+          },
+          "required": []
+        }
+      }
     },
     "ubicar_lugar": {
+      "type": "function",
       "function": {
-        "description": "Abre un lugar en Google Maps e informa la distancia desde la ubicacion actual del usuario.",
         "name": "ubicar_lugar",
+        "description": "Abre un lugar en Google Maps e informa la distancia desde la ubicacion actual del usuario.",
         "parameters": {
+          "type": "object",
           "properties": {
             "place": {
-              "description": "Ciudad, pais o lugar a ubicar",
-              "type": "string"
+              "type": "string",
+              "description": "Ciudad, pais o lugar a ubicar"
             }
           },
           "required": [
             "place"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
+      }
     },
     "wikipedia": {
+      "type": "function",
       "function": {
-        "description": "Cuenta informacion sobre una persona, lugar, empresa o tema, consultando Wikipedia. Usar cuando pregunten quien es alguien o que es algo del mundo real.",
         "name": "wikipedia",
+        "description": "Cuenta informacion sobre una persona, lugar, empresa o tema, consultando Wikipedia. Usar cuando pregunten quien es alguien o que es algo del mundo real.",
         "parameters": {
+          "type": "object",
           "properties": {
             "topic": {
-              "description": "Persona o tema a consultar",
-              "type": "string"
+              "type": "string",
+              "description": "Persona o tema a consultar"
             }
           },
           "required": [
             "topic"
-          ],
-          "type": "object"
+          ]
         }
-      },
-      "type": "function"
+      }
+    },
+    "noticias": {
+      "type": "function",
+      "function": {
+        "name": "noticias",
+        "description": "Lee los titulares principales de las noticias de hoy.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "calcular": {
+      "type": "function",
+      "function": {
+        "name": "calcular",
+        "description": "Resuelve una operacion o ecuacion matematica. Acepta lenguaje natural ('5 mas 3 por 2') y ecuaciones ('x + 135 - 234 = 345').",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string",
+              "description": "La expresion o ecuacion a resolver"
+            }
+          },
+          "required": [
+            "expression"
+          ]
+        }
+      }
+    },
+    "preguntar_wolframalpha": {
+      "type": "function",
+      "function": {
+        "name": "preguntar_wolframalpha",
+        "description": "Responde preguntas de datos y ciencia (distancias, poblaciones, conversiones, formulas) via WolframAlpha. Funciona mejor en ingles.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "description": "La pregunta factual"
+            }
+          },
+          "required": [
+            "question"
+          ]
+        }
+      }
+    },
+    "mi_direccion_ip": {
+      "type": "function",
+      "function": {
+        "name": "mi_direccion_ip",
+        "description": "Informa la direccion IP local y publica de este computador.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "proximos_eventos": {
+      "type": "function",
+      "function": {
+        "name": "proximos_eventos",
+        "description": "Lista los proximos eventos del calendario de Google del usuario.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "contar_chiste": {
+      "type": "function",
+      "function": {
+        "name": "contar_chiste",
+        "description": "Cuenta un chiste para entretener al usuario.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "abrir_sitio_web": {
+      "type": "function",
+      "function": {
+        "name": "abrir_sitio_web",
+        "description": "Abre una pagina web en el navegador del usuario.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "site": {
+              "type": "string",
+              "description": "Dominio o URL, ej: 'github.com', 'youtube.com'"
+            }
+          },
+          "required": [
+            "site"
+          ]
+        }
+      }
+    },
+    "buscar_en_google": {
+      "type": "function",
+      "function": {
+        "name": "buscar_en_google",
+        "description": "Busca cualquier cosa en Google y abre los resultados en el navegador.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Lo que se quiere buscar"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      }
+    },
+    "reproducir_en_spotify": {
+      "type": "function",
+      "function": {
+        "name": "reproducir_en_spotify",
+        "description": "Busca y reproduce cualquier cancion o artista en Spotify, usando la cuenta del usuario. Es la forma preferida de poner musica cuando el usuario pide una cancion o artista especifico, salvo que pida explicitamente YouTube o musica local.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "song": {
+              "type": "string",
+              "description": "Cancion o artista a reproducir, ej: 'bohemian rhapsody'"
+            }
+          },
+          "required": [
+            "song"
+          ]
+        }
+      }
+    },
+    "pausar_spotify": {
+      "type": "function",
+      "function": {
+        "name": "pausar_spotify",
+        "description": "Pausa la reproduccion en Spotify hablando directo con la API oficial. A diferencia de controlar_musica, funciona aunque el dispositivo activo sea remoto (celular, parlante Connect).",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "reanudar_spotify": {
+      "type": "function",
+      "function": {
+        "name": "reanudar_spotify",
+        "description": "Reanuda la reproduccion en Spotify hablando directo con la API oficial, aunque el dispositivo activo sea remoto.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "siguiente_cancion_spotify": {
+      "type": "function",
+      "function": {
+        "name": "siguiente_cancion_spotify",
+        "description": "Salta a la siguiente cancion en Spotify via la API oficial, aunque el dispositivo activo sea remoto.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "cancion_anterior_spotify": {
+      "type": "function",
+      "function": {
+        "name": "cancion_anterior_spotify",
+        "description": "Vuelve a la cancion anterior en Spotify via la API oficial, aunque el dispositivo activo sea remoto.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "volumen_spotify": {
+      "type": "function",
+      "function": {
+        "name": "volumen_spotify",
+        "description": "Fija el volumen de reproduccion en Spotify (0-100) en el dispositivo Connect activo, incluso si es un celular o parlante remoto (distinto del volumen del sistema operativo).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "nivel": {
+              "type": "integer",
+              "description": "Nivel de 0 a 100"
+            }
+          },
+          "required": [
+            "nivel"
+          ]
+        }
+      }
+    },
+    "aleatorio_spotify": {
+      "type": "function",
+      "function": {
+        "name": "aleatorio_spotify",
+        "description": "Activa o desactiva el modo aleatorio (shuffle) de la reproduccion actual en Spotify.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "activar": {
+              "type": "boolean",
+              "description": "true=activar aleatorio, false=desactivarlo"
+            }
+          },
+          "required": [
+            "activar"
+          ]
+        }
+      }
+    },
+    "repetir_spotify": {
+      "type": "function",
+      "function": {
+        "name": "repetir_spotify",
+        "description": "Fija el modo de repeticion en Spotify: 'cancion' repite la pista actual, 'lista' repite la playlist/album/contexto, 'no' lo desactiva.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "modo": {
+              "type": "string",
+              "description": "Uno de: cancion, lista, no",
+              "enum": [
+                "cancion",
+                "lista",
+                "no"
+              ]
+            }
+          },
+          "required": [
+            "modo"
+          ]
+        }
+      }
+    },
+    "que_suena_spotify": {
+      "type": "function",
+      "function": {
+        "name": "que_suena_spotify",
+        "description": "Informa que cancion esta sonando ahora mismo en Spotify: nombre, artista, dispositivo y si esta en pausa o sonando.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "agregar_a_cola_spotify": {
+      "type": "function",
+      "function": {
+        "name": "agregar_a_cola_spotify",
+        "description": "Busca una cancion y la agrega a la cola de reproduccion de Spotify sin interrumpir lo que esta sonando.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "song": {
+              "type": "string",
+              "description": "Cancion o artista a agregar a la cola"
+            }
+          },
+          "required": [
+            "song"
+          ]
+        }
+      }
+    },
+    "reproducir_playlist_spotify": {
+      "type": "function",
+      "function": {
+        "name": "reproducir_playlist_spotify",
+        "description": "Busca entre las playlists propias del usuario por nombre parcial y reproduce la que coincida en Spotify.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Nombre o parte del nombre de la playlist"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      }
+    },
+    "reproducir_album_spotify": {
+      "type": "function",
+      "function": {
+        "name": "reproducir_album_spotify",
+        "description": "Busca y reproduce un album completo en Spotify.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Album o 'album de artista' a reproducir"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      }
+    },
+    "radio_spotify": {
+      "type": "function",
+      "function": {
+        "name": "radio_spotify",
+        "description": "Inicia una 'radio' de recomendaciones basada en un artista o cancion en Spotify. Si el endpoint de recomendaciones no esta disponible para la cuenta, cae a reproducir el catalogo del artista o la cancion buscada.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Artista o cancion en la que basar la radio"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      }
+    },
+    "listar_dispositivos_spotify": {
+      "type": "function",
+      "function": {
+        "name": "listar_dispositivos_spotify",
+        "description": "Lista los dispositivos Spotify Connect disponibles ahora (celular, parlantes, este PC) y cual esta activo.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "cambiar_dispositivo_spotify": {
+      "type": "function",
+      "function": {
+        "name": "cambiar_dispositivo_spotify",
+        "description": "Cambia a que dispositivo Spotify Connect suena la musica, por nombre parcial (celular, parlante, este PC...).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "device": {
+              "type": "string",
+              "description": "Nombre o parte del nombre del dispositivo"
+            }
+          },
+          "required": [
+            "device"
+          ]
+        }
+      }
+    },
+    "guardar_en_favoritos_spotify": {
+      "type": "function",
+      "function": {
+        "name": "guardar_en_favoritos_spotify",
+        "description": "Guarda la cancion que esta sonando ahora en Spotify dentro de la biblioteca personal del usuario (Me Gusta / Liked Songs).",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "reproducido_recientemente_spotify": {
+      "type": "function",
+      "function": {
+        "name": "reproducido_recientemente_spotify",
+        "description": "Lista las canciones reproducidas recientemente en Spotify.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "limite": {
+              "type": "integer",
+              "description": "Cuantas canciones listar, 1-50 (por defecto 10)"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "reanudar_ultimo_spotify": {
+      "type": "function",
+      "function": {
+        "name": "reanudar_ultimo_spotify",
+        "description": "Reanuda lo ultimo reproducido en Spotify: retoma el contexto activo si quedo pausado, o cae al historial reciente si la sesion se perdio del todo.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "reproducir_en_youtube": {
+      "type": "function",
+      "function": {
+        "name": "reproducir_en_youtube",
+        "description": "Busca y reproduce un video en YouTube. Usar solo cuando el usuario pida YouTube explicitamente, no para pedidos genericos de musica.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Cancion, artista o video a reproducir"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      }
+    },
+    "reproducir_musica_local": {
+      "type": "function",
+      "function": {
+        "name": "reproducir_musica_local",
+        "description": "Reproduce musica guardada en la carpeta Musica del computador.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "song": {
+              "type": "string",
+              "description": "Nombre de la cancion. Vacio = aleatoria"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "navegar_con_selenium": {
+      "type": "function",
+      "function": {
+        "name": "navegar_con_selenium",
+        "description": "Abre una pagina en el navegador Chrome que JARVIS controla (automatizado). Usar solo si piden control del navegador.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "URL a la que navegar"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      }
+    },
+    "cerrar_navegador": {
+      "type": "function",
+      "function": {
+        "name": "cerrar_navegador",
+        "description": "Cierra el navegador Chrome controlado por JARVIS.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "buscar_empleo": {
+      "type": "function",
+      "function": {
+        "name": "buscar_empleo",
+        "description": "Busca ofertas de trabajo en Computrabajo y LinkedIn, ordenadas de la mas reciente a la mas antigua, con empresa, salario y ubicacion.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "puesto": {
+              "type": "string",
+              "description": "Cargo buscado, ej: 'desarrollador', 'contador'"
+            },
+            "ciudad": {
+              "type": "string",
+              "description": "Ciudad. Vacio = toda Colombia"
+            }
+          },
+          "required": [
+            "puesto"
+          ]
+        }
+      }
+    },
+    "abrir_oferta_empleo": {
+      "type": "function",
+      "function": {
+        "name": "abrir_oferta_empleo",
+        "description": "Abre en el navegador una de las ofertas de la ultima busqueda de empleo.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "integer",
+              "description": "Numero de la oferta en la lista (1, 2, 3...)"
+            }
+          },
+          "required": [
+            "number"
+          ]
+        }
+      }
+    },
+    "mostrar_ofertas_empleo": {
+      "type": "function",
+      "function": {
+        "name": "mostrar_ofertas_empleo",
+        "description": "Abre los portales de empleo (Computrabajo, El Empleo, LinkedIn) en el navegador, cada uno en su pestana, con la busqueda aplicada.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "puesto": {
+              "type": "string",
+              "description": "Cargo. Vacio = ultima busqueda"
+            },
+            "ciudad": {
+              "type": "string",
+              "description": "Ciudad"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "tomar_nota": {
+      "type": "function",
+      "function": {
+        "name": "tomar_nota",
+        "description": "Guarda una nota de texto con la fecha y hora, y la abre en el Bloc de notas.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "El texto de la nota"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      }
+    },
+    "captura_de_pantalla": {
+      "type": "function",
+      "function": {
+        "name": "captura_de_pantalla",
+        "description": "Toma una captura de la pantalla y la guarda como imagen PNG.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Nombre del archivo. Vacio = fecha y hora"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "cambiar_ventana": {
+      "type": "function",
+      "function": {
+        "name": "cambiar_ventana",
+        "description": "Cambia a la ventana anterior del escritorio (Alt+Tab).",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      }
+    },
+    "enviar_correo": {
+      "type": "function",
+      "function": {
+        "name": "enviar_correo",
+        "description": "Prepara el envio de un correo electronico. NO lo envia de inmediato: el usuario debe confirmar con /confirmar.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "description": "Destinatario: direccion de correo o nombre de contacto"
+            },
+            "subject": {
+              "type": "string",
+              "description": "Asunto del correo"
+            },
+            "body": {
+              "type": "string",
+              "description": "Cuerpo del mensaje"
+            }
+          },
+          "required": [
+            "to",
+            "subject",
+            "body"
+          ]
+        }
+      }
+    },
+    "recordar": {
+      "type": "function",
+      "function": {
+        "name": "recordar",
+        "description": "Guarda en la memoria permanente un dato que el usuario quiere que JARVIS recuerde para siempre (preferencias, datos personales, gustos).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "El dato a recordar"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      }
     }
   },
   "write": [

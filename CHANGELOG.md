@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.0] - 2026-09-22
+
+Spotify "Pro": de buscar-y-reproducir a control completo por Web API, a
+petición directa del usuario (sin fase de plan asociada).
+
+### Added
+- Control de reproducción vía Web API de Spotify (`jarvis_local/tools/spotify.py`):
+  pausar/reanudar, siguiente/anterior, volumen del dispositivo Connect,
+  aleatorio, repetición (canción/lista/apagado), "qué está sonando" y agregar
+  a la cola. A diferencia de `controlar_musica` (MPRIS/`playerctl`), funciona
+  aunque el dispositivo activo sea remoto (celular, parlante Connect).
+- Playlists y descubrimiento: reproducir una playlist propia por nombre
+  parcial, un álbum completo, y una "radio" por artista o canción
+  (recomendaciones de Spotify si el endpoint está disponible para la cuenta,
+  o el catálogo del artista/la canción buscada como respaldo honesto).
+- Multi-dispositivo: listar los dispositivos Spotify Connect disponibles y
+  cambiar a cuál suena la música por nombre parcial.
+- Biblioteca personal: guardar la canción actual en Me Gusta, ver
+  reproducido recientemente, reanudar lo último tras perder la sesión.
+- 17 `ToolContract` nuevos en `jarvis_local/tools/catalog.py`, regex nuevos
+  en `jarvis_local/intent/parser.py` (playlist/álbum/radio en `_parse_fase4`,
+  control vía `_parse_spotify_control` nueva) y ejemplos en
+  `jarvis_local/agent/retriever.py::_EJEMPLOS` para cada uno.
+- 116 tests nuevos (`test/test_spotify_pro.py`, `test/test_parser_spotify.py`).
+
+### Changed
+- `SCOPES` de Spotify ampliado (`user-read-recently-played`,
+  `user-library-modify`, `playlist-read-private`,
+  `playlist-read-collaborative`): quien ya había autorizado la cuenta antes
+  de esta versión debe correr `--reauth-spotify` de nuevo, o las funciones
+  nuevas fallan con el mensaje de reautorizar.
+
 ## [8.0.0] - 2026-09-03
 
 Plan de eficacia (`PLAN_MAESTRO.md`): auditoría funcionalidad por funcionalidad

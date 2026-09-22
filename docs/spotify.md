@@ -1,8 +1,16 @@
 # Spotify
 
 JARVIS reproduce cualquier canción que le pidas usando tu propia cuenta de
-Spotify (API oficial). Requiere **Spotify Premium**: la API no permite
-controlar la reproducción remota con cuentas gratuitas.
+Spotify (API oficial), y además controla la reproducción, playlists,
+dispositivos y tu biblioteca personal — ver [4. Control avanzado](#4-control-avanzado-pro)
+más abajo. Requiere **Spotify Premium**: la API no permite controlar la
+reproducción remota con cuentas gratuitas.
+
+> **Si ya tenías Spotify configurado antes de esta actualización**: las
+> funciones nuevas piden permisos (scopes) que el token guardado no tiene
+> todavía. Corre `python -m jarvis_local.cli --reauth-spotify` de nuevo una
+> vez — aunque ya hubieras autorizado la cuenta antes — o esas funciones
+> fallarán con el mensaje de reautorizar.
 
 Hay dos piezas que configurar una sola vez:
 
@@ -72,9 +80,49 @@ La primera vez que JARVIS llame a la API de Spotify se abrirá el navegador
 para que autorices la app (una sola vez; el token queda cacheado en
 `data/.spotify_cache`, con refresco automático después).
 
-**Pausar / siguiente / anterior** ya funcionan con los comandos de música
-existentes de JARVIS (`controlar_musica` / "pausa", "siguiente cancion"): usan
-`playerctl`, que detecta la app de Spotify automáticamente vía MPRIS.
+**Pausar / siguiente / anterior** para reproducción **local** ya funcionan con
+los comandos de música existentes de JARVIS (`controlar_musica` / "pausa",
+"siguiente cancion"): usan `playerctl`, que detecta la app de Spotify
+automáticamente vía MPRIS. Esto sigue igual.
+
+## 4. Control avanzado (Pro)
+
+Todo lo de abajo habla directo con la API de Spotify (no con `playerctl`), así
+que funciona aunque la música esté sonando en otro dispositivo (celular,
+parlante Connect), no solo en este PC.
+
+**Control de reproducción**
+
+> "pausa spotify" / "pausa en el celular"
+> "reanuda spotify"
+> "salta la cancion en el parlante" / "retrocede la cancion en el celular"
+> "sube el volumen de spotify a 60"
+> "activa el aleatorio" / "quita el aleatorio"
+> "repite esta cancion" / "repite toda la lista" / "desactiva la repeticion"
+> "que suena" / "que esta sonando en spotify"
+> "agrega esta cancion a la cola"
+
+**Playlists y descubrimiento**
+
+> "pon mi playlist de running"
+> "pon el album de dark side of the moon"
+> "pon radio de bad bunny"
+
+Si el nombre de la playlist coincide con varias, JARVIS lista las que
+encontró y pide que precises. La "radio" usa el endpoint de recomendaciones
+de Spotify; si no está disponible para tu cuenta (ver tabla abajo), reproduce
+el catálogo del artista en su lugar.
+
+**Multi-dispositivo**
+
+> "que dispositivos de spotify hay"
+> "cambia la musica al celular" / "pasa spotify al parlante de la sala"
+
+**Biblioteca personal**
+
+> "guardame esta cancion" (la agrega a Me Gusta / Liked Songs)
+> "que escuche recientemente"
+> "retoma lo ultimo que sonaba"
 
 ## Solución de problemas
 
@@ -84,3 +132,5 @@ existentes de JARVIS (`controlar_musica` / "pausa", "siguiente cancion"): usan
 | "Falta instalar la libreria de Spotify" | `pip install spotipy` en el venv del proyecto |
 | "No pude abrir Spotify en este equipo" | La app no está instalada (`sudo snap install spotify`), o tardó más de 15s en registrarse — pídele la canción de nuevo |
 | "Esta funcion requiere una cuenta Premium" | La API de Spotify no permite reproducción remota en cuentas gratuitas |
+| El acceso caducó justo después de actualizar JARVIS | Las funciones nuevas piden permisos (scopes) que el token guardado no tenía — corre `--reauth-spotify` de nuevo |
+| "Spotify no me dio recomendaciones para esta cuenta" (radio) | El endpoint `recommendations` está restringido por Spotify para apps nuevas sin "extended quota mode"; JARVIS reproduce el catálogo del artista o la canción buscada en su lugar, sin fingir una radio que no pudo armar |
