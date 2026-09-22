@@ -43,20 +43,26 @@ Column {
             width: mdb.measure
             implicitHeight: modelData.code ? codeView.implicitHeight : proseView.implicitHeight
 
-            Text {
+            TextEdit {
                 id: proseView
                 visible: !seg.modelData.code
                 width: mdb.measure
-                textFormat: Text.MarkdownText
-                wrapMode: Text.WordWrap
+                textFormat: TextEdit.MarkdownText
+                wrapMode: TextEdit.WordWrap
                 text: seg.modelData.code ? "" : seg.modelData.text
                 color: mdb.textColor
                 font.family: Design.fontMono          // estilo terminal
                 font.pixelSize: Design.fsBody
-                lineHeight: 1.5
-                lineHeightMode: Text.ProportionalHeight
-                // borde óptico: legible sobre cualquier wallpaper, sin blur
-                style: Text.Outline; styleColor: Design.textEdge
+                // TextEdit (no Text) para poder seleccionar/copiar el
+                // mensaje con el mouse; pierde lineHeight/lineHeightMode y
+                // el borde óptico (style/styleColor), ninguno existe en
+                // TextEdit, a cambio de la seleccion.
+                readOnly: true
+                selectByMouse: true
+                persistentSelection: true
+                cursorVisible: false
+                selectionColor: Qt.rgba(0x1D / 255, 0x5C / 255, 0xFF / 255, 0.35)
+                selectedTextColor: mdb.textColor
                 onLinkActivated: (url) => Qt.openUrlExternally(url)
             }
             CodeBlock {
