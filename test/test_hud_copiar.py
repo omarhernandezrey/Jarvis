@@ -198,34 +198,49 @@ def test_boton_copiar_no_aparece_en_turno_sin_cuerpo(cargar):
     assert boton.property("visible") is False
 
 
-def test_copiar_toda_la_conversacion_desde_la_cabecera():
-    """Pulso el botón real de la cabecera de la consola y leo el portapapeles."""
-    from jarvis_local.ui.hud.app import create_engine
-    from jarvis_local.ui.hud.viewmodel import ViewModel
+def test_copiar_toda_la_conversacion_desde_la_cabecera(motor):
+    """Pulso el botón real de la cabecera de la consola y leo el portapapeles.
 
-    _vaciar_portapapeles()
-    motor = create_engine(_app, ViewModel())
+    Se carga `Conversation.qml` SUELTO (no la ventana entera): basta con
+    exponerle su modelo y un `Vm` mínimo por contexto. Crear la ventana
+    completa arrastra el runtime del HUD (hilos de métricas, shaders) y eso,
+    al apagarse, es lo que hacía caer la CI con SIGSEGV.
+    """
+    modelo = ConversationModel()
+    motor.rootContext().setContextProperty("ConversationModel", modelo)
+    motor.rootContext().setContextProperty("Vm", {"metrics": {}})
     try:
-        win = motor.rootObjects()[0]
-        rt = motor._runtime        # noqa: SLF001
-        rt.conversation.add_user("hola")
-        rt.conversation.begin_assistant()
-        rt.conversation.append_token("buenas")
-        rt.conversation.end_assistant("", "10 ms", "chat")
-        _app.processEvents()
+        modelo.add_user("hola")
+        modelo.begin_assistant()
+        modelo.append_token("buenas")
+        modelo.end_assistant("", "10 ms", "chat")
 
-        boton = win.findChild(QQuickItem, "copiarConversacion")
-        assert boton is not None, "la cabecera no tiene botón de copiar todo"
-        cabecera = boton.parent()      # la función `copiarTodo` vive en el header
-        assert QMetaObject.invokeMethod(cabecera, "copiarTodo") is True
+        consola = None
+        comp = QQmlComponent(motor)
+        comp.loadUrl(_QML.joinpath("Conversation.qml").as_uri())
+        if comp.isError():
+            raise AssertionError("error QML: "
+                                 + " | ".join(e.toString() for e in comp.errors()))
+        consola = comp.create()
         _app.processEvents()
+        try:
+            boton = consola.findChild(QQuickItem, "copiarConversacion")
+            assert boton is not None, "la cabecera no tiene botón de copiar todo"
+            cabecera = boton.parent()   # la función `copiarTodo` vive en el header
+            assert QMetaObject.invokeMethod(cabecera, "copiarTodo") is True
+            _app.processEvents()
 
-        copiado = _portapapeles()
-        assert copiado == rt.conversation.texto_completo()
-        assert "USER ❯ hola" in copiado
-        assert "JARVIS ❯ buenas" in copiado
+            copiado = _portapapeles()
+            assert copiado == modelo.texto_completo()
+            assert "USER ❯ hola" in copiado
+            assert "JARVIS ❯ buenas" in copiado
+        finally:
+            if consola is not None:
+                consola.deleteLater()
+            comp.deleteLater()
+            _app.processEvents()
     finally:
-        motor._runtime.shutdown()      # noqa: SLF001
-        win.deleteLater()              # la ventana ANTES que el motor
-        motor.deleteLater()
+        # el modelo se quita del contexto ANTES de que nadie lo destruya
+        motor.rootContext().setContextProperty("ConversationModel", None)
+        modelo.deleteLater()
         _app.processEvents()
