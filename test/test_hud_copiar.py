@@ -38,23 +38,70 @@ _QML = _RAIZ / "jarvis_local" / "ui" / "hud" / "qml"
 
 _app = QGuiApplication.instance() or QGuiApplication([])
 
-# Qt destruye el objeto recién creado si el QQmlComponent que lo parió se
-# recolecta antes: hay que retener motor y componente mientras se usa.
-_RETENIDOS: list = []
 
+@pytest.fixture(scope="module")
+def motor():
+    """Motor QML para crear componentes sueltos (Turn.qml, MarkdownBody.qml).
 
-def _cargar(nombre: str, props: dict | None = None):
-    motor = QQmlEngine()
-    motor.addImportPath(str(_QML))
-    comp = QQmlComponent(motor)
-    comp.loadUrl(_QML.joinpath(nombre).as_uri())
-    if comp.isError():
-        raise AssertionError("error QML: "
-                             + " | ".join(e.toString() for e in comp.errors()))
-    obj = comp.createWithInitialProperties(props or {})
+    Se apaga DENTRO de la sesión, no al salir del intérprete: si los objetos
+    Qt siguen vivos cuando Python se está cerrando, PySide6 los destruye en
+    orden arbitrario y se despide con **SIGSEGV (exit 139)**. Así la CI queda
+    en rojo con todos los tests en verde -- exactamente lo que pasó.
+    """
+    m = QQmlEngine()
+    m.addImportPath(str(_QML))
+    yield m
+    m.collectGarbage()
+    m.deleteLater()
     _app.processEvents()
-    _RETENIDOS.extend([motor, comp, obj])
-    return obj
+
+
+@pytest.fixture
+def cargar(motor):
+    """Crea un componente QML suelto y lo destruye al acabar el test.
+
+    Se retiene el `QQmlComponent` mientras el objeto vive: Qt lo crea como
+    hijo del componente, y si éste se recolecta antes, el objeto desaparece
+    (`RuntimeError: Internal C++ object ... already deleted`).
+    """
+    creados = []
+
+    def _cargar(nombre: str, props: dict | None = None):
+        comp = QQmlComponent(motor)
+        comp.loadUrl(_QML.joinpath(nombre).as_uri())
+        if comp.isError():
+            comp.deleteLater()
+            raise AssertionError("error QML: "
+                                 + " | ".join(e.toString() for e in comp.errors()))
+        obj = comp.createWithInitialProperties(props or {})
+        if obj is None:
+            comp.deleteLater()
+            raise AssertionError(f"{nombre} no se pudo instanciar")
+        creados.append((obj, comp))
+        _app.processEvents()
+        return obj
+
+    yield _cargar
+
+    for obj, comp in creados:
+        obj.deleteLater()
+        comp.deleteLater()
+    _app.processEvents()
+
+
+@pytest.fixture(autouse=True)
+def portapapeles_limpio():
+    """Aísla el portapapeles del sistema entre tests... y lo vacía al salir.
+
+    Dejar datos propios en el portapapeles hasta el final del proceso es una
+    de las formas de que Qt se despida mal al apagarse: `QClipboard` es propiedad
+    de `QGuiApplication`, y el intérprete no garantiza el orden de destrucción.
+    """
+    _vaciar_portapapeles()
+    yield
+    _vaciar_portapapeles()
+    QGuiApplication.clipboard().clear(QClipboard.Mode.Clipboard)
+    _app.processEvents()
 
 
 def _portapapeles() -> str:
@@ -106,13 +153,13 @@ def test_modelo_expone_texto_completo():
 
 
 # ── QML: selección con el ratón y botones ─────────────────────────────────
-def test_el_cuerpo_del_turno_se_selecciona_con_el_raton():
+def test_el_cuerpo_del_turno_se_selecciona_con_el_raton(cargar):
     """Regresión: `Text` no admite selección; sólo `TextEdit`/`TextInput`.
 
     Si alguien vuelve a `Text` por recuperar el borde óptico (`style`), el
     usuario pierde la selección sin que nada más del HUD lo delate.
     """
-    mdb = _cargar("MarkdownBody.qml", {"raw": "respuesta **con** markdown"})
+    mdb = cargar("MarkdownBody.qml", {"raw": "respuesta **con** markdown"})
     repeater = next(o for o in mdb.findChildren(QQuickItem)
                     if o.metaObject().className() == "QQuickRepeater")
     seg = QMetaObject.invokeMethod(repeater, "itemAt",
@@ -129,9 +176,9 @@ def test_el_cuerpo_del_turno_se_selecciona_con_el_raton():
     assert "markdown" in prosa.property("text")
 
 
-def test_boton_copiar_turno_pone_el_mensaje_en_el_portapapeles():
+def test_boton_copiar_turno_pone_el_mensaje_en_el_portapapeles(cargar):
     _vaciar_portapapeles()
-    turn = _cargar("Turn.qml", {"body": "respuesta **con** markdown"})
+    turn = cargar("Turn.qml", {"body": "respuesta **con** markdown"})
 
     boton = turn.findChild(QQuickItem, "copiarTurno")
     assert boton is not None, "Turn.qml no expone el botón de copiar"
@@ -143,9 +190,9 @@ def test_boton_copiar_turno_pone_el_mensaje_en_el_portapapeles():
     assert _portapapeles() == "respuesta **con** markdown"
 
 
-def test_boton_copiar_no_aparece_en_turno_sin_cuerpo():
+def test_boton_copiar_no_aparece_en_turno_sin_cuerpo(cargar):
     """Un turno vacío no ofrece "copiar": no tendría sentido."""
-    turn = _cargar("Turn.qml", {"body": ""})
+    turn = cargar("Turn.qml", {"body": ""})
     boton = turn.findChild(QQuickItem, "copiarTurno")
     assert boton is not None
     assert boton.property("visible") is False
@@ -179,4 +226,6 @@ def test_copiar_toda_la_conversacion_desde_la_cabecera():
         assert "JARVIS ❯ buenas" in copiado
     finally:
         motor._runtime.shutdown()      # noqa: SLF001
+        win.deleteLater()              # la ventana ANTES que el motor
         motor.deleteLater()
+        _app.processEvents()
