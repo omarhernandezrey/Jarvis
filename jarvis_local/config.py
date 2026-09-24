@@ -9,10 +9,19 @@ from pathlib import Path
 
 import yaml
 
-# Raiz del proyecto (la carpeta que contiene el paquete jarvis_local/).
-# Ahi viven config.yaml, secrets.yaml, data/ y logs/.
-BASE_DIR = Path(__file__).resolve().parent.parent
-CONFIG_FILE = BASE_DIR / "config.yaml"
+# Raiz del PROYECTO (la carpeta que contiene el paquete jarvis_local/): de aqui
+# salen config.yaml y secrets.yaml, que son del codigo, no del usuario.
+_PROYECTO = Path(__file__).resolve().parent.parent
+
+# BASE_DIR es donde JARVIS ESCRIBE: data/ (historial, memorias, tokens) y logs/
+# (auditoria, trazas). Se puede mover con JARVIS_BASE_DIR. La usan los tests
+# para apuntar a una carpeta temporal: sin ella, correr la suite escribia en el
+# historial REAL del usuario (expulsando conversaciones por el recorte de
+# `max_history`), ensuciaba logs/audit.jsonl (que consulta `jarvis doctor`) y
+# se llevaba por delante el token de Spotify cacheado.
+_BASE_DIR_ENV = os.environ.get("JARVIS_BASE_DIR", "").strip()
+BASE_DIR = Path(_BASE_DIR_ENV).resolve() if _BASE_DIR_ENV else _PROYECTO
+CONFIG_FILE = _PROYECTO / "config.yaml"
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -95,7 +104,7 @@ class ConfigManager:
     def get_secrets(self) -> dict:
         """Carga secrets.yaml (API keys, correo). Devuelve {} si no existe."""
         if ConfigManager._secrets_cache is None:
-            secrets_file = BASE_DIR / "secrets.yaml"
+            secrets_file = _PROYECTO / "secrets.yaml"
             if secrets_file.exists():
                 with open(secrets_file, encoding="utf-8") as f:
                     ConfigManager._secrets_cache = yaml.safe_load(f) or {}
