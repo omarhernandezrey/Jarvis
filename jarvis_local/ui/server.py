@@ -123,9 +123,21 @@ HTML = r"""<!DOCTYPE html>
     height: 100vh;
     overflow: hidden;
     display: flex;
-    user-select: none;
-    -webkit-user-select: none;
   }
+  /* Selección de texto: el CROMO (orbe, barras, botones) no se selecciona,
+     para que arrastrar sobre el orbe no deje rastros azules. La CONVERSACIÓN
+     sí se puede seleccionar y copiar: antes esto era `user-select: none` en
+     `body`, así que no había forma de llevarse ni una palabra de lo que
+     JARVIS respondía (ni con el ratón ni con Ctrl+A). */
+  .left-panel, .status-bar, .quick-cmds, .input-area,
+  .orb-title, .orb-subtitle, .voice-label, .toast {
+    user-select: none; -webkit-user-select: none;
+  }
+  .chat-area, .chat-area .msg-bubble, .chat-area .msg-time,
+  .chat-area .msg-avatar {
+    user-select: text; -webkit-user-select: text;
+  }
+  .chat-area .msg-bubble { cursor: text; }
 
   /* Background animation */
   .bg-grid {
@@ -304,6 +316,32 @@ HTML = r"""<!DOCTYPE html>
   .msg-time { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
   .msg.user .msg-time { text-align: right; }
 
+  /* Copiar un turno: botón discreto dentro de la línea de tiempo, visible al
+     pasar por encima (nunca estorba a la lectura) y SIEMPRE alcanzable con
+     teclado (focus-visible), porque la selección con el ratón no siempre
+     sirve: los mensajes largos exigen arrastrar con precisión. */
+  .msg-actions {
+    display: flex; align-items: center; gap: 10px; margin-top: 4px;
+  }
+  .msg.user .msg-actions { justify-content: flex-end; }
+  .msg-copy {
+    background: none; border: 1px solid rgba(0,198,255,0.12); cursor: pointer;
+    border-radius: 10px; padding: 2px 8px; color: var(--text-dim);
+    font-family: var(--font); font-size: 10px; letter-spacing: 0.5px;
+    transition: var(--transition);
+  }
+  .msg-copy:hover { color: var(--primary); border-color: rgba(0,198,255,0.35); }
+  .msg-copy:focus-visible { outline: 1px solid var(--primary); color: var(--primary); }
+  .status-copy {
+    margin-left: auto; background: none; cursor: pointer;
+    border: 1px solid rgba(0,198,255,0.15); border-radius: 20px;
+    padding: 4px 12px; color: var(--text-dim);
+    font-family: var(--font); font-size: 10px; letter-spacing: 0.8px;
+    text-transform: uppercase; transition: var(--transition);
+  }
+  .status-copy:hover { color: var(--primary); border-color: rgba(0,198,255,0.35); }
+  .status-copy:focus-visible { outline: 1px solid var(--primary); color: var(--primary); }
+
   .typing-indicator {
     align-self: flex-start; display: flex; gap: 4px; padding: 10px 16px;
     background: var(--surface2); border-radius: var(--radius-sm);
@@ -412,6 +450,8 @@ HTML = r"""<!DOCTYPE html>
       <div class="status-dot on" id="stMic">Micrófono</div>
       <div class="status-dot on" id="stTTS">Voz</div>
       <div class="status-dot on" id="stModel">llama3.2:3b</div>
+      <button class="status-copy" id="copyAllBtn" type="button"
+              onclick="copiarConversacion()" title="Copiar toda la conversación">Copiar conversación</button>
     </div>
 
     <!-- Chat -->
@@ -420,7 +460,11 @@ HTML = r"""<!DOCTYPE html>
         <div class="msg-avatar">J</div>
         <div>
           <div class="msg-bubble">Bienvenido, señor. JARVIS en línea. Todos los sistemas operando con normalidad. ¿En qué puedo asistirle?</div>
-          <div class="msg-time" id="initTime"></div>
+          <div class="msg-actions">
+            <div class="msg-time" id="initTime"></div>
+            <button class="msg-copy" type="button" onclick="copiarTurno(this)"
+                    title="Copiar este mensaje">copiar ⧉</button>
+          </div>
         </div>
       </div>
     </div>
@@ -504,17 +548,92 @@ function addMessage(role, text) {
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble';
   bubble.textContent = text;
+  // el pie del mensaje lleva la hora y, al lado, el botón de copiar: pulsarlo
+  // pega en el portapapeles este turno exacto (sin la decoración).
+  const actions = document.createElement('div');
+  actions.className = 'msg-actions';
   const time = document.createElement('div');
   time.className = 'msg-time';
   time.textContent = new Date().toLocaleTimeString();
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'msg-copy';
+  copyBtn.type = 'button';
+  copyBtn.title = 'Copiar este mensaje';
+  copyBtn.textContent = 'copiar ⧉';
+  copyBtn.onclick = function () { copiarTurno(copyBtn); };
+  actions.appendChild(time);
+  actions.appendChild(copyBtn);
 
   wrap.appendChild(bubble);
-  wrap.appendChild(time);
+  wrap.appendChild(actions);
   div.appendChild(avatar);
   div.appendChild(wrap);
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
   return bubble;
+}
+
+/* ── Portapapeles ────────────────────────────────────────────────────────── */
+// El texto de la conversación se puede seleccionar con el ratón (ver CSS:
+// `user-select: text` en `.chat-area`), pero con mensajes largos arrastrar la
+// selección exacta es un suplicio, y Ctrl+C sobre un mensaje con markdown se
+// puede llevar trozos de burbuja. Estos dos botones copian limpio.
+function etiquetaCopiado(btn) {
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  btn.textContent = 'copiado ✓';
+  setTimeout(function () { btn.textContent = btn.dataset.label; }, 1400);
+}
+
+async function ponerEnPortapapeles(texto, btn) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(texto);
+    } else {
+      // Fallback: el servidor se sirve en http://localhost, que NO es contexto
+      // seguro, así que `navigator.clipboard` suele faltar. Textarea oculto +
+      // execCommand sigue funcionando ahí.
+      const ta = document.createElement('textarea');
+      ta.value = texto;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    if (btn) etiquetaCopiado(btn);
+    toast('Copiado al portapapeles');
+  } catch (e) {
+    toast('No se pudo copiar: ' + e);
+  }
+}
+
+async function copiarTurno(btn) {
+  const msg = btn.closest('.msg');
+  if (!msg) return;
+  const bubble = msg.querySelector('.msg-bubble');
+  const texto = bubble ? bubble.innerText.trim() : '';
+  if (!texto) { toast('Nada que copiar'); return; }
+  await ponerEnPortapapeles(texto, btn);
+}
+
+async function copiarConversacion() {
+  const msgs = $('chatArea').querySelectorAll('.msg');
+  const lineas = [];
+  msgs.forEach(function (msg) {
+    const bubble = msg.querySelector('.msg-bubble');
+    if (!bubble) return;
+    const texto = bubble.innerText.trim();
+    if (!texto) return;
+    const rol = msg.classList.contains('user') ? 'TÚ' : 'JARVIS';
+    const hora = msg.querySelector('.msg-time');
+    const marca = hora && hora.textContent.trim() ? '[' + hora.textContent.trim() + '] ' : '';
+    lineas.push(marca + rol + ' ❯ ' + texto);
+  });
+  if (!lineas.length) { toast('Nada que copiar'); return; }
+  await ponerEnPortapapeles(lineas.join('\n'), $('copyAllBtn'));
 }
 
 function showTyping() {

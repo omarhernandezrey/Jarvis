@@ -251,6 +251,10 @@ Item {
 
             TextEdit {
                 id: editor
+                // nombre estable para localizarla desde tests sin depender del
+                // orden de findChildren(): cada vez más componentes de la
+                // consola usan TextEdit (cuerpo seleccionable, portapapeles).
+                objectName: "commandBarEditor"
                 width: flick.width
                 enabled: !bar.busy
                 color: Design.textPrimary

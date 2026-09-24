@@ -19,6 +19,27 @@ Item {
         anchors { left: parent.left; right: parent.right; top: parent.top }
         height: Design.sp(6)
         visible: root.hasContent
+
+        // El portapapeles se rellena con un TextEdit invisible (selectAll +
+        // copy), el mismo recurso que CodeBlock/Turn: no hay Clipboard en QML.
+        function copiarTodo() {
+            var texto = ConversationModel.texto_completo()
+            if (!texto.length) return
+            clipAll.text = texto
+            clipAll.selectAll()
+            clipAll.copy()
+            clipAll.deselect()
+            copyAll.copied = true
+            resetAll.restart()
+        }
+        QtObject { id: copyAll; property bool copied: false }
+        // sin Timer suelto: una animación de una pasada (addendum §7)
+        SequentialAnimation {
+            id: resetAll
+            PauseAnimation { duration: Design.durHold }
+            ScriptAction { script: copyAll.copied = false }
+        }
+        TextEdit { id: clipAll; visible: false }
         opacity: visible ? 1.0 : 0.0
         Behavior on opacity { NumberAnimation { duration: Design.durSlow } }
 
@@ -57,7 +78,7 @@ Item {
         }
         Text {
             id: clock
-            anchors { right: parent.right; rightMargin: Design.sp(0.5)
+            anchors { right: copyAllBtn.left; rightMargin: Design.sp(1.5)
                       verticalCenter: parent.verticalCenter }
             color: Design.chatMeta
             font.family: Design.fontMono
@@ -70,6 +91,27 @@ Item {
                 running: header.visible
                 onTriggered: clock.text = "T " + Qt.formatDateTime(new Date(), "hh:mm:ss")
             }
+        }
+        // COPIAR TODA LA SESIÓN: un clic pone en el portapapeles la
+        // conversación completa (todos los turnos, con canal y hora) tal como
+        // se ve. QML no puede iterar un QAbstractListModel desde JS, así que
+        // el texto lo arma el propio modelo (`ConversationModel.texto_completo`).
+        Text {
+            id: copyAllBtn
+            objectName: "copiarConversacion"
+            anchors { right: parent.right; rightMargin: Design.sp(0.5)
+                      verticalCenter: parent.verticalCenter }
+            visible: root.hasContent
+            text: copyAll.copied ? "copiado ✓" : "copiar todo ⧉"
+            color: copyAllHover.hovered ? Design.cyan : Design.chatMeta
+            opacity: copyAllHover.hovered ? 1.0 : 0.55
+            Behavior on opacity { NumberAnimation { duration: Design.durFast } }
+            font.family: Design.fontMono
+            font.pixelSize: Design.fsMicro
+            font.letterSpacing: 0.8
+            style: Text.Outline; styleColor: Design.textEdge
+            HoverHandler { id: copyAllHover }
+            TapHandler { onTapped: header.copiarTodo() }
         }
         // regla punteada bajo la cabecera — I3: recibe la luz real del
         // núcleo igual que los hairlines de la espina (izquierda), para que
