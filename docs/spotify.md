@@ -132,5 +132,8 @@ el catálogo del artista en su lugar.
 | "Falta instalar la libreria de Spotify" | `pip install spotipy` en el venv del proyecto |
 | "No pude abrir Spotify en este equipo" | La app no está instalada (`sudo snap install spotify`), o tardó más de 15s en registrarse — pídele la canción de nuevo |
 | "Esta funcion requiere una cuenta Premium" | La API de Spotify no permite reproducción remota en cuentas gratuitas |
+| Dice "Reproduciendo…" pero no suena nada | Ya no debería pasar: JARVIS comprueba que el dispositivo empiece a sonar y, si no, reintenta y lo dice. Si aparece, revisa que la app esté abierta y con la sesión iniciada |
+| "Spotify no me dejo retroceder" | Spotify impide saltar a la anterior durante los primeros segundos de la canción; espera un momento y repite |
+| Todo pide "vuelva a autorizar" | El token caducó o se borró `data/.spotify_cache` → `--reauth-spotify` |
 | El acceso caducó justo después de actualizar JARVIS | Las funciones nuevas piden permisos (scopes) que el token guardado no tenía — corre `--reauth-spotify` de nuevo |
 | "Spotify no me dio recomendaciones para esta cuenta" (radio) | El endpoint `recommendations` está restringido por Spotify para apps nuevas sin "extended quota mode"; JARVIS reproduce el catálogo del artista o la canción buscada en su lugar, sin fingir una radio que no pudo armar |

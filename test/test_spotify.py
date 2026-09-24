@@ -8,8 +8,30 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from jarvis_local.safety.policy import ActionStatus
+from jarvis_local.tools import spotify as S
 from jarvis_local.tools.spotify import has_credentials, play_song
+
+
+@pytest.fixture(autouse=True)
+def sin_esperas(monkeypatch):
+    """La verificación de arranque sondea el estado con `time.sleep`: se
+    quitan las esperas para que los tests sigan corriendo en milisegundos."""
+    monkeypatch.setattr(S.time, "sleep", lambda *_a, **_kw: None)
+
+
+@pytest.fixture(autouse=True)
+def cache_en_tmp(monkeypatch, tmp_path):
+    """Los tests NUNCA deben tocar el token real del usuario.
+
+    `_cliente_o_error` borra el cache cuando no hay token válido: con la ruta
+    de verdad (`data/.spotify_cache`), cada corrida de la suite revocaba la
+    sesión de Spotify del usuario y había que reautorizar a mano. Con este
+    fixture el cache de los tests vive en un temporal.
+    """
+    monkeypatch.setattr(S, "_CACHE_PATH", tmp_path / ".spotify_cache")
 
 
 def test_has_credentials_no_config():
@@ -96,6 +118,7 @@ def test_play_song_opens_spotify_when_not_running():
     mock_sp.search.return_value = {"tracks": {"items": [
         {"name": "Song", "uri": "spotify:track:1", "artists": [{"name": "Artist"}]},
     ]}}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "esta_pc"}}
     sin_pc = {"devices": [{"id": "telefono", "is_active": True, "type": "Smartphone"}]}
     con_pc = {"devices": [{"id": "esta_pc", "is_active": False, "type": "Computer"}]}
     mock_sp.devices.side_effect = [sin_pc, sin_pc, con_pc]
@@ -121,6 +144,7 @@ def test_play_song_gives_up_after_timeout_opening_spotify():
     ]}}
     sin_pc = {"devices": [{"id": "telefono", "is_active": True, "type": "Smartphone"}]}
     mock_sp.devices.return_value = sin_pc
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "telefono"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp), \
          patch("jarvis_local.tools.spotify.shutil.which", return_value="/snap/bin/spotify"), \
@@ -141,6 +165,7 @@ def test_play_song_success():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = play_song("bohemian rhapsody")
@@ -167,6 +192,7 @@ def test_play_song_prefiere_coincidencia_exacta_de_nombre():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = play_song("I Wanna Be Yours")
@@ -214,6 +240,7 @@ def test_play_song_de_artista_resuelve_artista_y_compara_por_palabras():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = play_song("yo soy el rey de vicente fernandez")
@@ -247,6 +274,7 @@ def test_play_song_de_artista_sin_coincidencia_cae_a_texto_libre():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = play_song("algo muy especifico de un artista")
@@ -269,6 +297,7 @@ def test_play_song_artista_no_resuelve_cae_a_texto_libre():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = play_song("cancion rara de algo que no es un artista")
@@ -288,6 +317,7 @@ def test_play_song_prefers_active_device():
         {"id": "inactive", "is_active": False, "type": "Speaker"},
         {"id": "active", "is_active": True, "type": "Speaker"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "active"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp), \
          patch("jarvis_local.tools.spotify.shutil.which", return_value=None):
@@ -307,6 +337,7 @@ def test_play_song_prefers_this_pc_over_active_phone():
         {"id": "telefono", "is_active": True, "type": "Smartphone"},
         {"id": "esta_pc", "is_active": False, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "esta_pc"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         play_song("cualquier cosa")
@@ -322,6 +353,7 @@ def test_play_song_requires_premium():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     mock_sp.start_playback.side_effect = Exception("Premium required (403)")
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
@@ -340,6 +372,7 @@ def test_play_song_without_artists_reads_naturally():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = play_song("track sin artista")
@@ -361,6 +394,7 @@ def test_play_song_device_disappeared_404():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     mock_sp.start_playback.side_effect = _spotify_exception(404, "Device not found")
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
@@ -377,6 +411,7 @@ def test_play_song_expired_token_401():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     mock_sp.start_playback.side_effect = _spotify_exception(401, "The access token expired")
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
@@ -394,6 +429,7 @@ def test_play_song_rate_limited_429():
     mock_sp.devices.return_value = {"devices": [
         {"id": "dev1", "is_active": True, "type": "Computer"},
     ]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     mock_sp.start_playback.side_effect = _spotify_exception(429, "Rate limited")
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):

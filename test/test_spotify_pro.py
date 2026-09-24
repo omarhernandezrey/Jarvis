@@ -16,6 +16,39 @@ from jarvis_local.safety.policy import ActionStatus
 from jarvis_local.tools import spotify as S
 
 
+@pytest.fixture(autouse=True)
+def sin_esperas(monkeypatch):
+    """Sin las esperas de la verificación de arranque (y de la apertura de la
+    app): los tests siguen corriendo en milisegundos."""
+    monkeypatch.setattr(S.time, "sleep", lambda *_a, **_kw: None)
+
+
+@pytest.fixture(autouse=True)
+def cache_en_tmp(monkeypatch, tmp_path):
+    """Nunca el token real: `_cliente_o_error` borra el cache si no hay token
+    válido, y eso revocaba la sesión de Spotify del usuario en cada corrida."""
+    monkeypatch.setattr(S, "_CACHE_PATH", tmp_path / ".spotify_cache")
+
+
+_PC = {"id": "esta_pc", "name": "este PC", "type": "Computer", "is_active": True}
+_CELULAR = {"id": "telefono", "name": "celular", "type": "Smartphone", "is_active": True}
+
+
+def _cliente(dispositivos=None, sonando="esta_pc"):
+    """Cliente falso con `devices()` y `current_playback()` REALISTAS.
+
+    Desde que los comandos eligen dispositivo explícitamente y se comprueba
+    que la música arrancó de verdad, un `MagicMock()` pelado (que devuelve
+    objetos mágicos sin sentido para todo) ya no sirve de doble: hay que
+    decirle qué dispositivos hay y cuál está sonando.
+    """
+    sp = MagicMock()
+    sp.devices.return_value = {"devices": [_PC] if dispositivos is None else dispositivos}
+    sp.current_playback.return_value = (
+        {"is_playing": True, "device": {"id": sonando}} if sonando else None)
+    return sp
+
+
 def _spotify_exception(http_status, msg="error"):
     from spotipy.exceptions import SpotifyException
     return SpotifyException(http_status, -1, msg)
@@ -111,16 +144,16 @@ def test_rate_limited_429(monkeypatch, nombre, llamar):
 # ---------------------------------------------------------------------
 
 def test_pause_playback_success():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.pause_playback()
         assert plan.status == ActionStatus.EXECUTED
-        mock_sp.pause_playback.assert_called_once()
+        mock_sp.pause_playback.assert_called_once_with(device_id="esta_pc")
 
 
 def test_pause_playback_nada_sonando_403():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     mock_sp.pause_playback.side_effect = _spotify_exception(403, "no active device")
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
@@ -130,16 +163,16 @@ def test_pause_playback_nada_sonando_403():
 
 
 def test_resume_playback_success():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.resume_playback()
         assert plan.status == ActionStatus.EXECUTED
-        mock_sp.start_playback.assert_called_once_with()
+        mock_sp.start_playback.assert_called_once_with(device_id="esta_pc")
 
 
 def test_resume_playback_nada_que_reanudar_403():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     mock_sp.start_playback.side_effect = _spotify_exception(403, "no context")
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
@@ -149,74 +182,74 @@ def test_resume_playback_nada_que_reanudar_403():
 
 
 def test_next_track_success():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.next_track()
         assert plan.status == ActionStatus.EXECUTED
-        mock_sp.next_track.assert_called_once()
+        mock_sp.next_track.assert_called_once_with(device_id="esta_pc")
 
 
 def test_previous_track_success():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.previous_track()
         assert plan.status == ActionStatus.EXECUTED
-        mock_sp.previous_track.assert_called_once()
+        mock_sp.previous_track.assert_called_once_with(device_id="esta_pc")
 
 
 def test_set_volume_success():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.set_volume(45)
         assert plan.status == ActionStatus.EXECUTED
         assert "45" in plan.result
-        mock_sp.volume.assert_called_once_with(45)
+        mock_sp.volume.assert_called_once_with(45, device_id="esta_pc")
 
 
 @pytest.mark.parametrize("entrada,esperado", [(-10, 0), (500, 100), (50, 50)])
 def test_set_volume_clampa_0_100(entrada, esperado):
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         S.set_volume(entrada)
-        mock_sp.volume.assert_called_once_with(esperado)
+        mock_sp.volume.assert_called_once_with(esperado, device_id="esta_pc")
 
 
 def test_set_shuffle_activa():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.set_shuffle(True)
         assert plan.status == ActionStatus.EXECUTED
         assert "activado" in plan.result.lower()
-        mock_sp.shuffle.assert_called_once_with(True)
+        mock_sp.shuffle.assert_called_once_with(True, device_id="esta_pc")
 
 
 def test_set_shuffle_desactiva():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.set_shuffle(False)
         assert plan.status == ActionStatus.EXECUTED
         assert "desactivado" in plan.result.lower()
-        mock_sp.shuffle.assert_called_once_with(False)
+        mock_sp.shuffle.assert_called_once_with(False, device_id="esta_pc")
 
 
 @pytest.mark.parametrize("modo,valor_api", [("cancion", "track"), ("lista", "context"), ("no", "off")])
 def test_set_repeat_modos_validos(modo, valor_api):
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.set_repeat(modo)
         assert plan.status == ActionStatus.EXECUTED
-        mock_sp.repeat.assert_called_once_with(valor_api)
+        mock_sp.repeat.assert_called_once_with(valor_api, device_id="esta_pc")
 
 
 def test_set_repeat_modo_invalido_no_llama_a_la_api():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.set_repeat("cualquier_cosa")
@@ -262,7 +295,7 @@ def test_now_playing_con_cancion():
 
 
 def test_add_to_queue_success():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     mock_sp.search.return_value = {"tracks": {"items": [
         {"name": "Song", "uri": "spotify:track:1", "artists": [{"name": "Artist"}]},
     ]}}
@@ -270,7 +303,7 @@ def test_add_to_queue_success():
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.add_to_queue("song")
         assert plan.status == ActionStatus.EXECUTED
-        mock_sp.add_to_queue.assert_called_once_with("spotify:track:1")
+        mock_sp.add_to_queue.assert_called_once_with("spotify:track:1", device_id="esta_pc")
 
 
 def test_add_to_queue_no_encontrada():
@@ -300,6 +333,7 @@ def test_play_playlist_success():
         {"name": "Chill", "uri": "spotify:playlist:2"},
     ]}
     mock_sp.devices.return_value = {"devices": [{"id": "dev1", "is_active": True, "type": "Computer"}]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.play_playlist("running")
@@ -348,6 +382,7 @@ def test_play_album_success():
          "artists": [{"name": "Pink Floyd"}]},
     ]}}
     mock_sp.devices.return_value = {"devices": [{"id": "dev1", "is_active": True, "type": "Computer"}]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.play_album("dark side of the moon")
@@ -369,6 +404,7 @@ def test_play_album_no_encontrado():
 def test_play_radio_con_recomendaciones():
     mock_sp = MagicMock()
     mock_sp.devices.return_value = {"devices": [{"id": "dev1", "is_active": True, "type": "Computer"}]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     mock_sp.search.return_value = {"artists": {"items": [{"id": "art1", "name": "Bad Bunny",
                                                            "uri": "spotify:artist:art1"}]}}
     mock_sp.recommendations.return_value = {"tracks": [
@@ -385,6 +421,7 @@ def test_play_radio_con_recomendaciones():
 def test_play_radio_recomendaciones_fallan_cae_a_catalogo_artista():
     mock_sp = MagicMock()
     mock_sp.devices.return_value = {"devices": [{"id": "dev1", "is_active": True, "type": "Computer"}]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     mock_sp.search.return_value = {"artists": {"items": [{"id": "art1", "name": "Bad Bunny",
                                                            "uri": "spotify:artist:art1"}]}}
     mock_sp.recommendations.side_effect = _spotify_exception(404, "not available")
@@ -400,6 +437,7 @@ def test_play_radio_recomendaciones_fallan_cae_a_catalogo_artista():
 def test_play_radio_sin_resolver_nada():
     mock_sp = MagicMock()
     mock_sp.devices.return_value = {"devices": [{"id": "dev1", "is_active": True, "type": "Computer"}]}
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
     mock_sp.search.return_value = {"artists": {"items": []}, "tracks": {"items": []}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
@@ -548,29 +586,31 @@ def test_recently_played_clampa_limite(entrada, esperado):
 
 
 def test_resume_last_played_con_contexto_activo():
-    mock_sp = MagicMock()
+    mock_sp = _cliente()
     mock_sp.current_playback.return_value = {"item": {"name": "Song"}}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.resume_last_played()
         assert plan.status == ActionStatus.EXECUTED
-        mock_sp.start_playback.assert_called_once_with()
+        mock_sp.start_playback.assert_called_once_with(device_id="esta_pc")
         mock_sp.current_user_recently_played.assert_not_called()
 
 
 def test_resume_last_played_sin_contexto_cae_a_recientes():
-    mock_sp = MagicMock()
-    mock_sp.current_playback.return_value = None
+    # sin contexto activo (None) cae al historial; despues de mandar reproducir
+    # SI suena (lo que comprueba la verificacion de arranque).
+    mock_sp = _cliente()
+    mock_sp.current_playback.side_effect = [
+        None, {"is_playing": True, "device": {"id": "esta_pc"}}]
     mock_sp.current_user_recently_played.return_value = {"items": [
         {"track": {"name": "Song", "uri": "spotify:track:1", "artists": [{"name": "Artist"}]}},
     ]}
-    mock_sp.devices.return_value = {"devices": [{"id": "dev1", "is_active": True, "type": "Computer"}]}
     with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.resume_last_played()
         assert plan.status == ActionStatus.EXECUTED
         mock_sp.start_playback.assert_called_once_with(
-            device_id="dev1", uris=["spotify:track:1"])
+            device_id="esta_pc", uris=["spotify:track:1"])
 
 
 def test_resume_last_played_sin_nada():
@@ -581,3 +621,109 @@ def test_resume_last_played_sin_nada():
          patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
         plan = S.resume_last_played()
         assert plan.status == ActionStatus.ERROR
+
+
+# ---------------------------------------------------------------------
+# Regresiones: elegir dispositivo y comprobar que SUENA de verdad
+# ---------------------------------------------------------------------
+
+def test_el_control_va_al_dispositivo_que_esta_sonando():
+    """Regresión: pausa/siguiente/volumen se mandaban SIN `device_id`, así que
+    Spotify los aplicaba a "lo que esté activo" -- con la app cerrada
+    fallaban con 404 y el usuario no oía nada ni en pausa ni en siguiente.
+
+    Si la música está en el celular, "pausa" tiene que pausar el CELULAR, no
+    abrir esta máquina: por eso aquí manda el dispositivo activo, no el PC.
+    """
+    mock_sp = _cliente(dispositivos=[dict(_PC, is_active=False), _CELULAR])
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp), \
+         patch("jarvis_local.tools.spotify.shutil.which", return_value=None):
+        assert S.pause_playback().status == ActionStatus.EXECUTED
+        mock_sp.pause_playback.assert_called_once_with(device_id="telefono")
+
+
+def test_sin_nada_activo_el_control_cae_a_este_pc():
+    """Ningún dispositivo activo -> el control va a este PC (sin abrir la app:
+    ya está registrado, sólo está inactivo)."""
+    pc_inactivo = dict(_PC, is_active=False)
+    mock_sp = _cliente(dispositivos=[pc_inactivo])
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        assert S.next_track().status == ActionStatus.EXECUTED
+        mock_sp.next_track.assert_called_once_with(device_id="esta_pc")
+
+
+def test_control_sin_dispositivo_ni_app_da_mensaje_accionable():
+    """Sin app instalada ni dispositivos: mensaje claro, sin procesos raros."""
+    mock_sp = MagicMock()
+    mock_sp.devices.return_value = {"devices": []}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp), \
+         patch("jarvis_local.tools.spotify.shutil.which", return_value=None):
+        plan = S.pause_playback()
+        assert plan.status == ActionStatus.ERROR
+        assert "spotify" in plan.result.lower()
+
+
+def test_si_no_arranca_se_dice_y_no_se_finge_exito():
+    """Regresión: la Web API contesta 204 aunque luego no suene nada. Si tras
+    mandar reproducir el dispositivo sigue parado, JARVIS lo dice en vez de
+    asegurar que está sonando."""
+    mock_sp = MagicMock()
+    mock_sp.search.return_value = {"tracks": {"items": [
+        {"name": "Song", "uri": "spotify:track:1", "artists": [{"name": "Artist"}]},
+    ]}}
+    mock_sp.devices.return_value = {"devices": [dict(_PC)]}
+    mock_sp.current_playback.return_value = {"is_playing": False, "device": {"id": "esta_pc"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = S.play_song("song")
+        assert plan.status == ActionStatus.ERROR
+        assert "no empezo a sonar" in plan.result.lower()
+        mock_sp.start_playback.assert_called_once_with(
+            device_id="esta_pc", uris=["spotify:track:1"])
+
+
+def test_reintenta_si_el_dispositivo_cambia_al_arrancar():
+    """La app tarda en registrarse: si el dispositivo al que se mandó la orden
+    no suena pero acaba de aparecer otro, se reintenta en el nuevo."""
+    mock_sp = MagicMock()
+    mock_sp.search.return_value = {"tracks": {"items": [
+        {"name": "Song", "uri": "spotify:track:1", "artists": [{"name": "Artist"}]},
+    ]}}
+    pc_apagado = dict(_PC, is_active=False)
+    # 1º intento: suena en la PC vieja -> no; aparece el PC recién abierto
+    mock_sp.devices.side_effect = [
+        {"devices": [dict(pc_apagado, id="pc_vieja")]},
+        {"devices": [dict(pc_apagado, id="pc_vieja")]},
+        {"devices": [dict(_PC, id="pc_nueva")]},
+    ]
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "pc_nueva"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = S.play_song("song")
+        assert plan.status == ActionStatus.EXECUTED
+        assert mock_sp.start_playback.call_args_list[-1].kwargs["device_id"] == "pc_nueva"
+
+
+def test_espera_de_apertura_cubre_el_arranque_en_frio_medido():
+    """MEDIDO: la app tardó 14,8 s en registrarse en este equipo. Con la espera
+    anterior (15 s) la primera petición del día quedaba al filo y fallaba por
+    carrera con el arranque de la app."""
+    assert S.ESPERA_APERTURA_SEGUNDOS >= 25
+
+
+def test_anterior_403_explica_que_es_por_tiempo_no_por_premium():
+    """Regresión: `previous` devolvía un 403 y JARVIS culpaba a la cuenta
+    Premium. Con cuenta Premium de verdad (se puede reproducir), Spotify
+    responde 403 Restriction violated al retroceder en los primeros segundos
+    de la canción: el mensaje tiene que decir eso, no mentir sobre Premium."""
+    mock_sp = _cliente()
+    mock_sp.previous_track.side_effect = _spotify_exception(403, "Restriction violated")
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = S.previous_track()
+        assert plan.status == ActionStatus.ERROR
+        assert "premium" not in plan.result.lower()
+        assert "segundos" in plan.result.lower()
