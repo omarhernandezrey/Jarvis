@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `jarvis doctor` valida el token de verdad (refresh incluido) y distingue
     "sin red" de "token caducado";
   - `_client()` usa `_CACHE_PATH` como única fuente de la ruta del cache.
+- Spotify: la reproducción y el control vuelven a funcionar de verdad:
+  - `pause`/`resume`/`next`/`previous`/`volume`/`shuffle`/`repeat`/
+    `add_to_queue` se mandaban SIN dispositivo, así que con la app cerrada
+    fallaban con 404 — ahora van al dispositivo que está sonando (celular,
+    parlante o este PC);
+  - la Web API responde 204 aunque el dispositivo luego no arranque; ahora
+    se comprueba que empiece a sonar de verdad y, si no, se reintenta y se
+    avisa en vez de afirmar que está reproduciendo;
+  - `ESPERA_APERTURA_SEGUNDOS` 15 → 25 (medido en frío: 14,8 s);
+  - el 403 de `previous` ya no culpa a Premium — es el límite de Spotify
+    para retroceder en los primeros segundos de la canción.
 
 ## [8.1.0] - 2026-09-22
 

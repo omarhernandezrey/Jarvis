@@ -43,9 +43,11 @@ RED_MSG = ("No pude contactar a Spotify para renovar el acceso, senor. "
            "Verifique su conexion a internet e intentelo de nuevo; "
            "su autorizacion sigue guardada.")
 # Cuantos segundos esperar a que la app recien abierta se registre como
-# dispositivo Connect. Con menos, la primera peticion del dia falla por
-# pura carrera con el arranque de la app.
-ESPERA_APERTURA_SEGUNDOS = 15
+# dispositivo Connect. MEDIDO en frio: 14,8 s en este equipo (snap, disco
+# mecanico) -- con el valor anterior (15 s) la primera peticion del dia
+# quedaba al borde del timeout y fallaba por pura carrera con el arranque
+# de la app, asi que se sube a 25 s. Cuesta solo cuando hay que abrirla.
+ESPERA_APERTURA_SEGUNDOS = 25
 # Candidatos a pedir en la busqueda de texto libre (ultimo recurso, ver
 # _buscar_track): con varios se puede preferir una coincidencia EXACTA de
 # nombre sobre lo que Spotify puso primero por relevancia.
@@ -514,6 +516,86 @@ def _manejar_error_spotify(e: Exception, plan: ActionPlan, *,
     logger.error(f"Error en Spotify: {e}")
 
 
+MSG_SIN_DISPOSITIVO = (
+    "No pude abrir Spotify en este equipo, senor. Verifique que "
+    "este instalado, o abralo usted mismo e intente de nuevo."
+)
+MSG_NO_SONO = (
+    "Spotify acepto la orden pero no empezo a sonar, senor. Compruebe que la "
+    "app este abierta y con la sesion iniciada, e intentelo de nuevo."
+)
+# La Web API contesta 204 (exito) aunque el dispositivo luego NO arranque:
+# sin comprobarlo, JARVIS afirmaba estar reproduciendo mientras el usuario no
+# oia nada. Tras mandar "reproducir" se sondea el estado unas pocas veces.
+_VERIFICAR_INTENTOS = 3
+_VERIFICAR_ESPERA = 1.0
+
+
+def _dispositivo_control(sp) -> str | None:
+    """Dispositivo a usar para CONTROLAR lo que suena (pausa, siguiente,
+    volumen, aleatorio, repeticion, cola).
+
+    A diferencia de `_device_id` (que SIEMPRE prefiere este PC porque ahi se
+    espera escuchar la musica que se PIDE), aqui manda el dispositivo que esta
+    ACTIVO ahora mismo -- que es donde esta sonando la musica, sea este PC, el
+    celular o un parlante -- y solo si no hay ninguno activo se cae a este PC
+    (abriendolo si hace falta). Antes estos comandos se enviaban sin
+    `device_id`, y Spotify los aplicaba a "cualquier dispositivo activo": con
+    la app cerrada, `pausa` o `siguiente` fallaban con 404.
+    """
+    devices = sp.devices().get("devices", [])
+    activo = next((d for d in devices if d.get("is_active")), None)
+    if activo:
+        return activo["id"]
+    return _device_id(sp)
+
+
+def _dispositivo_control_o_error(sp, plan: ActionPlan):
+    """`_dispositivo_control` o ERROR accionable (mutando `plan`)."""
+    device_id = _dispositivo_control(sp)
+    if device_id is None:
+        plan.status = ActionStatus.ERROR
+        plan.result = MSG_SIN_DISPOSITIVO
+        return None
+    return device_id
+
+
+def _arranco_de_verdad(sp, device_id: str) -> bool:
+    """True si el dispositivo esta sonando AHORA; False si sigue parado.
+
+    Si no se puede consultar el estado, se da por bueno: que falle la
+    comprobacion no debe convertirse en un error falso sobre algo que quizas
+    si empezo a sonar.
+    """
+    for _ in range(_VERIFICAR_INTENTOS):
+        time.sleep(_VERIFICAR_ESPERA)
+        try:
+            actual = sp.current_playback() or {}
+        except Exception:  # noqa: BLE001
+            return True
+        dispositivo = (actual.get("device") or {}).get("id")
+        if actual.get("is_playing") and dispositivo == device_id:
+            return True
+    return False
+
+
+def _reproducir(sp, device_id: str, **kwargs) -> bool:
+    """Manda reproducir y COMPRUEBA que empieza a sonar.
+
+    Segundo intento con el dispositivo recien resuelto: la app tarda en
+    registrarse y el `device_id` con el que se mando la orden puede quedar
+    obsoleto entre la busqueda y el play.
+    """
+    sp.start_playback(device_id=device_id, **kwargs)
+    if _arranco_de_verdad(sp, device_id):
+        return True
+    otro = _dispositivo_control(sp)
+    if otro and otro != device_id:
+        sp.start_playback(device_id=otro, **kwargs)
+        return _arranco_de_verdad(sp, otro)
+    return False
+
+
 def play_song(query: str) -> ActionPlan:
     """Busca una cancion (o artista) por nombre y la reproduce en Spotify."""
     query = (query or "").strip()
@@ -539,13 +621,13 @@ def play_song(query: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo."
-            )
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
 
-        sp.start_playback(device_id=device_id, uris=[track["uri"]])
+        if not _reproducir(sp, device_id, uris=[track["uri"]]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         artistas = ", ".join(a["name"] for a in track.get("artists", []))
         nombre = track.get("name", query)
         plan.result = (f"Reproduciendo '{nombre}' de {artistas} en Spotify, senor."
@@ -582,7 +664,10 @@ def pause_playback() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.pause_playback()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.pause_playback(device_id=device_id)
         plan.result = "Pausado, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -601,7 +686,10 @@ def resume_playback() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.start_playback()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.start_playback(device_id=device_id)
         plan.result = "Reanudado, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -621,7 +709,10 @@ def next_track() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.next_track()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.next_track(device_id=device_id)
         plan.result = "Siguiente cancion, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -637,12 +728,18 @@ def previous_track() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.previous_track()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.previous_track(device_id=device_id)
         plan.result = "Cancion anterior, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
-        _manejar_error_spotify(e, plan,
-                               msg_generic="No pude volver a la cancion anterior en Spotify")
+        _manejar_error_spotify(
+            e, plan,
+            msg_403=("Spotify no me dejo retroceder, senor. Lo impide durante "
+                     "los primeros segundos de la cancion: intentelo en un momento."),
+            msg_generic="No pude volver a la cancion anterior en Spotify")
     return plan
 
 
@@ -658,7 +755,10 @@ def set_volume(nivel: int) -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.volume(nivel)
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.volume(nivel, device_id=device_id)
         plan.result = f"Volumen de Spotify al {nivel}%, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -676,7 +776,10 @@ def set_shuffle(activar: bool) -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.shuffle(activar)
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.shuffle(activar, device_id=device_id)
         plan.result = ("Modo aleatorio activado, senor." if activar
                        else "Modo aleatorio desactivado, senor.")
         plan.status = ActionStatus.EXECUTED
@@ -702,7 +805,10 @@ def set_repeat(modo: str) -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.repeat(_REPEAT_MODOS[modo])
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.repeat(_REPEAT_MODOS[modo], device_id=device_id)
         mensajes = {"cancion": "Repitiendo esta cancion, senor.",
                     "lista": "Repitiendo la lista, senor.",
                     "no": "Repeticion desactivada, senor."}
@@ -757,7 +863,10 @@ def add_to_queue(query: str) -> ActionPlan:
             plan.status = ActionStatus.ERROR
             plan.result = f"No encontre '{query}' en Spotify, senor."
             return plan
-        sp.add_to_queue(track["uri"])
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.add_to_queue(track["uri"], device_id=device_id)
         artistas = ", ".join(a["name"] for a in track.get("artists", []))
         nombre = track.get("name", query)
         plan.result = (f"Agregue '{nombre}' de {artistas} a la cola, senor."
@@ -814,11 +923,12 @@ def play_playlist(name: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
-        sp.start_playback(device_id=device_id, context_uri=r["uri"])
+        if not _reproducir(sp, device_id, context_uri=r["uri"]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         plan.result = f"Reproduciendo la playlist '{r.get('name', name)}', senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -850,11 +960,12 @@ def play_album(query: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
-        sp.start_playback(device_id=device_id, context_uri=album["uri"])
+        if not _reproducir(sp, device_id, context_uri=album["uri"]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         artistas = ", ".join(a["name"] for a in album.get("artists", []))
         nombre = album.get("name", query)
         plan.result = (f"Reproduciendo el album '{nombre}' de {artistas}, senor."
@@ -886,9 +997,7 @@ def play_radio(query: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
 
         artista = _resolver_artista(sp, query)
@@ -909,20 +1018,29 @@ def play_radio(query: str) -> ActionPlan:
             seed_uris = None
 
         if seed_uris:
-            sp.start_playback(device_id=device_id, uris=seed_uris)
+            if not _reproducir(sp, device_id, uris=seed_uris):
+                plan.status = ActionStatus.ERROR
+                plan.result = MSG_NO_SONO
+                return plan
             plan.result = f"Radio de '{query}' iniciada, senor."
             plan.status = ActionStatus.EXECUTED
             return plan
 
         if artista:
-            sp.start_playback(device_id=device_id, context_uri=artista["uri"])
+            if not _reproducir(sp, device_id, context_uri=artista["uri"]):
+                plan.status = ActionStatus.ERROR
+                plan.result = MSG_NO_SONO
+                return plan
             plan.result = (
                 "Spotify no me dio recomendaciones para esta cuenta, senor. "
                 f"Reproduciendo el catalogo de {artista['name']} en su lugar.")
             plan.status = ActionStatus.EXECUTED
             return plan
 
-        sp.start_playback(device_id=device_id, uris=[track["uri"]])
+        if not _reproducir(sp, device_id, uris=[track["uri"]]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         nombre = track.get("name", query)
         plan.result = (
             "Spotify no me dio recomendaciones para esta cuenta, senor. "
@@ -1086,7 +1204,10 @@ def resume_last_played() -> ActionPlan:
     try:
         actual = sp.current_playback()
         if actual and actual.get("item"):
-            sp.start_playback()
+            device_id = _dispositivo_control_o_error(sp, plan)
+            if device_id is None:
+                return plan
+            sp.start_playback(device_id=device_id)
             nombre = actual["item"].get("name", "?")
             plan.result = f"Retomando '{nombre}', senor."
             plan.status = ActionStatus.EXECUTED
@@ -1101,11 +1222,12 @@ def resume_last_played() -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
-        sp.start_playback(device_id=device_id, uris=[track["uri"]])
+        if not _reproducir(sp, device_id, uris=[track["uri"]]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         nombre = track.get("name", "?")
         artistas = ", ".join(a["name"] for a in track.get("artists", []))
         plan.result = (f"Reanudando '{nombre}' de {artistas}, senor."
