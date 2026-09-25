@@ -119,15 +119,26 @@ def _check_google_calendar() -> tuple[bool, str]:
 
 def _check_spotify() -> tuple[bool, str]:
     from jarvis_local.config import BASE_DIR
-    from jarvis_local.tools.spotify import has_credentials
+    from jarvis_local.tools import spotify as S
 
-    if not has_credentials():
+    if not S.has_credentials():
         return _linea(WARN, "Spotify", "sin client_id/secret en secrets.yaml (opcional)")
     cache = BASE_DIR / "data" / ".spotify_cache"
-    if not cache.exists():
+    if not cache.exists() and not cache.with_name(cache.name + ".bak").exists():
         return _linea(WARN, "Spotify",
                       "sin autorizar — `python -m jarvis_local.cli --reauth-spotify`")
-    return _linea(OK, "Spotify", "credenciales + token cacheado")
+    try:
+        import spotipy  # noqa: F401
+    except ImportError:
+        return _linea(WARN, "Spotify", "falta la libreria spotipy")
+    # Validacion REAL: `_client()` lee el token, lo refresca si expiro y hasta
+    # lo restaura desde la copia de seguridad si el cache falta o se corrompio.
+    if S._client() is not None:
+        return _linea(OK, "Spotify", "token válido")
+    if S._es_error_de_red(S._ultimo_error_token):
+        return _linea(WARN, "Spotify", "no verificable sin conexión a internet")
+    return _linea(NO, "Spotify",
+                  "token caducado — `python -m jarvis_local.cli --reauth-spotify`")
 
 
 def _check_microfono() -> tuple[bool, str]:

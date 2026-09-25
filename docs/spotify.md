@@ -133,4 +133,15 @@ el catálogo del artista en su lugar.
 | "No pude abrir Spotify en este equipo" | La app no está instalada (`sudo snap install spotify`), o tardó más de 15s en registrarse — pídele la canción de nuevo |
 | "Esta funcion requiere una cuenta Premium" | La API de Spotify no permite reproducción remota en cuentas gratuitas |
 | El acceso caducó justo después de actualizar JARVIS | Las funciones nuevas piden permisos (scopes) que el token guardado no tenía — corre `--reauth-spotify` de nuevo |
+| "No pude contactar a Spotify para renovar el acceso" | Fallo de red al refrescar el token — tu autorización NO se borró; verifica tu conexión e inténtalo de nuevo |
+| "La autorizacion se completo pero no pude guardar el token" | El navegador autorizó bien pero no se pudo escribir `data/.spotify_cache` — revisa permisos de la carpeta `data/` |
+| "No pude completar la autorizacion de Spotify" | El puerto 8888 del callback está ocupado por otra app — ciérrala y repite `--reauth-spotify` |
+
+> **¿Puede perderse la autorización por un corte de red o un borrado
+> accidental?** No. JARVIS guarda una copia de seguridad del token
+> (`data/.spotify_cache.bak`) y la restaura solo si el cache falta o se
+> corrompe; ante un fallo transitorio renueva el acceso por su cuenta. Solo
+> pedirá reautorizar si Spotify revocó el acceso de verdad (por ejemplo, si
+> quitas la app en <https://www.spotify.com/account/apps/> o cambias la
+> contraseña).
 | "Spotify no me dio recomendaciones para esta cuenta" (radio) | El endpoint `recommendations` está restringido por Spotify para apps nuevas sin "extended quota mode"; JARVIS reproduce el catálogo del artista o la canción buscada en su lugar, sin fingir una radio que no pudo armar |

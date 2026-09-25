@@ -97,3 +97,58 @@ def test_cli_doctor_no_arranca_jarvis(monkeypatch):
         except SystemExit as e:
             assert e.code == 0
     assert called["init"] is False
+
+
+# ---------------------------------------------------------------------
+# _check_spotify: validacion real del token (no solo "el archivo existe").
+# ---------------------------------------------------------------------
+
+def test_doctor_spotify_sin_cache_ni_respaldo_pide_reauth(tmp_path, monkeypatch):
+    from jarvis_local.tools import spotify as S
+    monkeypatch.setattr(S, "has_credentials", lambda: True)
+    monkeypatch.setattr("jarvis_local.config.BASE_DIR", tmp_path)
+    ok, texto = doctor._check_spotify()
+    assert texto.startswith(doctor.WARN)
+    assert "--reauth-spotify" in texto
+
+
+def test_doctor_spotify_token_valido(tmp_path, monkeypatch):
+    from jarvis_local.tools import spotify as S
+    monkeypatch.setattr(S, "has_credentials", lambda: True)
+    monkeypatch.setattr("jarvis_local.config.BASE_DIR", tmp_path)
+    (tmp_path / "data").mkdir(exist_ok=True)
+    (tmp_path / "data" / ".spotify_cache").write_text("{}")
+    monkeypatch.setattr(S, "_client", lambda: MagicMock())
+    ok, texto = doctor._check_spotify()
+    assert ok is True
+    assert "válido" in texto
+
+
+def test_doctor_spotify_token_caducado_es_falta(tmp_path, monkeypatch):
+    from jarvis_local.tools import spotify as S
+    monkeypatch.setattr(S, "has_credentials", lambda: True)
+    monkeypatch.setattr("jarvis_local.config.BASE_DIR", tmp_path)
+    (tmp_path / "data").mkdir(exist_ok=True)
+    (tmp_path / "data" / ".spotify_cache").write_text("{}")
+    monkeypatch.setattr(S, "_client", lambda: None)
+    monkeypatch.setattr(S, "_ultimo_error_token", None)
+    ok, texto = doctor._check_spotify()
+    assert not ok
+    assert "--reauth-spotify" in texto
+
+
+def test_doctor_spotify_sin_red_no_verificable(tmp_path, monkeypatch):
+    """Sin internet el doctor NO afirma que el token esta muerto."""
+    import requests
+
+    from jarvis_local.tools import spotify as S
+    monkeypatch.setattr(S, "has_credentials", lambda: True)
+    monkeypatch.setattr("jarvis_local.config.BASE_DIR", tmp_path)
+    (tmp_path / "data").mkdir(exist_ok=True)
+    (tmp_path / "data" / ".spotify_cache").write_text("{}")
+    monkeypatch.setattr(S, "_client", lambda: None)
+    monkeypatch.setattr(S, "_ultimo_error_token",
+                        requests.exceptions.ConnectionError("sin red"))
+    ok, texto = doctor._check_spotify()
+    assert texto.startswith(doctor.WARN)
+    assert "no verificable" in texto

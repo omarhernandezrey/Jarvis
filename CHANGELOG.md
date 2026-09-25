@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Spotify: blindaje total del token de autorización para que no vuelva a
+  "caducar" en falso:
+  - copia de seguridad del token (`data/.spotify_cache.bak`) con
+    auto-restauración si el cache se borra externamente o se corrompe;
+  - un 401 a mitad de operación renueva el access token con el refresh_token
+    y solo pide reintentar — reautorizar únicamente si Spotify rechaza el
+    refresh_token de verdad;
+  - un bache de red al refrescar ya no borra la autorización ni pide
+    reautorizar (mensaje de "verifique su conexión" en su lugar);
+  - la causa real de cualquier fallo de token queda registrada en el log;
+  - `--reauth-spotify` avisa si la autorización terminó pero el token no pudo
+    guardarse en disco, y muestra un mensaje claro si el puerto 8888 está
+    ocupado (antes: traceback);
+  - `jarvis doctor` valida el token de verdad (refresh incluido) y distingue
+    "sin red" de "token caducado";
+  - `_client()` usa `_CACHE_PATH` como única fuente de la ruta del cache.
+
 ## [8.1.0] - 2026-09-22
 
 Spotify "Pro": de buscar-y-reproducir a control completo por Web API, a
