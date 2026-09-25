@@ -20,6 +20,27 @@ ROLE_STREAMING = _ROLE_BASE + 3
 ROLE_META = _ROLE_BASE + 4        # p.ej. "820 ms · 14.2 tok/s"
 ROLE_KIND = _ROLE_BASE + 5        # "chat" | "tool" | "error"
 
+ETIQUETA_CANAL = {"jarvis": "JARVIS", "user": "USER"}
+
+
+def conversacion_a_texto(turnos) -> str:
+    """Serializa turnos a texto plano copiable (portapapeles).
+
+    Forma de cada línea: `[HH:MM:SS] CANAL ❯ cuerpo`, la misma sintaxis que
+    se ve en la consola. Los turnos vacíos (p. ej. el turno de JARVIS recién
+    abierto, aún sin token) se omiten para no dejar líneas en blanco.
+    """
+    lineas = []
+    for turno in turnos:
+        cuerpo = (turno.get("text") or "").strip()
+        if not cuerpo:
+            continue
+        canal = ETIQUETA_CANAL.get(turno.get("channel"), "USER")
+        marca = (turno.get("ts") or "").strip()
+        prefijo = f"[{marca}] " if marca else ""
+        lineas.append(f"{prefijo}{canal} ❯ {cuerpo}")
+    return "\n".join(lineas)
+
 
 class ConversationModel(QAbstractListModel):
     def __init__(self, parent=None) -> None:
@@ -97,6 +118,11 @@ class ConversationModel(QAbstractListModel):
             self.end_assistant(message, "", "error")
         else:
             self._append("jarvis", message, streaming=False, kind="error")
+
+    @Slot(result=str)
+    def texto_completo(self) -> str:
+        """Toda la sesión en texto plano, lista para el portapapeles."""
+        return conversacion_a_texto(self._turns)
 
     @Slot()
     def clear(self) -> None:

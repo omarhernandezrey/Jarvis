@@ -1,14 +1,58 @@
 """
 Conftest para tests de JARVIS.
-Configura el path una sola vez para todos los tests.
+
+Configura el path una sola vez para todos los tests y -- lo mas importante --
+**aisla al usuario de sus propios tests**.
+
+Antes esto no existia y correr la suite mutaba datos REALES:
+  * escribia en `data/history.json` de verdad, y como el historial se recorta
+    a N mensajes, la basura de los tests expulsaba conversaciones reales;
+  * ensuciaba `logs/audit.jsonl` y `logs/trace.jsonl`, que son los ficheros que
+    consultan `jarvis doctor` y `trace_query`;
+  * borraba el token de Spotify cacheado (`data/.spotify_cache`), asi que habia
+    que reautorizar la cuenta despues de cada corrida;
+  * creaba ficheros en `~/Documentos` y `~/Escritorio` (`user_dir()`).
+
+Todo eso ahora apunta a un sandbox temporal que se fija ANTES de importar
+`jarvis_local` (muchos modulos calculan rutas al importarse). La configuracion
+y los secrets siguen leyendose del proyecto: lo que se aísla es lo que JARVIS
+ESCRIBE, no el codigo ni las credenciales.
 """
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 # Añadir el directorio raíz al path para imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_RAIZ = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_RAIZ))
 
-import pytest
+# ── SANDBOX ──────────────────────────────────────────────────────────────
+# Se crea en cuanto se importa el conftest (antes que cualquier test) y NO se
+# borra al terminar: así, si algo se sigue escapando, queda visible en /tmp.
+_SANDBOX = Path(tempfile.mkdtemp(prefix="jarvis-tests-"))
+(_SANDBOX / "data").mkdir(parents=True, exist_ok=True)
+(_SANDBOX / "logs").mkdir(parents=True, exist_ok=True)
+os.environ["JARVIS_BASE_DIR"] = str(_SANDBOX)
+
+# Carpetas del usuario (Documentos, Escritorio...) dentro del sandbox:
+# `xdg-user-dir` consulta `$XDG_CONFIG_HOME/user-dirs.dirs`, asi que
+# `config.user_dir()` deja de tocar la casa del usuario. No se toca HOME: si se
+# cambiara, tambien cambiaria la cache de modelos (HuggingFace) y los tests
+# de voz volverian a descargar Whisper.
+_HOME_FALSA = _SANDBOX / "home"
+_XDG = _SANDBOX / "xdg"
+_XDG.mkdir(parents=True, exist_ok=True)
+_CLAVES = ("DESKTOP", "DOWNLOAD", "DOCUMENTS", "MUSIC", "PICTURES", "VIDEOS")
+for _clave in _CLAVES:
+    (_HOME_FALSA / _clave.capitalize()).mkdir(parents=True, exist_ok=True)
+(_XDG / "user-dirs.dirs").write_text(
+    "\n".join(f'XDG_{c}_DIR="{_HOME_FALSA / c.capitalize()}"' for c in _CLAVES) + "\n",
+    encoding="utf-8",
+)
+os.environ["XDG_CONFIG_HOME"] = str(_XDG)
+
+import pytest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -23,6 +67,18 @@ def _limpiar_cache_decisiones():
         decision_cache.clear()
     except Exception:
         yield
+
+
+@pytest.fixture
+def sandbox() -> Path:
+    """BASE_DIR de esta corrida de tests (datos y logs temporales)."""
+    return _SANDBOX
+
+
+@pytest.fixture
+def home_dir() -> Path:
+    """Sustituto de la carpeta personal (Documentos/Escritorio incluidos)."""
+    return _HOME_FALSA
 
 
 @pytest.fixture
