@@ -289,6 +289,10 @@ def handle_confirm(jarvis=None):
             texto = _clip._PENDIENTE.pop(plan.params.get("token", ""), "")
             plan = _clip.execute_write_clipboard(texto)
             print(describe_outcome(plan, tool="escribir_portapapeles"))
+        elif plan.action == "borrar":
+            from jarvis_local.tools.files import execute_delete_file
+            plan = execute_delete_file(plan.params["path"])
+            print(plan)
         elif plan.action in ("crear_archivo", "crear_carpeta"):
             print(plan)
             print("[INFO] Creacion confirmada pero no ejecutada en esta fase (solo simulacion).")

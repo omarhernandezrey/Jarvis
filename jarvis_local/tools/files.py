@@ -99,13 +99,18 @@ def search_files(name: str, path_str: str) -> ActionPlan:
     if blocked:
         return blocked
     matches = []
+    sin_permiso = False
     try:
         for root, _dirs, files in os.walk(str(resolved)):
             for f in files:
                 if name.lower() in f.lower():
                     matches.append(str(Path(root) / f))
     except PermissionError:
-        pass
+        # `os.walk` aborta entero en la primera carpeta sin permiso. Antes esto
+        # era `except PermissionError: pass` y se respondía "No se encontró X"
+        # como EXECUTED: un FALSO NEGATIVO presentado como resultado válido
+        # (el archivo podía estar ahí, en la parte que no se pudo mirar).
+        sin_permiso = True
     plan = ActionPlan(
         action="buscar_archivos",
         params={"name": name, "path": str(resolved)},
@@ -113,8 +118,20 @@ def search_files(name: str, path_str: str) -> ActionPlan:
         risk=RiskLevel.READ,
         reason="Operacion de solo lectura",
     )
-    plan.result = "\n".join(matches) if matches else f"No se encontro '{name}'"
-    plan.status = ActionStatus.EXECUTED
+    if matches:
+        plan.result = "\n".join(matches)
+        if sin_permiso:
+            plan.result += ("\n(no pude mirar en todas las carpetas: hay al "
+                            "menos una sin permiso de lectura)")
+        plan.status = ActionStatus.EXECUTED
+    elif sin_permiso:
+        plan.status = ActionStatus.ERROR
+        plan.result = (
+            f"No pude terminar la busqueda de '{name}', senor: se nego el "
+            f"acceso a una carpeta dentro de '{resolved}'.")
+    else:
+        plan.result = f"No se encontro '{name}'"
+        plan.status = ActionStatus.EXECUTED
     return plan
 
 
@@ -376,7 +393,7 @@ def rename_file(path_str: str, new_name: str) -> ActionPlan:
 
 
 def plan_delete(path_str: str) -> ActionPlan:
-    """Planifica borrado. NUNCA ejecuta, solo genera el plan."""
+    """Planifica el borrado de un archivo o carpeta (pendiente de /confirmar)."""
     ok, resolved, blocked = _validate_path(path_str, require_exist=True)
     if blocked:
         return blocked
@@ -386,26 +403,37 @@ def plan_delete(path_str: str) -> ActionPlan:
         params={"path": str(resolved), "is_directory": is_dir},
         paths_affected=[str(resolved)],
         risk=RiskLevel.DELETE,
-        reason=(
-            "BORRADO detectado. Esta accion requiere DOBLE CONFIRMACION "
-            "y sera implementada en una fase posterior. Por ahora, solo "
-            "se muestra el plan. No se ejecutara nada."
-        ),
+        reason=f"Borrado de {'carpeta' if is_dir else 'archivo'}: {resolved}",
     )
-    plan.status = ActionStatus.BLOCKED
-    plan.simulation_result = (
-        f"[BORRADO BLOQUEADO] Se eliminaria: {resolved} "
-        f"({'directorio' if is_dir else 'archivo'}). "
-        f"El borrado no esta habilitado en esta fase."
+    plan.status = ActionStatus.PLANNED
+    policy.pending_plan = plan
+    return plan
+
+
+def execute_delete_file(path_str: str) -> ActionPlan:
+    """Ejecuta el borrado CONFIRMADO de un archivo o carpeta."""
+    norm = Path(path_str).expanduser().resolve()
+    plan = ActionPlan(
+        action="borrar",
+        params={"path": str(norm), "is_directory": norm.is_dir()},
+        paths_affected=[str(norm)],
+        risk=RiskLevel.DELETE,
     )
-    # Sin .result, los llamadores que hacen `plan.result or "Operacion
-    # completada."` (agent/registry.execute, jarvis.py) reportaban un borrado
-    # BLOQUEADO como si se hubiera hecho. Mismo motivo que policy.block().
-    plan.result = (
-        f"No borro nada, senor: el borrado de archivos no esta habilitado "
-        f"todavia. Se eliminaria {resolved} "
-        f"({'carpeta' if is_dir else 'archivo'})."
-    )
+    if not norm.exists():
+        plan.status = ActionStatus.ERROR
+        plan.result = f"'{norm}' no existe, senor."
+        return plan
+    try:
+        if norm.is_dir():
+            import shutil
+            shutil.rmtree(norm)
+        else:
+            norm.unlink()
+        plan.status = ActionStatus.EXECUTED
+        plan.result = f"Borrado: {norm}"
+    except OSError as e:
+        plan.status = ActionStatus.ERROR
+        plan.result = f"No pude borrar '{norm}': {e}"
     return plan
 
 

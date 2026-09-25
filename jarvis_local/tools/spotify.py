@@ -19,6 +19,7 @@ Configuracion en secrets.yaml:
 La primera reproduccion abre el navegador para autorizar la cuenta; el token
 queda cacheado en data/.spotify_cache y se refresca solo despues.
 """
+import json
 import re
 import shutil
 import subprocess
@@ -38,10 +39,15 @@ DEFAULT_REDIRECT_URI = "http://127.0.0.1:8888/callback"
 REAUTH_MSG = ("El acceso a su cuenta de Spotify caduco o fue revocado, senor. "
               "Vuelva a autorizar con:\n"
               "  python -m jarvis_local.cli --reauth-spotify")
+RED_MSG = ("No pude contactar a Spotify para renovar el acceso, senor. "
+           "Verifique su conexion a internet e intentelo de nuevo; "
+           "su autorizacion sigue guardada.")
 # Cuantos segundos esperar a que la app recien abierta se registre como
-# dispositivo Connect. Con menos, la primera peticion del dia falla por
-# pura carrera con el arranque de la app.
-ESPERA_APERTURA_SEGUNDOS = 15
+# dispositivo Connect. MEDIDO en frio: 14,8 s en este equipo (snap, disco
+# mecanico) -- con el valor anterior (15 s) la primera peticion del dia
+# quedaba al borde del timeout y fallaba por pura carrera con el arranque
+# de la app, asi que se sube a 25 s. Cuesta solo cuando hay que abrirla.
+ESPERA_APERTURA_SEGUNDOS = 25
 # Candidatos a pedir en la busqueda de texto libre (ultimo recurso, ver
 # _buscar_track): con varios se puede preferir una coincidencia EXACTA de
 # nombre sobre lo que Spotify puso primero por relevancia.
@@ -68,14 +74,16 @@ def _client():
     except ImportError:
         return None
     cfg = get_secrets()["spotify"]
-    data_dir = BASE_DIR / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
+    # UNA sola fuente para la ruta del cache: `_CACHE_PATH` (recompute aqui
+    # hacia que los tests no pudieran redirigirlo y que el respaldo y el
+    # cache pudieran desacoplarse en el futuro).
+    _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     auth = SpotifyOAuth(
         client_id=cfg["client_id"],
         client_secret=cfg["client_secret"],
         redirect_uri=cfg.get("redirect_uri", DEFAULT_REDIRECT_URI),
         scope=SCOPES,
-        cache_path=str(data_dir / ".spotify_cache"),
+        cache_path=str(_CACHE_PATH),
         # NUNCA abrir el navegador por su cuenta en una peticion normal (puede
         # venir por voz, headless...). Si el token esta muerto se da un mensaje
         # accionable; la re-autorizacion se hace con `--reauth-spotify`.
@@ -86,16 +94,84 @@ def _client():
     # autorizacion y BLOQUEA en input() esperando que el usuario pegue la
     # URL de retorno -> cuelga JARVIS (visto en el banco de pruebas).
     # get_cached_token() lee/refresca el cache sin pedir nada por stdin.
-    try:
-        token = auth.get_cached_token()
-    except Exception:  # noqa: BLE001
-        token = None
+    global _ultimo_error_token
+    _ultimo_error_token = None
+    token = _leer_token(auth)
+    if not token and _restaurar_respaldo():
+        # Cache borrado/corrupto por causas ajenas a Spotify: se reintenta
+        # una vez con la copia de seguridad antes de molestar al usuario.
+        token = _leer_token(auth)
     if not token:
+        logger.info("Spotify: sin token cacheado valido "
+                    "(falta autorizar o cambiaron los scopes).")
         return None
+    _respaldar_cache()
     return spotipy.Spotify(auth_manager=auth)
 
 
 _CACHE_PATH = BASE_DIR / "data" / ".spotify_cache"
+
+# Ultima excepcion que impidio validar/refrescar el token en `_client()`. Se
+# consume en `_cliente_o_error` para distinguir un token muerto (reautorizar)
+# de un bache de red transitorio (reintentar, sin borrar nada). Antes se
+# tragaba el error y todo fallo lucia igual: "reautorice" -- asi era
+# imposible saber POR QUE "volvia a fallar".
+_ultimo_error_token: Exception | None = None
+
+
+def _backup_path():
+    """Ruta de la copia de respaldo del token. Se calcula en cada llamada
+    (no es constante de modulo) para que los tests que monkeypatchean
+    `_CACHE_PATH` redirijan tambien el respaldo."""
+    return _CACHE_PATH.with_name(_CACHE_PATH.name + ".bak")
+
+
+def _respaldar_cache() -> None:
+    """Copia de seguridad del token (misma carpeta; copy2 conserva el 0600
+    con que spotipy lo escribe). NUNCA debe tumbar la operacion principal:
+    si el respaldo falla, solo queda anotado en el log."""
+    try:
+        if _CACHE_PATH.exists():
+            shutil.copy2(_CACHE_PATH, _backup_path())
+    except OSError as e:
+        logger.warning(f"Spotify: no se pudo respaldar el token: {e}")
+
+
+def _restaurar_respaldo() -> bool:
+    """Recupera el token desde la copia de seguridad. Cubre el borrado
+    externo del cache (git clean, limpieza de disco) y la corrupcion por
+    un corte a mitad de escritura: el usuario ni se entera."""
+    bak = _backup_path()
+    if not bak.exists():
+        return False
+    try:
+        shutil.copy2(bak, _CACHE_PATH)
+    except OSError as e:
+        logger.warning(f"Spotify: no se pudo restaurar el respaldo: {e}")
+        return False
+    logger.warning("Spotify: token restaurado desde la copia de seguridad.")
+    return True
+
+
+def _borrar_tokens() -> None:
+    """Borra cache Y respaldo. Solo se usa cuando Spotify confirmo que el
+    token esta muerto (invalid_grant/revocado) o antes de reautorizar: si
+    se borrara solo el cache, el respaldo resucitaria un token muerto."""
+    _CACHE_PATH.unlink(missing_ok=True)
+    _backup_path().unlink(missing_ok=True)
+
+
+def _leer_token(auth):
+    """get_cached_token() SIN tragar el error: lo anota en el log y lo deja
+    en `_ultimo_error_token` para que `_cliente_o_error` decida el mensaje
+    (red transitoria vs token muerto)."""
+    global _ultimo_error_token
+    try:
+        return auth.get_cached_token()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Spotify: no se pudo validar/refrescar el token: {e!r}")
+        _ultimo_error_token = e
+        return None
 
 
 def _es_error_auth(e: Exception) -> bool:
@@ -106,6 +182,57 @@ def _es_error_auth(e: Exception) -> bool:
     m = str(e).lower()
     return ("oauth" in n or "invalid_grant" in m or "refresh token" in m
             or "no token" in m or "revoked" in m)
+
+
+def _es_error_de_red(e: Exception | None) -> bool:
+    """El fallo fue de CONECTIVIDAD, no de token: un bache de red no revoca
+    la cuenta, asi que no se debe borrar el cache ni pedir reautorizacion."""
+    if e is None:
+        return False
+    try:
+        import requests
+    except ImportError:
+        return False
+    return isinstance(e, (requests.exceptions.ConnectionError,
+                          requests.exceptions.Timeout))
+
+
+def _intentar_refresco() -> str:
+    """Renovacion manual del access token usando el refresh_token guardado.
+
+    Devuelve:
+      - "ok":     token fresco listo; la operacion puede reintentarse.
+      - "muerto": Spotify rechazo el refresh_token (o no hay): reautorizar.
+      - "red":    no se pudo saber por un fallo de conectividad: NO se toca
+                  nada, el token sigue siendo valido; reintentar mas tarde.
+    """
+    try:
+        from spotipy.oauth2 import SpotifyOAuth
+    except ImportError:
+        return "muerto"
+    if not _CACHE_PATH.exists():
+        _restaurar_respaldo()
+    try:
+        datos = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "muerto"
+    refresh_token = datos.get("refresh_token")
+    if not refresh_token:
+        return "muerto"
+    cfg = get_secrets()["spotify"]
+    auth = SpotifyOAuth(
+        client_id=cfg["client_id"], client_secret=cfg["client_secret"],
+        redirect_uri=cfg.get("redirect_uri", DEFAULT_REDIRECT_URI),
+        scope=SCOPES, cache_path=str(_CACHE_PATH), open_browser=False,
+    )
+    try:
+        auth.refresh_access_token(refresh_token)  # guarda el token fresco
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Spotify: el refresco manual fallo: {e!r}")
+        return "red" if _es_error_de_red(e) else "muerto"
+    _respaldar_cache()
+    logger.info("Spotify: access token renovado manualmente.")
+    return "ok"
 
 
 def reauthorize() -> str:
@@ -119,14 +246,31 @@ def reauthorize() -> str:
         from spotipy.oauth2 import SpotifyOAuth
     except ImportError:
         return "Falta instalar la libreria de Spotify: pip install spotipy."
-    _CACHE_PATH.unlink(missing_ok=True)
+    _borrar_tokens()
     cfg = get_secrets()["spotify"]
     auth = SpotifyOAuth(
         client_id=cfg["client_id"], client_secret=cfg["client_secret"],
         redirect_uri=cfg.get("redirect_uri", DEFAULT_REDIRECT_URI),
         scope=SCOPES, cache_path=str(_CACHE_PATH), open_browser=True,
     )
-    auth.get_access_token(as_dict=False)
+    try:
+        auth.get_access_token(as_dict=False)
+    except Exception as e:  # noqa: BLE001
+        # Tipico: el puerto 8888 del callback esta ocupado por otra app, o el
+        # usuario cerro el navegador. Sin este mensaje salia un traceback.
+        logger.error(f"Spotify: fallo la autorizacion: {e!r}")
+        return (f"No pude completar la autorizacion de Spotify, senor: {e}. "
+                "Si otra aplicacion esta usando el puerto 8888, cierrela e "
+                "intentelo de nuevo.")
+    if not _CACHE_PATH.exists():
+        # spotipy traga los OSError al escribir el cache (solo un warning en
+        # su propio logger): sin este chequeo el usuario autoriza en vano
+        # una y otra vez sin saber que el token nunca se guardo.
+        logger.error(f"Spotify: autorizacion completada pero no se pudo "
+                     f"escribir el token en {_CACHE_PATH}")
+        return ("La autorizacion se completo pero no pude guardar el token en "
+                f"{_CACHE_PATH}, senor. Verifique los permisos de la carpeta data/.")
+    _respaldar_cache()
     return "Spotify autorizado, senor. Ya puedo reproducir su musica."
 
 
@@ -303,6 +447,8 @@ def _cliente_o_error(plan: ActionPlan):
         )
         return None
 
+    global _ultimo_error_token
+    _ultimo_error_token = None  # solo vale lo que ESTE _client() deje
     sp = _client()
     if sp is None:
         plan.status = ActionStatus.ERROR
@@ -311,9 +457,17 @@ def _cliente_o_error(plan: ActionPlan):
         except ImportError:
             plan.result = "Falta instalar la libreria de Spotify: pip install spotipy."
         else:
-            # spotipy esta, pero no hay token cacheado valido: reautorizar.
-            _CACHE_PATH.unlink(missing_ok=True)
-            plan.result = REAUTH_MSG
+            # Se consume aqui para no filtrar estado a llamadas futuras.
+            error_token, _ultimo_error_token = _ultimo_error_token, None
+            if _es_error_de_red(error_token):
+                # Bache de red al refrescar: el token SIGUE ahi. Borrarlo
+                # convertia un problema transitorio en una reautorizacion
+                # forzada -- causa historica del "vuelve a fallar".
+                plan.result = RED_MSG
+            else:
+                # spotipy esta, pero no hay token cacheado valido: reautorizar.
+                _borrar_tokens()
+                plan.result = REAUTH_MSG
         return None
     return sp
 
@@ -332,9 +486,21 @@ def _manejar_error_spotify(e: Exception, plan: ActionPlan, *,
     plan.error = msg
     status = getattr(e, "http_status", None)
     if _es_error_auth(e):
-        # token muerto y sin refresh posible: borrarlo y dar el comando
-        _CACHE_PATH.unlink(missing_ok=True)
-        plan.result = REAUTH_MSG
+        # Antes de declarar el token muerto se intenta renovar con el
+        # refresh_token: un 401 a mitad de operacion (p. ej. el access token
+        # expiro entre la validacion y la llamada) se sana solo y el usuario
+        # solo tiene que repetir el pedido -- NUNCA ve un "reautorice" falso.
+        estado = _intentar_refresco()
+        if estado == "ok":
+            plan.result = ("Tuve un tropiezo de autenticacion con Spotify, senor, "
+                           "pero renove el acceso. Intentelo de nuevo.")
+        elif estado == "red":
+            plan.result = RED_MSG
+        else:
+            # token muerto de verdad (invalid_grant/revocado): borrar todo
+            # y dar el comando de reautorizacion.
+            _borrar_tokens()
+            plan.result = REAUTH_MSG
     elif status == 403 or "premium" in msg.lower():
         plan.result = msg_403 or (
             "Spotify rechazo la accion, senor. Esta funcion requiere una "
@@ -348,6 +514,86 @@ def _manejar_error_spotify(e: Exception, plan: ActionPlan, *,
         prefix = msg_generic or "No pude completar la accion en Spotify"
         plan.result = f"{prefix}, senor: {msg}"
     logger.error(f"Error en Spotify: {e}")
+
+
+MSG_SIN_DISPOSITIVO = (
+    "No pude abrir Spotify en este equipo, senor. Verifique que "
+    "este instalado, o abralo usted mismo e intente de nuevo."
+)
+MSG_NO_SONO = (
+    "Spotify acepto la orden pero no empezo a sonar, senor. Compruebe que la "
+    "app este abierta y con la sesion iniciada, e intentelo de nuevo."
+)
+# La Web API contesta 204 (exito) aunque el dispositivo luego NO arranque:
+# sin comprobarlo, JARVIS afirmaba estar reproduciendo mientras el usuario no
+# oia nada. Tras mandar "reproducir" se sondea el estado unas pocas veces.
+_VERIFICAR_INTENTOS = 3
+_VERIFICAR_ESPERA = 1.0
+
+
+def _dispositivo_control(sp) -> str | None:
+    """Dispositivo a usar para CONTROLAR lo que suena (pausa, siguiente,
+    volumen, aleatorio, repeticion, cola).
+
+    A diferencia de `_device_id` (que SIEMPRE prefiere este PC porque ahi se
+    espera escuchar la musica que se PIDE), aqui manda el dispositivo que esta
+    ACTIVO ahora mismo -- que es donde esta sonando la musica, sea este PC, el
+    celular o un parlante -- y solo si no hay ninguno activo se cae a este PC
+    (abriendolo si hace falta). Antes estos comandos se enviaban sin
+    `device_id`, y Spotify los aplicaba a "cualquier dispositivo activo": con
+    la app cerrada, `pausa` o `siguiente` fallaban con 404.
+    """
+    devices = sp.devices().get("devices", [])
+    activo = next((d for d in devices if d.get("is_active")), None)
+    if activo:
+        return activo["id"]
+    return _device_id(sp)
+
+
+def _dispositivo_control_o_error(sp, plan: ActionPlan):
+    """`_dispositivo_control` o ERROR accionable (mutando `plan`)."""
+    device_id = _dispositivo_control(sp)
+    if device_id is None:
+        plan.status = ActionStatus.ERROR
+        plan.result = MSG_SIN_DISPOSITIVO
+        return None
+    return device_id
+
+
+def _arranco_de_verdad(sp, device_id: str) -> bool:
+    """True si el dispositivo esta sonando AHORA; False si sigue parado.
+
+    Si no se puede consultar el estado, se da por bueno: que falle la
+    comprobacion no debe convertirse en un error falso sobre algo que quizas
+    si empezo a sonar.
+    """
+    for _ in range(_VERIFICAR_INTENTOS):
+        time.sleep(_VERIFICAR_ESPERA)
+        try:
+            actual = sp.current_playback() or {}
+        except Exception:  # noqa: BLE001
+            return True
+        dispositivo = (actual.get("device") or {}).get("id")
+        if actual.get("is_playing") and dispositivo == device_id:
+            return True
+    return False
+
+
+def _reproducir(sp, device_id: str, **kwargs) -> bool:
+    """Manda reproducir y COMPRUEBA que empieza a sonar.
+
+    Segundo intento con el dispositivo recien resuelto: la app tarda en
+    registrarse y el `device_id` con el que se mando la orden puede quedar
+    obsoleto entre la busqueda y el play.
+    """
+    sp.start_playback(device_id=device_id, **kwargs)
+    if _arranco_de_verdad(sp, device_id):
+        return True
+    otro = _dispositivo_control(sp)
+    if otro and otro != device_id:
+        sp.start_playback(device_id=otro, **kwargs)
+        return _arranco_de_verdad(sp, otro)
+    return False
 
 
 def play_song(query: str) -> ActionPlan:
@@ -375,13 +621,13 @@ def play_song(query: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo."
-            )
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
 
-        sp.start_playback(device_id=device_id, uris=[track["uri"]])
+        if not _reproducir(sp, device_id, uris=[track["uri"]]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         artistas = ", ".join(a["name"] for a in track.get("artists", []))
         nombre = track.get("name", query)
         plan.result = (f"Reproduciendo '{nombre}' de {artistas} en Spotify, senor."
@@ -418,7 +664,10 @@ def pause_playback() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.pause_playback()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.pause_playback(device_id=device_id)
         plan.result = "Pausado, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -437,7 +686,10 @@ def resume_playback() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.start_playback()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.start_playback(device_id=device_id)
         plan.result = "Reanudado, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -457,7 +709,10 @@ def next_track() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.next_track()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.next_track(device_id=device_id)
         plan.result = "Siguiente cancion, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -473,12 +728,18 @@ def previous_track() -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.previous_track()
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.previous_track(device_id=device_id)
         plan.result = "Cancion anterior, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
-        _manejar_error_spotify(e, plan,
-                               msg_generic="No pude volver a la cancion anterior en Spotify")
+        _manejar_error_spotify(
+            e, plan,
+            msg_403=("Spotify no me dejo retroceder, senor. Lo impide durante "
+                     "los primeros segundos de la cancion: intentelo en un momento."),
+            msg_generic="No pude volver a la cancion anterior en Spotify")
     return plan
 
 
@@ -494,7 +755,10 @@ def set_volume(nivel: int) -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.volume(nivel)
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.volume(nivel, device_id=device_id)
         plan.result = f"Volumen de Spotify al {nivel}%, senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -512,7 +776,10 @@ def set_shuffle(activar: bool) -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.shuffle(activar)
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.shuffle(activar, device_id=device_id)
         plan.result = ("Modo aleatorio activado, senor." if activar
                        else "Modo aleatorio desactivado, senor.")
         plan.status = ActionStatus.EXECUTED
@@ -538,7 +805,10 @@ def set_repeat(modo: str) -> ActionPlan:
     if sp is None:
         return plan
     try:
-        sp.repeat(_REPEAT_MODOS[modo])
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.repeat(_REPEAT_MODOS[modo], device_id=device_id)
         mensajes = {"cancion": "Repitiendo esta cancion, senor.",
                     "lista": "Repitiendo la lista, senor.",
                     "no": "Repeticion desactivada, senor."}
@@ -593,7 +863,10 @@ def add_to_queue(query: str) -> ActionPlan:
             plan.status = ActionStatus.ERROR
             plan.result = f"No encontre '{query}' en Spotify, senor."
             return plan
-        sp.add_to_queue(track["uri"])
+        device_id = _dispositivo_control_o_error(sp, plan)
+        if device_id is None:
+            return plan
+        sp.add_to_queue(track["uri"], device_id=device_id)
         artistas = ", ".join(a["name"] for a in track.get("artists", []))
         nombre = track.get("name", query)
         plan.result = (f"Agregue '{nombre}' de {artistas} a la cola, senor."
@@ -650,11 +923,12 @@ def play_playlist(name: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
-        sp.start_playback(device_id=device_id, context_uri=r["uri"])
+        if not _reproducir(sp, device_id, context_uri=r["uri"]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         plan.result = f"Reproduciendo la playlist '{r.get('name', name)}', senor."
         plan.status = ActionStatus.EXECUTED
     except Exception as e:
@@ -686,11 +960,12 @@ def play_album(query: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
-        sp.start_playback(device_id=device_id, context_uri=album["uri"])
+        if not _reproducir(sp, device_id, context_uri=album["uri"]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         artistas = ", ".join(a["name"] for a in album.get("artists", []))
         nombre = album.get("name", query)
         plan.result = (f"Reproduciendo el album '{nombre}' de {artistas}, senor."
@@ -722,9 +997,7 @@ def play_radio(query: str) -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
 
         artista = _resolver_artista(sp, query)
@@ -745,20 +1018,29 @@ def play_radio(query: str) -> ActionPlan:
             seed_uris = None
 
         if seed_uris:
-            sp.start_playback(device_id=device_id, uris=seed_uris)
+            if not _reproducir(sp, device_id, uris=seed_uris):
+                plan.status = ActionStatus.ERROR
+                plan.result = MSG_NO_SONO
+                return plan
             plan.result = f"Radio de '{query}' iniciada, senor."
             plan.status = ActionStatus.EXECUTED
             return plan
 
         if artista:
-            sp.start_playback(device_id=device_id, context_uri=artista["uri"])
+            if not _reproducir(sp, device_id, context_uri=artista["uri"]):
+                plan.status = ActionStatus.ERROR
+                plan.result = MSG_NO_SONO
+                return plan
             plan.result = (
                 "Spotify no me dio recomendaciones para esta cuenta, senor. "
                 f"Reproduciendo el catalogo de {artista['name']} en su lugar.")
             plan.status = ActionStatus.EXECUTED
             return plan
 
-        sp.start_playback(device_id=device_id, uris=[track["uri"]])
+        if not _reproducir(sp, device_id, uris=[track["uri"]]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         nombre = track.get("name", query)
         plan.result = (
             "Spotify no me dio recomendaciones para esta cuenta, senor. "
@@ -922,7 +1204,10 @@ def resume_last_played() -> ActionPlan:
     try:
         actual = sp.current_playback()
         if actual and actual.get("item"):
-            sp.start_playback()
+            device_id = _dispositivo_control_o_error(sp, plan)
+            if device_id is None:
+                return plan
+            sp.start_playback(device_id=device_id)
             nombre = actual["item"].get("name", "?")
             plan.result = f"Retomando '{nombre}', senor."
             plan.status = ActionStatus.EXECUTED
@@ -937,11 +1222,12 @@ def resume_last_played() -> ActionPlan:
         device_id = _device_id(sp)
         if device_id is None:
             plan.status = ActionStatus.ERROR
-            plan.result = (
-                "No pude abrir Spotify en este equipo, senor. Verifique que "
-                "este instalado, o abralo usted mismo e intente de nuevo.")
+            plan.result = MSG_SIN_DISPOSITIVO
             return plan
-        sp.start_playback(device_id=device_id, uris=[track["uri"]])
+        if not _reproducir(sp, device_id, uris=[track["uri"]]):
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
+            return plan
         nombre = track.get("name", "?")
         artistas = ", ".join(a["name"] for a in track.get("artists", []))
         plan.result = (f"Reanudando '{nombre}' de {artistas}, senor."

@@ -9,16 +9,51 @@ from pathlib import Path
 
 from jarvis_local.config import IS_WINDOWS, user_dir
 
-ALLOWED_FOLDERS = [
-    user_dir("documents"),
-    user_dir("downloads"),
-    user_dir("desktop"),
-    user_dir("music"),
-    user_dir("pictures"),
-    user_dir("videos"),
-]
-if IS_WINDOWS:
-    ALLOWED_FOLDERS.append(os.path.expandvars(r"%USERPROFILE%\OneDrive"))
+
+def _carpetas_por_defecto() -> list[str]:
+    return [
+        user_dir("documents"),
+        user_dir("downloads"),
+        user_dir("desktop"),
+        user_dir("music"),
+        user_dir("pictures"),
+        user_dir("videos"),
+    ] + ([os.path.expandvars(r"%USERPROFILE%\OneDrive")] if IS_WINDOWS else [])
+
+
+def _carpetas_configuradas() -> list[str]:
+    r"""`safety.allowed_folders` de config.yaml, con variables expandidas.
+
+    Se ignoran (con aviso en el log) las entradas que dejen variables sin
+    resolver -- tipicamente rutas de Windows (`%USERPROFILE%\Documents`) en
+    Linux: admitirlas dejaria la lista vacia de facto y ROMPERIA todas las
+    herramientas de archivos en vez de endurecer nada.
+    """
+    from jarvis_local.config import get_config
+    from jarvis_local.logging_config import get_logger
+
+    crudas = ((get_config().get("safety") or {}).get("allowed_folders") or [])
+    if not crudas:
+        return []
+    resueltas, descartadas = [], []
+    for cruda in crudas:
+        ruta = os.path.expandvars(os.path.expanduser(str(cruda).strip()))
+        if "%" in ruta:              # variable sin resolver en este SO
+            descartadas.append(str(cruda))
+            continue
+        resueltas.append(str(Path(ruta)))
+    if descartadas:
+        get_logger("safety.permissions").warning(
+            f"allowed_folders con rutas no validas en este sistema operativo, "
+            f"se ignoran: {', '.join(descartadas)}")
+    return resueltas
+
+
+# `safety.allowed_folders` de config.yaml MANDA si está puesta (antes se
+# ignoraba por completo: daba igual lo que el usuario escribiera ahí, las
+# carpetas permitidas eran siempre las de esta lista -- falsa sensación de
+# control sobre lo que JARVIS puede tocar).
+ALLOWED_FOLDERS = _carpetas_configuradas() or _carpetas_por_defecto()
 
 # Cada app tiene "paths" (candidatos de ruta absoluta, Windows) y/o
 # "linux_bins" (nombres de binario a resolver con PATH via shutil.which,

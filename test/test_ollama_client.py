@@ -6,6 +6,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import requests
+
 from jarvis_local.ollama_client.client import OllamaClient
 
 
@@ -21,33 +23,79 @@ def test_client_custom_params():
     assert client.timeout == 30
 
 
-def test_is_running():
+def test_is_running_success():
+    """Verifica is_running devuelve True cuando el servidor responde correctamente."""
+    from unittest.mock import MagicMock, patch
+
     client = OllamaClient()
-    running = client.is_running()
-    if running:
-        print("  [INFO] Ollama esta corriendo - test de conexion OK")
-    else:
-        print("  [INFO] Ollama NO esta corriendo - test omitido (esperado si no se ha iniciado)")
-        return
-    models = client.list_models()
-    assert isinstance(models, list)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+
+    with patch.object(client, "_get_client", return_value=mock_session):
+        assert client.is_running() is True
+        mock_session.get.assert_called_once()
 
 
-def test_list_models_requires_running():
+def test_is_running_failure():
+    """Verifica is_running devuelve False cuando hay error de conexion."""
+    from unittest.mock import MagicMock, patch
+
     client = OllamaClient()
-    if not client.is_running():
-        print("  [INFO] Ollama no esta corriendo - test de modelos omitido")
-        return
-    models = client.list_models()
-    assert isinstance(models, list)
-    print(f"  Modelos instalados: {len(models)}")
+    mock_session = MagicMock()
+    mock_session.get.side_effect = ConnectionError("Connection refused")
+
+    with patch.object(client, "_get_client", return_value=mock_session):
+        assert client.is_running() is False
+
+
+def test_list_models_success():
+    """Verifica list_models devuelve una lista de modelos."""
+    from unittest.mock import MagicMock, patch
+
+    client = OllamaClient()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {"name": "llama3:8b", "size": 4500000000},
+            {"name": "qwen2.5:3b", "size": 1800000000},
+        ]
+    }
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+
+    with patch.object(client, "_get_client", return_value=mock_session):
+        result = client.list_models()
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0]["name"] == "llama3:8b"
+
+
+def test_list_models_failure():
+    """Verifica list_models lanza excepcion cuando el servidor falla."""
+    from unittest.mock import MagicMock, patch
+
+    client = OllamaClient()
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = requests.RequestException("Server error")
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+
+    with patch.object(client, "_get_client", return_value=mock_session):
+        import pytest
+        with pytest.raises(requests.RequestException):
+            client.list_models()
 
 
 if __name__ == "__main__":
     test_client_creation()
     test_client_custom_params()
-    test_is_running()
-    test_list_models_requires_running()
+    test_is_running_success()
+    test_is_running_failure()
+    test_list_models_success()
+    test_list_models_failure()
     print("OK: Tests de cliente Ollama completados.")
 
 

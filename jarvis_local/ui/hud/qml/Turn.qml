@@ -107,14 +107,59 @@ Item {
             }
         }
 
-        // metadatos: verde apagado, sin competir con el mensaje
-        Text {
-            visible: !turn.streaming && (turn.timestamp.length || turn.meta.length)
-            text: turn.timestamp + (turn.meta.length ? "   " + turn.meta : "")
-            color: Design.chatMeta
-            font.family: Design.fontMono
-            font.pixelSize: Design.fsMeta
-            style: Text.Outline; styleColor: Design.textEdge
+        // metadatos: verde apagado, sin competir con el mensaje. A su derecha,
+        // la acción de copiar el turno (ver `copiar()` más abajo).
+        Row {
+            spacing: Design.sp(3)
+            Text {
+                visible: !turn.streaming && (turn.timestamp.length || turn.meta.length)
+                anchors.verticalCenter: parent.verticalCenter
+                text: turn.timestamp + (turn.meta.length ? "   " + turn.meta : "")
+                color: Design.chatMeta
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMeta
+                style: Text.Outline; styleColor: Design.textEdge
+            }
+            Text {
+                id: copyBtn
+                objectName: "copiarTurno"
+                visible: turn.body.length > 0
+                anchors.verticalCenter: parent.verticalCenter
+                text: copyState.copied ? "copiado ✓" : "copiar ⧉"
+                color: copyHover.hovered ? Design.cyan : Design.chatMeta
+                opacity: copyHover.hovered ? 1.0 : 0.5
+                Behavior on opacity { NumberAnimation { duration: Design.durFast } }
+                font.family: Design.fontMono
+                font.pixelSize: Design.fsMeta
+                font.letterSpacing: 0.6
+                style: Text.Outline; styleColor: Design.textEdge
+                HoverHandler { id: copyHover }
+                TapHandler { onTapped: turn.copiar() }
+            }
         }
     }
+
+    // ── COPIAR EL TURNO ───────────────────────────────────────────────────
+    // El cuerpo ya es seleccionable con el ratón (MarkdownBody lo renderiza
+    // con TextEdit de solo lectura), pero el botón evita arrastrar la
+    // selección exacta: un clic y el turno entero va al portapapeles. Mismo
+    // recurso que CodeBlock: un TextEdit invisible hace de puente.
+    // Se copia el `raw` tal cual (markdown incluido), sin el rótulo de canal
+    // ni la hora: lo que se pega es el mensaje, no la decoración.
+    function copiar() {
+        clip.text = turn.body
+        clip.selectAll()
+        clip.copy()
+        clip.deselect()
+        copyState.copied = true
+        resetAnim.restart()
+    }
+    QtObject { id: copyState; property bool copied: false }
+    // sin Timer suelto: una animación de una pasada (addendum §7)
+    SequentialAnimation {
+        id: resetAnim
+        PauseAnimation { duration: Design.durHold }
+        ScriptAction { script: copyState.copied = false }
+    }
+    TextEdit { id: clip; visible: false }
 }

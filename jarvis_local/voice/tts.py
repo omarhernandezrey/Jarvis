@@ -43,8 +43,24 @@ _configured_voice = str(
 _EDGE_VOICE = (
     _configured_voice if _is_valid_edge_voice(_configured_voice) else _DEFAULT_EDGE_VOICE
 )
-_EDGE_RATE = "+0%"
-_EDGE_VOLUME = "+0%"
+def _pct_rate(wpm: int) -> str:
+    """Velocidad en palabras/minuto -> porcentaje que espera edge-tts."""
+    pct = int((wpm - 175) / 175 * 100)
+    return f"+{pct}%" if pct >= 0 else f"{pct}%"
+
+
+def _pct_volumen(vol: float) -> str:
+    """Volumen 0-1 -> porcentaje que espera edge-tts."""
+    pct = int((vol - 1.0) * 100)
+    return f"+{pct}%" if pct >= 0 else f"{pct}%"
+
+
+# `voice.tts_rate` / `voice.tts_volume` de config.yaml SÍ se aplican (antes eran
+# dos constantes "+0%" y la configuración era decorativa: daba igual poner
+# tts_rate: 120, JARVIS seguía hablando a la velocidad por defecto).
+_cfg_voice = get_config().get("voice") or {}
+_EDGE_RATE = _pct_rate(int(_cfg_voice.get("tts_rate", 175)))
+_EDGE_VOLUME = _pct_volumen(float(_cfg_voice.get("tts_volume", 1.0)))
 
 # Cache de audio generado (para modo offline y latencia cero en repetidas)
 _CACHE_DIR = BASE_DIR / "data" / "tts_cache"
@@ -264,8 +280,7 @@ def set_rate(wpm: int) -> bool:
     global _rate_wpm, _EDGE_RATE, _engine_pyttsx3
     if 120 <= wpm <= 250:
         _rate_wpm = wpm
-        pct = int((wpm - 175) / 175 * 100)
-        _EDGE_RATE = f"+{pct}%" if pct >= 0 else f"{pct}%"
+        _EDGE_RATE = _pct_rate(wpm)
         _engine_pyttsx3 = None  # Forzar re-init
         return True
     return False
@@ -275,8 +290,7 @@ def set_volume(vol: float) -> bool:
     global _volume_float, _EDGE_VOLUME, _engine_pyttsx3
     if 0.0 <= vol <= 1.0:
         _volume_float = vol
-        pct = int((vol - 1.0) * 100)
-        _EDGE_VOLUME = f"+{pct}%" if pct >= 0 else f"{pct}%"
+        _EDGE_VOLUME = _pct_volumen(vol)
         _engine_pyttsx3 = None  # Forzar re-init
         return True
     return False

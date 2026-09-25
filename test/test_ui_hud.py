@@ -239,6 +239,20 @@ def _conversation_listview(win):
     raise AssertionError("no se encontró la ListView de la conversación")
 
 
+def _command_bar_editor(win):
+    """TextEdit de la barra de comando, buscado por NOMBRE.
+
+    No por `findChildren(...)[0]`: desde que el cuerpo de los turnos y los
+    puentes de portapapeles también son TextEdit, "el primer TextEdit" ya no
+    es la barra de comando.
+    """
+    from PySide6.QtQuick import QQuickItem
+    editor = win.findChild(QQuickItem, "commandBarEditor")
+    if editor is None:
+        raise AssertionError("no se encontró la barra de comando")
+    return editor
+
+
 def _hud_cell_by_label(win, label):
     """Los delegados de `Repeater` no aparecen en `findChildren` desde un
     ancestro (limitación de PySide/QML, no del árbol real: `Repeater.count`
@@ -349,8 +363,7 @@ def test_command_bar_has_focus_on_load_and_accepts_typing():
         win = engine.rootObjects()[0]
         _app.processEvents()
 
-        editor = next(o for o in win.findChildren(QQuickItem)
-                      if "QQuickTextEdit" in o.metaObject().className())
+        editor = _command_bar_editor(win)
 
         # foco automático al aparecer — NADIE lo forzó aquí
         assert editor.property("activeFocus") is True, \
@@ -380,8 +393,7 @@ def test_command_bar_enter_reaches_chat_send():
         seen = []
         chat.userTurn.connect(seen.append)
 
-        editor = next(o for o in win.findChildren(QQuickItem)
-                      if "QQuickTextEdit" in o.metaObject().className())
+        editor = _command_bar_editor(win)
         editor.forceActiveFocus()
         editor.setProperty("text", "mensaje de prueba")
         _app.processEvents()

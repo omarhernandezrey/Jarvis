@@ -203,11 +203,12 @@ def test_fallo_multimedia_sin_reproductor_no_dice_hecho():
 
 
 def test_fallo_borrado_bloqueado_no_es_operacion_completada():
-    """EL caso concreto encontrado: plan_delete devolvía BLOCKED con .result
-    vacío y execute()/_execute_tool_write lo reportaban como
-    'Operacion completada.'. No puede volver."""
+    """El bug original: plan_delete devolvía BLOCKED con .result vacío y
+    execute() lo reportaba como 'Operacion completada.'. Ahora devuelve
+    PLANNED (pendiente de /confirmar) y pendiente=True."""
     import jarvis_local.jarvis as J
     from jarvis_local.agent.registry import execute
+    from jarvis_local.safety.policy import policy
 
     archivo = _tmp("_banco_d5_no_borrar.txt")
     with open(archivo, "w", encoding="utf-8") as f:
@@ -215,17 +216,28 @@ def test_fallo_borrado_bloqueado_no_es_operacion_completada():
     try:
         # ruta agente
         texto, pendiente = execute("borrar_archivo", {"path": archivo})
-        assert pendiente is False
-        assert texto != "Operacion completada."
-        assert not _EXITO.search(texto), texto
+        assert pendiente is True, "borrar_archivo debe requerir confirmacion"
+        assert "planned" in texto.lower() or "confirmar" in texto.lower(), texto
         assert os.path.exists(archivo)
+        # Confirmar y ejecutar (igual que hace handle_confirm en cli.py)
+        confirmed = policy.confirm()
+        assert confirmed is not None
+        assert confirmed.status == ActionStatus.CONFIRMED
+        from jarvis_local.tools.files import execute_delete_file
+        plan_borrado = execute_delete_file(archivo)
+        assert plan_borrado.status == ActionStatus.EXECUTED, plan_borrado.result
+        assert not os.path.exists(archivo), "archivo debio ser borrado"
+        # volver a escribir para la segunda parte
+        with open(archivo, "w", encoding="utf-8") as f:
+            f.write("no me borres 2")
         # ruta parser
         texto2 = J._execute_tool_write("delete_file", {"path": archivo})
         assert texto2 != "Operacion completada."
-        assert not _EXITO.search(texto2), texto2
+        assert "pendiente" in texto2.lower() or "confirmar" in texto2.lower(), texto2
         assert os.path.exists(archivo)
     finally:
-        os.remove(archivo)
+        if os.path.exists(archivo):
+            os.remove(archivo)
 
 
 def test_fallo_verify_none_se_reporta_con_salvedad_no_como_exito():

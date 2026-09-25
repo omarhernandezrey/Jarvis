@@ -119,6 +119,44 @@ def test_mute_verificado():
         volume_mute(inicial)
 
 
+def test_set_volume_mocked():
+    """Verifica set_volume con _wpctl mockeado (sin sistema real)."""
+    from unittest.mock import MagicMock, patch
+
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "Volume: 0.37\n"
+    mock_result.stderr = ""
+
+    with patch("jarvis_local.tools.media_controls._wpctl", return_value=mock_result), \
+         patch("jarvis_local.tools.media_controls.get_volume", return_value=37):
+        plan = set_volume(37)
+        assert plan.status == ActionStatus.EXECUTED
+        assert "37" in plan.result
+
+
+def test_volume_up_down_mocked():
+    """Verifica volume_up/down con _wpctl mockeado (sin sistema real)."""
+    from unittest.mock import MagicMock, patch
+
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "Volume: 0.50\n"
+    mock_result.stderr = ""
+
+    with patch("jarvis_local.tools.media_controls._wpctl", return_value=mock_result), \
+         patch("jarvis_local.tools.media_controls.get_volume", side_effect=[50, 60, 60]):
+        plan_up = volume_up()
+        assert plan_up.status == ActionStatus.EXECUTED
+        assert "60" in plan_up.result
+
+    with patch("jarvis_local.tools.media_controls._wpctl", return_value=mock_result), \
+         patch("jarvis_local.tools.media_controls.get_volume", side_effect=[50, 40, 40]):
+        plan_down = volume_down()
+        assert plan_down.status == ActionStatus.EXECUTED
+        assert "40" in plan_down.result
+
+
 def test_media_keys_no_fallan():
     # Las teclas multimedia no tienen estado legible: verificar que NO EXPLOTAN
     # (devuelven un ActionPlan, no una excepción). En una máquina con reproductor

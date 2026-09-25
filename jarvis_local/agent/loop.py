@@ -34,6 +34,7 @@ suponer):
 """
 import json
 import re
+import threading
 from dataclasses import dataclass, field
 
 from jarvis_local.agent import decision_cache
@@ -58,7 +59,13 @@ from jarvis_local.agent.retriever import confidence, select_tools
 MAX_STEPS = 2               # pasos (herramientas encadenadas) por clausula
 MAX_STEPS_ENCADENADO = 4    # nº maximo de clausulas de una peticion multi-accion
 MAX_REINTENTOS = 1          # correcciones al modelo ante salida invalida
-AGENT_TIMEOUT = 30          # timeout en segundos para llamadas al LLM
+AGENT_TIMEOUT = 300         # tope por LLAMADA al LLM, no por petición
+# Cuidado con bajarlo: MEDIDO en este equipo (2 núcleos, CPU) una petición
+# normal del agente tarda ~88 s SIN carga; el presupuesto existe para cortar
+# un modelo COLGADO, no una respuesta lenta. Con el valor anterior (30 s) el
+# agente quedaba inutilizable en producción: toda petición que superara 30 s
+# moría antes de responder (lo pilló test_latency.py). El timeout HTTP del
+# cliente (600 s) sigue siendo el tope absoluto.
 
 # El modelo a veces escribe el tool call como texto en vez de usar el canal de
 # tool_calls. Ese JSON no debe llegarle nunca al usuario.
@@ -344,6 +351,37 @@ def _router_fallback() -> str:
     return str(get_config().get("ollama", {}).get("router_fallback", "") or "").strip()
 
 
+def _llm_con_timeout(fn, *args, **kwargs):
+    """Llama al LLM con el presupuesto de `AGENT_TIMEOUT` segundos.
+
+    La constante existía pero nadie la usaba: el único límite real era el
+    timeout HTTP del cliente (600 s), así que un modelo que se colgaba dejaba a
+    JARVIS esperando DIEZ MINUTOS con la conversación parada. Si se agota el
+    tiempo se lanza un TimeoutError que el resto del bucle ya trata como fallo
+    técnico (reintento con el modelo de respaldo / mensaje al usuario).
+    """
+    from jarvis_local.config import get_config
+
+    segundos = (get_config().get("agent") or {}).get("timeout", AGENT_TIMEOUT)
+    box = {}
+
+    def _corre():
+        try:
+            box["valor"] = fn(*args, **kwargs)
+        except BaseException as e:  # se re-lanza en el hilo principal
+            box["error"] = e
+
+    hilo = threading.Thread(target=_corre, daemon=True)
+    hilo.start()
+    hilo.join(segundos)
+    if hilo.is_alive():
+        raise TimeoutError(
+            f"el modelo tardo mas de {segundos}s en responder (AGENT_TIMEOUT)")
+    if "error" in box:
+        raise box["error"]
+    return box.get("valor")
+
+
 def _llamar_modelo(client, messages: list[dict], tools: list[dict],
                    structured: bool) -> tuple[dict, bool]:
     """Llama al router. Devuelve (msg, uso_fallback). Reintenta con
@@ -351,7 +389,7 @@ def _llamar_modelo(client, messages: list[dict], tools: list[dict],
     def _do(model):
         if structured:
             return _decidir_estructurado(client, messages, tools, model=model)
-        return client.chat_with_tools(messages, tools, model=model)
+        return _llm_con_timeout(client.chat_with_tools, messages, tools, model=model)
 
     try:
         return _do(None), False

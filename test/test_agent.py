@@ -196,20 +196,21 @@ def test_acciones_peligrosas_no_se_ejecutan_sin_confirmar():
     finally:
         _os.rmdir(carpeta)
 
-    # borrar_archivo: hoy queda BLOQUEADO (borrado deshabilitado esta fase),
-    # que también es "no ejecuta": lo que NUNCA debe pasar es pendiente=False
-    # con la acción hecha.
+    # borrar_archivo: una vez habilitado, requiere /confirmar
+    # (pendiente=True). El archivo NO se borra sin confirmacion.
+    from jarvis_local.safety.policy import policy
     archivo = _os.path.join(user_dir("documents"), "_test_confirm_gate.txt")
     with open(archivo, "w", encoding="utf-8") as f:
         f.write("x")
     try:
         texto, pendiente = execute("borrar_archivo", {"path": archivo})
-        assert _os.path.exists(archivo), "borrar_archivo ejecutó sin confirmación"
-        assert pendiente is False
-        assert texto != "Operacion completada.", "borrado bloqueado reportado como hecho"
-        assert "borr" in texto.lower()   # dice claramente que NO borró
+        assert _os.path.exists(archivo), "borrar_archivo ejecutó sin confirmacion"
+        assert pendiente is True, "borrar_archivo debe requerir confirmacion"
+        assert policy.pending_plan is not None
+        policy.pending_plan = None      # limpiar
     finally:
-        _os.remove(archivo)
+        if _os.path.exists(archivo):
+            _os.remove(archivo)
 
 
 def test_agente_ignora_herramienta_inexistente():

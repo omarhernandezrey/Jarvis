@@ -517,6 +517,42 @@ detectar si la app ya está corriendo (por proceso/ventana) y enfocarla en vez
 de relanzar. Rama `fix/apps-doble-apertura`. Pruebas: #1, #2 (mock de
 subprocess + psutil), #3, #5, #8. Encaja como micro-tarea antes de la Fase C.
 
+### H3 — No se puede seleccionar ni copiar la conversación  ✅ COMPLETADA
+**Reportado por el usuario (2026-09-24).** Ni en el HUD ni en la interfaz web se
+podía llevarse una sola palabra de lo que JARVIS respondía. **Rama:**
+`feature/consola-copiar`.
+
+- [x] **HUD.** `MarkdownBody.qml` renderizaba la prosa con `Text`, que en QML NO
+  admite selección con el ratón: cambiado por `TextEdit` de solo lectura
+  (`readOnly` + `selectByMouse` + `persistentSelection`). Coste aceptado: se
+  pierden `style` (borde óptico) y `lineHeight` proporcional, que `TextEdit` no
+  tiene.
+- [x] **HUD · botón por turno.** `Turn.qml`: "copiar ⧉" en el pie del turno
+  (sólo si hay cuerpo), con el patrón ya usado en `CodeBlock.qml` (TextEdit
+  invisible → `selectAll` + `copy`). Copia el mensaje tal cual, sin canal ni
+  hora.
+- [x] **HUD · copiar toda la sesión.** `ConversationModel.texto_completo()`
+  (más `conversacion_a_texto()` pura) serializa los turnos a
+  `[hh:mm:ss] CANAL ❯ cuerpo` omitiendo los vacíos; botón "copiar todo ⧉" en la
+  cabecera de `Conversation.qml`. QML no puede iterar un `QAbstractListModel`
+  desde JS, de ahí el Slot en Python.
+- [x] **Web.** `ui/server.py`: el `body` entero era `user-select: none`, así que
+  no valía ni arrastrar, ni Ctrl+A, ni botón derecho → Copiar. Ahora `none` sólo
+  en el cromo (orbe, barras, botones) y `user-select: text` en `.chat-area`;
+  botón "copiar ⧉" por mensaje y "Copiar conversación" en la barra de estado,
+  con fallback a `execCommand('copy')` porque `localhost` en http no es contexto
+  seguro y ahí falta `navigator.clipboard`.
+- [x] **Tests.** `test/test_hud_copiar.py` (7) — crea los componentes QML de
+  verdad, pulsa el botón y lee el portapapeles real; y 5 tests más en
+  `test/test_ui_server.py`. `test_ui_hud.py` adaptado: localiza la barra de
+  comando por `objectName` ("commandBarEditor") y no por "el primer TextEdit",
+  que ya no lo era.
+
+**Pruebas:** #1 (ruff limpio) · #2 (nuevos: 12 passed) · #3 (suite completa,
+0 fallos) · #4 (cobertura del código nuevo en `conversation_model.py`: 100%).
+No verificada la selección visual con el ratón en pantalla (sin captura en este
+entorno): queda confirmación manual del usuario.
+
 ### H1 — Test flaky `test_history_performance`  ✅ COMPLETADA
 **Rama:** `fix/flaky-history-perf`
 **Archivo:** `test/test_storage_load.py`
