@@ -99,13 +99,18 @@ def search_files(name: str, path_str: str) -> ActionPlan:
     if blocked:
         return blocked
     matches = []
+    sin_permiso = False
     try:
         for root, _dirs, files in os.walk(str(resolved)):
             for f in files:
                 if name.lower() in f.lower():
                     matches.append(str(Path(root) / f))
     except PermissionError:
-        pass
+        # `os.walk` aborta entero en la primera carpeta sin permiso. Antes esto
+        # era `except PermissionError: pass` y se respondía "No se encontró X"
+        # como EXECUTED: un FALSO NEGATIVO presentado como resultado válido
+        # (el archivo podía estar ahí, en la parte que no se pudo mirar).
+        sin_permiso = True
     plan = ActionPlan(
         action="buscar_archivos",
         params={"name": name, "path": str(resolved)},
@@ -113,8 +118,20 @@ def search_files(name: str, path_str: str) -> ActionPlan:
         risk=RiskLevel.READ,
         reason="Operacion de solo lectura",
     )
-    plan.result = "\n".join(matches) if matches else f"No se encontro '{name}'"
-    plan.status = ActionStatus.EXECUTED
+    if matches:
+        plan.result = "\n".join(matches)
+        if sin_permiso:
+            plan.result += ("\n(no pude mirar en todas las carpetas: hay al "
+                            "menos una sin permiso de lectura)")
+        plan.status = ActionStatus.EXECUTED
+    elif sin_permiso:
+        plan.status = ActionStatus.ERROR
+        plan.result = (
+            f"No pude terminar la busqueda de '{name}', senor: se nego el "
+            f"acceso a una carpeta dentro de '{resolved}'.")
+    else:
+        plan.result = f"No se encontro '{name}'"
+        plan.status = ActionStatus.EXECUTED
     return plan
 
 
