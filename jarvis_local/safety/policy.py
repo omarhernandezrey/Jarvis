@@ -98,24 +98,11 @@ class SafetyPolicy:
         return plan
 
     def confirm(self) -> ActionPlan | None:
-        """Confirma el plan pendiente si existe y es de bajo riesgo."""
+        """Confirma el plan pendiente. Cualquier riesgo se ejecuta tras /confirmar
+        del usuario (ya pasó por el flujo de confirmación del bucle agéntico)."""
         with self._lock:
             if not self.pending_plan:
                 return None
-            if self.pending_plan.risk.value >= RiskLevel.DELETE.value:
-                self.pending_plan.status = ActionStatus.BLOCKED
-                self.pending_plan.result = (
-                    "OPERACION BLOQUEADA: Esta accion requiere doble confirmacion "
-                    "que no esta disponible en esta fase."
-                )
-                logger.log_action(
-                    instruction=self.pending_plan.action,
-                    result=self.pending_plan.result,
-                    error="Requiere doble confirmacion",
-                )
-                plan = self.pending_plan
-                self.pending_plan = None
-                return plan
             self.pending_plan.status = ActionStatus.CONFIRMED
             self._log_plan(self.pending_plan, "CONFIRMADO")
             plan = self.pending_plan

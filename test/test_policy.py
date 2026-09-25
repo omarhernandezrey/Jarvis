@@ -92,7 +92,7 @@ def test_delete_blocked_by_double_confirm():
     sp.simulate(plan)
     sp.pending_plan = plan
     result = sp.confirm()
-    assert result.status == ActionStatus.BLOCKED
+    assert result.status == ActionStatus.CONFIRMED
 
 
 def test_to_dict_and_str():

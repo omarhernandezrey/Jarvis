@@ -240,7 +240,6 @@ def test_confirm_executes_open_app():
         plan = open_app("chrome")
     # Ahora ejecuta directo: EXECUTED o ERROR segun si existe la app
     assert plan.status in (ActionStatus.EXECUTED, ActionStatus.ERROR, ActionStatus.BLOCKED)
-    assert True
 
 
 def test_cancel_never_executes():
@@ -256,7 +255,6 @@ def test_cancel_never_executes():
     # Limpiar si se creo
     if os.path.exists(test_path):
         os.remove(test_path)
-    assert True
 
 
 def test_tool_read_still_works():

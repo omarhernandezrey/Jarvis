@@ -67,15 +67,22 @@ def test_python_available():
 
 
 def test_no_regressions_after_phase7():
-    """Todas las suites existentes deben seguir importables."""
-    from jarvis_local.intent.parser import parse_intent
-    from jarvis_local.jarvis import Jarvis
-    from jarvis_local.memory_context.session import SessionMemoryContext
-    from jarvis_local.safety.policy import SafetyPolicy
-    from jarvis_local.storage.history import HistoryStore
-    from jarvis_local.storage.memory import MemoryStore
-    from jarvis_local.voice.stt import load_voice_config
-    # Si llegamos aquí, todos los módulos son importables
+    """Todas las suites existentes deben seguir importables y con API valida."""
+    import jarvis_local.intent.parser as parser_mod
+    import jarvis_local.jarvis as jarvis_mod
+    import jarvis_local.memory_context.session as session_mod
+    import jarvis_local.safety.policy as policy_mod
+    import jarvis_local.storage.history as history_mod
+    import jarvis_local.storage.memory as memory_mod
+    import jarvis_local.voice.stt as stt_mod
+
+    assert hasattr(parser_mod, "parse_intent")
+    assert hasattr(jarvis_mod, "Jarvis")
+    assert hasattr(session_mod, "SessionMemoryContext")
+    assert hasattr(policy_mod, "SafetyPolicy")
+    assert callable(getattr(history_mod, "HistoryStore", None))
+    assert callable(getattr(memory_mod, "MemoryStore", None))
+    assert callable(getattr(stt_mod, "load_voice_config", None))
 
 
 if __name__ == "__main__":

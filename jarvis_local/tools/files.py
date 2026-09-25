@@ -393,7 +393,7 @@ def rename_file(path_str: str, new_name: str) -> ActionPlan:
 
 
 def plan_delete(path_str: str) -> ActionPlan:
-    """Planifica borrado. NUNCA ejecuta, solo genera el plan."""
+    """Planifica el borrado de un archivo o carpeta (pendiente de /confirmar)."""
     ok, resolved, blocked = _validate_path(path_str, require_exist=True)
     if blocked:
         return blocked
@@ -403,26 +403,37 @@ def plan_delete(path_str: str) -> ActionPlan:
         params={"path": str(resolved), "is_directory": is_dir},
         paths_affected=[str(resolved)],
         risk=RiskLevel.DELETE,
-        reason=(
-            "BORRADO detectado. Esta accion requiere DOBLE CONFIRMACION "
-            "y sera implementada en una fase posterior. Por ahora, solo "
-            "se muestra el plan. No se ejecutara nada."
-        ),
+        reason=f"Borrado de {'carpeta' if is_dir else 'archivo'}: {resolved}",
     )
-    plan.status = ActionStatus.BLOCKED
-    plan.simulation_result = (
-        f"[BORRADO BLOQUEADO] Se eliminaria: {resolved} "
-        f"({'directorio' if is_dir else 'archivo'}). "
-        f"El borrado no esta habilitado en esta fase."
+    plan.status = ActionStatus.PLANNED
+    policy.pending_plan = plan
+    return plan
+
+
+def execute_delete_file(path_str: str) -> ActionPlan:
+    """Ejecuta el borrado CONFIRMADO de un archivo o carpeta."""
+    norm = Path(path_str).expanduser().resolve()
+    plan = ActionPlan(
+        action="borrar",
+        params={"path": str(norm), "is_directory": norm.is_dir()},
+        paths_affected=[str(norm)],
+        risk=RiskLevel.DELETE,
     )
-    # Sin .result, los llamadores que hacen `plan.result or "Operacion
-    # completada."` (agent/registry.execute, jarvis.py) reportaban un borrado
-    # BLOQUEADO como si se hubiera hecho. Mismo motivo que policy.block().
-    plan.result = (
-        f"No borro nada, senor: el borrado de archivos no esta habilitado "
-        f"todavia. Se eliminaria {resolved} "
-        f"({'carpeta' if is_dir else 'archivo'})."
-    )
+    if not norm.exists():
+        plan.status = ActionStatus.ERROR
+        plan.result = f"'{norm}' no existe, senor."
+        return plan
+    try:
+        if norm.is_dir():
+            import shutil
+            shutil.rmtree(norm)
+        else:
+            norm.unlink()
+        plan.status = ActionStatus.EXECUTED
+        plan.result = f"Borrado: {norm}"
+    except OSError as e:
+        plan.status = ActionStatus.ERROR
+        plan.result = f"No pude borrar '{norm}': {e}"
     return plan
 
 

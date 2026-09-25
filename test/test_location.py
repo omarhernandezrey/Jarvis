@@ -43,12 +43,12 @@ def test_my_location_success():
 
 
 def test_my_location_failure():
-    """Verifica que my_location devuelve None en error."""
-    # Este test verifica el manejo de errores de red
-    # En un entorno real, si no hay conexión, devuelve None
-    # Mock no funciona aquí porque requests se importa a nivel de módulo
-    # Verificamos que la función existe y es callable
-    assert callable(my_location)
+    """Verifica que my_location devuelve None cuando requests.get lanza RequestException."""
+    import requests as req
+
+    with patch("jarvis_local.tools.location.requests.get", side_effect=req.RequestException("network error")):
+        result = my_location()
+        assert result is None
 
 
 def test_locate_poi_via_osm():

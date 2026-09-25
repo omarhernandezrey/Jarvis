@@ -100,11 +100,12 @@ def test_rename_simulated():
 
 
 def test_plan_delete_blocked():
+    """plan_delete devuelve PLANNED (pendiente de /confirmar), no BLOCKED."""
     p = setup()
     (p / "borrar.txt").write_text("data")
     plan = plan_delete(str(p / "borrar.txt"))
     assert plan.action == "borrar"
-    assert plan.status == ActionStatus.BLOCKED
+    assert plan.status == ActionStatus.PLANNED, f"esperaba PLANNED: {plan.status.value}"
     teardown(p)
 
 
