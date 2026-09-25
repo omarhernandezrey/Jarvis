@@ -48,6 +48,7 @@ class StateStyle:
     pulse_rate: float  # Hz
     pulse_depth: float
     core: float  # brillo del núcleo
+    arcs: float  # arcos eléctricos por segundo (núcleo → borde); sólo THINKING
 
 
 STATE_STYLES: dict[OrbState, StateStyle] = {
@@ -64,8 +65,9 @@ STATE_STYLES: dict[OrbState, StateStyle] = {
         scanner=0.30,
         ripple=0.0,
         pulse_rate=0.22,
-        pulse_depth=0.035,
+        pulse_depth=0.06,
         core=0.70,
+        arcs=0.0,
     ),
     OrbState.LISTENING: StateStyle(
         primary=(20, 215, 255),
@@ -82,6 +84,7 @@ STATE_STYLES: dict[OrbState, StateStyle] = {
         pulse_rate=0.9,
         pulse_depth=0.02,
         core=0.95,
+        arcs=0.0,
     ),
     OrbState.THINKING: StateStyle(
         primary=(80, 125, 255),
@@ -98,6 +101,7 @@ STATE_STYLES: dict[OrbState, StateStyle] = {
         pulse_rate=1.6,
         pulse_depth=0.045,
         core=0.85,
+        arcs=4.0,
     ),
     OrbState.SPEAKING: StateStyle(
         primary=(0, 225, 255),
@@ -114,6 +118,7 @@ STATE_STYLES: dict[OrbState, StateStyle] = {
         pulse_rate=1.1,
         pulse_depth=0.03,
         core=1.00,
+        arcs=0.0,
     ),
     OrbState.ERROR: StateStyle(
         primary=(255, 70, 110),
@@ -130,6 +135,7 @@ STATE_STYLES: dict[OrbState, StateStyle] = {
         pulse_rate=2.2,
         pulse_depth=0.05,
         core=0.70,
+        arcs=0.0,
     ),
 }
 
@@ -224,6 +230,41 @@ def stylesheet() -> str:
     QLabel#SystemText {{ color: {TEXT_MUTED}; font-family: "{FONT_MONO}"; font-size: 12px; }}
 
     QLabel#EmptyState {{ color: {TEXT_MUTED}; font-size: 13px; }}
+
+    /* ── Tarjeta de herramienta ── */
+    QFrame#ToolCard {{
+        background: rgba(56, 189, 248, 0.06); border: 1px solid {LINE}; border-radius: 10px;
+    }}
+    QFrame#ToolCard[state="ok"] {{ border: 1px solid rgba(56, 189, 248, 0.45); }}
+    QFrame#ToolCard[state="error"] {{
+        background: rgba(255, 90, 122, 0.07); border: 1px solid rgba(255, 90, 122, 0.45);
+    }}
+    QLabel#ToolCardName {{ color: {TEXT}; }}
+    QLabel#ToolCardStatus {{ color: {TEXT_DIM}; }}
+
+    /* ── Toast ── */
+    QFrame#Toast {{
+        background: {BG_PANEL_SOLID}; border: 1px solid {LINE_STRONG}; border-radius: 10px;
+        border-left: 3px solid {ACCENT};
+    }}
+    QFrame#Toast[kind="error"] {{ border-left: 3px solid {DANGER}; }}
+    QLabel#ToastText {{ color: {TEXT}; font-size: 12px; }}
+
+    /* ── Chips de servicio ── */
+    QFrame#ServiceChip {{
+        background: rgba(56, 189, 248, 0.05); border: 1px solid {LINE}; border-radius: 11px;
+    }}
+    QLabel#ServiceChipLabel {{ color: {TEXT_DIM}; font-family: "{FONT_MONO}"; font-size: 10px; }}
+
+    /* ── Panel plegable (acciones rápidas) ── */
+    QToolButton#QuickAction {{
+        background: transparent; border: 1px solid {LINE}; border-radius: 8px; padding: 4px 8px;
+        color: {TEXT_DIM}; font-family: "{FONT_MONO}"; font-size: 11px;
+    }}
+    QToolButton#QuickAction:hover {{ border-color: {LINE_STRONG}; color: {TEXT}; }}
+    QToolButton#QuickAction:checked {{
+        background: rgba(56, 189, 248, 0.14); border-color: {ACCENT}; color: {ACCENT};
+    }}
 
     /* ── Input ── */
     QFrame#InputBar {{

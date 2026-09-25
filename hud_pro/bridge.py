@@ -40,6 +40,12 @@ class HudBridge(QtCore.QObject):
     _sig_done = Signal()
     _sig_model = Signal(str)
     _sig_clear = Signal()
+    _sig_spectrum = Signal(list)
+    _sig_metrics = Signal(dict)
+    _sig_service = Signal(str, bool)
+    _sig_toast = Signal(str, str)
+    _sig_tool_start = Signal(str)
+    _sig_tool_end = Signal(str, float, bool)
 
     # señales públicas hacia el backend
     user_message = Signal(str)
@@ -65,10 +71,19 @@ class HudBridge(QtCore.QObject):
         self._sig_done.connect(window.end_assistant_stream)
         self._sig_model.connect(window.set_model_name)
         self._sig_clear.connect(window.clear_chat)
+        self._sig_spectrum.connect(window.set_spectrum)
+        self._sig_metrics.connect(window.update_metrics)
+        self._sig_service.connect(window.set_service_active)
+        self._sig_toast.connect(window.show_toast)
+        self._sig_tool_start.connect(window.tool_start)
+        self._sig_tool_end.connect(window.tool_end)
 
         window.message_submitted.connect(self.user_message.emit)
         window.mic_toggled.connect(self.mic_toggled.emit)
         window.closing.connect(self.closing.emit)
+        # clic en el orbe = clic en el botón de micrófono (mismo handler,
+        # mismo estado visual — el botón sigue siendo la fuente de verdad).
+        window.orb.clicked.connect(window.chat.input.mic.click)
 
     # ── API thread-safe ───────────────────────────────────────────────────
     def set_state(self, state: StateLike, detail: str = "") -> None:
@@ -109,6 +124,42 @@ class HudBridge(QtCore.QObject):
 
     def clear_chat(self) -> None:
         self._sig_clear.emit()
+
+    def set_spectrum(self, bands: Optional[list]) -> None:
+        """Espectro real 0..1 (FFT del micrófono o del TTS) para el anillo
+        del orbe. `None`/lista vacía lo apaga — nunca se inventa una forma."""
+        self._sig_spectrum.emit(list(bands) if bands else [])
+
+    def set_metrics(self, data: dict) -> None:
+        """Métricas reales para la barra superior (modelo, Ollama, CPU/RAM/
+        VRAM, tokens/s, tiempo al primer token…). Fusiona claves — cada
+        productor es dueño de las suyas, igual que `ViewModel.push_metrics`
+        del HUD legado; una clave ausente no se muestra, nunca se inventa."""
+        self._sig_metrics.emit(dict(data or {}))
+
+    def set_service_active(self, name: str, active: bool) -> None:
+        """Chip de servicio (mic/wake/tts/memory): punto que late mientras
+        `active` — el servicio está trabajando de verdad, no decorativo."""
+        self._sig_service.emit(str(name), bool(active))
+
+    def toast(self, message: str, kind: str = "info") -> None:
+        """Aviso no intrusivo (error/recordatorio/info), se apaga solo."""
+        if message:
+            self._sig_toast.emit(str(message), str(kind or "info"))
+
+    def tool_start(self, name: str) -> None:
+        """Tarjeta viva de herramienta: arranca con spinner, sin duración
+        todavía (se completa en `tool_end`)."""
+        self._sig_tool_start.emit(str(name or ""))
+
+    def tool_end(self, name: str, ms: float, ok: bool) -> None:
+        """Cierra la tarjeta de herramienta con la duración real y el
+        resultado (ok/error)."""
+        try:
+            ms_f = float(ms)
+        except (TypeError, ValueError):
+            ms_f = 0.0
+        self._sig_tool_end.emit(str(name or ""), ms_f, bool(ok))
 
     # ── Slots (hilo GUI) ──────────────────────────────────────────────────
     def _apply_state(self, state: str, detail: str) -> None:

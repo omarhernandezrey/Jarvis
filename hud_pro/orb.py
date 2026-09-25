@@ -63,6 +63,7 @@ _ANIM_KEYS = (
     "pulse_rate",
     "pulse_depth",
     "core",
+    "arcs",
 )
 _SPECTRUM_BARS = 120
 _SPEC_TRIG = [
@@ -166,7 +167,11 @@ class _RingGeometry:
 
     def __init__(self) -> None:
         R = R_REF
-        r0 = R * 1.62
+        # Anillos comprimidos (FASE HUD-pro · orbe vivo): lo más externo no
+        # pasa de 1.68R — ticks 1.50R, puntos 1.41R (misma proporción que
+        # antes respecto a los ticks), segmentos/barrido/microtexto en
+        # `_paint_rings`/`_paint_scanner`/`_static_sprite`.
+        r0 = R * 1.50
         self.ticks: list[QtCore.QLineF] = []
         for i in range(180):
             a = TAU * i / 180
@@ -175,7 +180,7 @@ class _RingGeometry:
             self.ticks.append(QtCore.QLineF(ca * r0, sa * r0, ca * (r0 + ln), sa * (r0 + ln)))
 
         dots = QtGui.QPainterPath()
-        r2 = R * 1.52
+        r2 = R * 1.41
         d = R * 0.0085
         for i in range(96):
             a = math.radians(300.0 * i / 96)
@@ -194,13 +199,18 @@ class OrbRenderer:
     RIPPLE_LIFE = 1.9  # s
     MAX_RIPPLES = 7
     LEVEL_TIMEOUT = 0.35  # s sin nivel externo → nivel sintético al hablar
-    TEXTURE_SCALE = 0.4  # resolución del interior del núcleo
+    TEXTURE_SCALE = 0.34  # resolución del interior del núcleo (perfilado: el
+    # mayor costo de paint() después de las partículas; los gradientes no
+    # pierden nitidez perceptible a esta resolución, sólo cuestan menos)
     MICROTEXT_MIN_R = 95  # px
+    ARC_LIFE = 0.16  # s — vida de cada arco eléctrico (PROCESANDO)
+    FLASH_LIFE = 0.40  # s — destello de cambio de estado / wake word
 
-    def __init__(self, seed: int = 7, particles: int = 72) -> None:
+    def __init__(self, seed: int = 7, particles: int = 140) -> None:
         self.state = OrbState.IDLE
         self.reduced_motion = False
         self.scale = 1.0
+        self.hover = False
         self._p = _style_values(STATE_STYLES[self.state])
         self._target = dict(self._p)
         self._t = 0.0
@@ -214,9 +224,22 @@ class OrbRenderer:
         self._level = 0.0
         self._level_target = 0.0
         self._level_ts = -1e9
-        # ondas
+        self._level_prev = 0.0  # para detectar subidas bruscas (inicio de palabra)
+        # espectro real (STT/TTS) — ver set_spectrum()
+        self._spectrum: list[float] = []
+        self._spectrum_smooth: list[float] = [0.0] * _SPECTRUM_BARS
+        self._spectrum_ts = -1e9
+        # ondas y flash de transición
         self._ripples: list[float] = []
         self._ripple_acc = 0.0
+        self._flash_ts = -1e9  # destello + onda de choque (wake word / cambio de estado)
+        # arcos eléctricos (PROCESANDO)
+        self._arcs: list[tuple[float, float, float, int]] = []  # (nacido, ang0, ang1, semilla)
+        self._arc_acc = 0.0
+        # hover (+20% de brillo)
+        self._hover_k = 0.0
+        # ruido de parpadeo del núcleo (reposo)
+        self._flicker_seed = random.Random(seed + 1).uniform(0, 1000)
         # cachés
         self._glow_key: Optional[tuple] = None
         self._glow_img: Optional[QImage] = None
@@ -237,11 +260,17 @@ class OrbRenderer:
             )
             for _ in range(particles)
         ]
+        # filamentos de plasma dentro del núcleo: curvas cerradas con fase propia
+        self._plasma = [
+            (rnd.uniform(0, TAU), rnd.uniform(0.55, 0.85) * rnd.choice((-1, 1)), rnd.uniform(0, TAU))
+            for _ in range(3)
+        ]
 
     # ── API ───────────────────────────────────────────────────────────────
     def set_state(self, state: OrbState) -> None:
         self.state = state
         self._target = _style_values(STATE_STYLES[state])
+        self.flash()
 
     def set_level(self, level: float) -> None:
         try:
@@ -250,8 +279,43 @@ class OrbRenderer:
             value = 0.0
         if math.isnan(value) or math.isinf(value):
             value = 0.0
-        self._level_target = _clamp(value)
+        value = _clamp(value)
+        # onda expansiva al inicio de cada palabra: subida brusca de nivel
+        # mientras se escucha (no en cada micro-fluctuación del ruido).
+        if (
+            self.state is OrbState.LISTENING
+            and value - self._level_prev > 0.28
+            and self._t - self._level_ts > 0.12
+        ):
+            self._ripples.append(self._t)
+        self._level_prev = self._level_target
+        self._level_target = value
         self._level_ts = self._t
+
+    def set_spectrum(self, bands: Optional[list]) -> None:
+        """Espectro real 0..1 (FFT del micrófono o del TTS), cualquier
+        longitud — se remuestrea lineal a la resolución visual del anillo.
+        `None` o lista vacía apaga el anillo (nada que mostrar todavía)."""
+        if not bands:
+            self._spectrum = []
+            return
+        try:
+            vals = [_clamp(float(b)) for b in bands]
+        except (TypeError, ValueError):
+            return
+        if any(math.isnan(v) or math.isinf(v) for v in vals):
+            vals = [0.0 if (math.isnan(v) or math.isinf(v)) else v for v in vals]
+        self._spectrum = vals
+        self._spectrum_ts = self._t
+
+    def flash(self) -> None:
+        """Destello + onda de choque (~400 ms): cambio de estado o wake word."""
+        self._flash_ts = self._t
+        if not self.reduced_motion:
+            self._ripples.append(self._t)
+
+    def set_hover(self, hovering: bool) -> None:
+        self.hover = bool(hovering)
 
     @property
     def level(self) -> float:
@@ -280,6 +344,28 @@ class OrbRenderer:
         rate = 28.0 if target > self._level else 7.0
         self._level = _approach(self._level, target, rate, dt)
 
+        # brillo por hover (+20%): mismo suavizado exponencial que el resto
+        self._hover_k = _approach(self._hover_k, 1.0 if self.hover else 0.0, 10.0, dt)
+
+        # espectro real: dato externo (STT/TTS), se remuestrea y se suaviza
+        # con ataque más rápido que caída (se lee como "vivo", no como un
+        # ecualizador con inercia pareja). Expira igual que el nivel.
+        has_spectrum = self._spectrum and self._t - self._spectrum_ts < self.LEVEL_TIMEOUT
+        src = self._spectrum if has_spectrum else []
+        n = _SPECTRUM_BARS
+        sm = self._spectrum_smooth
+        srate = 24.0 if self.reduced_motion else (26.0 if has_spectrum else 10.0)
+        for i in range(n):
+            if src:
+                pos = i / (n - 1) * (len(src) - 1)
+                lo = int(pos)
+                hi = min(lo + 1, len(src) - 1)
+                tval = src[lo] + (src[hi] - src[lo]) * (pos - lo)
+            else:
+                tval = 0.0
+            rate_i = srate * (1.6 if tval > sm[i] else 1.0)
+            sm[i] = _approach(sm[i], tval, rate_i, dt)
+
         self._ring += dt * p["ring_speed"] * motion
         self._def_t += dt * (0.6 + 0.5 * p["ring_speed"]) * motion
         self._pt += dt * p["particle_speed"] * motion
@@ -288,12 +374,24 @@ class OrbRenderer:
 
         if self.reduced_motion:
             self._ripples.clear()
+            self._arcs.clear()
             return
+
         self._ripple_acc += dt * p["ripple"] * (0.55 + 1.6 * self._level)
         while self._ripple_acc >= 1.0:
             self._ripple_acc -= 1.0
             self._ripples.append(self._t)
         self._ripples = [b for b in self._ripples if self._t - b < self.RIPPLE_LIFE][-self.MAX_RIPPLES :]
+
+        # arcos eléctricos (PROCESANDO): 3-5/s, ~120-220 ms de vida cada uno
+        if p["arcs"] > 0.05:
+            self._arc_acc += dt * p["arcs"]
+            while self._arc_acc >= 1.0:
+                self._arc_acc -= 1.0
+                ang0 = random.uniform(0, 360)
+                ang1 = ang0 + random.uniform(-70, 70)
+                self._arcs.append((self._t, ang0, ang1, random.randint(0, 1 << 30)))
+        self._arcs = [a for a in self._arcs if self._t - a[0] < self.ARC_LIFE]
 
     def _synthetic_level(self) -> float:
         t = self._t
@@ -304,7 +402,7 @@ class OrbRenderer:
     # ── Geometría ─────────────────────────────────────────────────────────
     @staticmethod
     def base_radius(w: float, h: float, scale: float = 1.0) -> float:
-        return min(w, h) * 0.235 * scale
+        return min(w, h) * 0.29 * scale
 
     # ── Dibujo ────────────────────────────────────────────────────────────
     def paint(self, painter: QtGui.QPainter, w: float, h: float) -> None:
@@ -326,11 +424,14 @@ class OrbRenderer:
         painter.setRenderHint(SMOOTH, True)
         painter.setPen(Qt.PenStyle.NoPen)
 
+        # +20% de brillo con el cursor encima (hover), suavizado en advance()
+        hover_gain = 1.0 + 0.20 * self._hover_k
+
         self._blit_centered(
             painter,
             c,
             self._glow_sprite(R, P, S),
-            opacity=_clamp(p["glow"] * (1.0 + 0.3 * lvl) / _GLOW_BAKE),
+            opacity=_clamp(p["glow"] * (1.0 + 0.3 * lvl) * hover_gain / _GLOW_BAKE),
             plus=True,
         )
         self._blit_centered(painter, c, self._static_sprite(R, P, A))
@@ -338,10 +439,12 @@ class OrbRenderer:
         self._paint_rings(painter, c, R, P, A, geo)
         self._paint_scanner(painter, c, R, P, A, p["scanner"])
         self._paint_particles(painter, c, R, A, front=False)
-        self._paint_spectrum(painter, c, R * (1.10 + 0.02 * lvl), R, P, A, p["spectrum"], lvl)
+        self._paint_spectrum(painter, c, R * (1.02 + 0.02 * lvl), R, P, A, p["spectrum"], lvl)
         self._paint_body(painter, c, Rr, P, S, A, p, lvl, geo)
+        self._paint_arcs(painter, c, R, Rr, A)
         self._paint_particles(painter, c, R, A, front=True)
         self._paint_scanner_heads(painter, c, R, A, p["scanner"])
+        self._paint_flash(painter, c, R, A)
 
         painter.restore()
 
@@ -403,7 +506,7 @@ class OrbRenderer:
         qp.setRenderHint(AA, True)
         cc = QPointF(size / 2.0, size / 2.0)
         qp.setBrush(Qt.BrushStyle.NoBrush)
-        for radius, colr, alpha in ((1.745, A, 0.10), (1.30, P, 0.13), (1.97, A, 0.05)):
+        for radius, colr, alpha in ((1.62, A, 0.10), (1.24, P, 0.13), (1.68, A, 0.05)):
             pen = QtGui.QPen(_col(colr, alpha))
             pen.setWidthF(1.0)
             qp.setPen(pen)
@@ -422,7 +525,7 @@ class OrbRenderer:
         f = QtGui.QFont(FONT_MONO)
         f.setPixelSize(int(px))
         fm = QtGui.QFontMetricsF(f)
-        radius = Ri * 1.90
+        radius = Ri * 1.62
         spacing = px * 0.30
         text_path = QtGui.QPainterPath()
         for center_deg, label in _MICROTEXT:
@@ -518,9 +621,9 @@ class OrbRenderer:
 
         qp.setBrush(Qt.BrushStyle.NoBrush)
         qp.setPen(_hairline(_col(P, 0.62)))
-        _draw_arcs(qp, c, R * 1.80, geo.brackets, -ring * 2.5, thickness=2)
+        _draw_arcs(qp, c, R * 1.68, geo.brackets, -ring * 2.5, thickness=2)
         qp.setPen(_hairline(_col(P, 0.55)))
-        _draw_arcs(qp, c, R * 1.44, _SEGMENTS, -ring * 14.0, thickness=3)
+        _draw_arcs(qp, c, R * 1.36, _SEGMENTS, -ring * 14.0, thickness=3)
         qp.setPen(Qt.PenStyle.NoPen)
 
     def _scan_heads(self, scanner: float) -> list[tuple[float, float]]:
@@ -544,13 +647,13 @@ class OrbRenderer:
             g.setColorAt(min(1.0, edge + 0.002), _col(P, 0.0))
             g.setColorAt(1.0, _col(P, 0.0))
             qp.setPen(_hairline_brush(QtGui.QBrush(g)))
-            _draw_arcs(qp, c, R * 1.30, ((head - span, span),), 0.0, thickness=3)
+            _draw_arcs(qp, c, R * 1.24, ((head - span, span),), 0.0, thickness=3)
         qp.setPen(Qt.PenStyle.NoPen)
 
     def _paint_scanner_heads(self, qp, c, R, A, scanner) -> None:
         if scanner < 0.02:
             return
-        r = R * 1.30
+        r = R * 1.24
         spark = self._spark_sprite(A)
         qp.save()
         qp.setCompositionMode(Plus)
@@ -562,49 +665,56 @@ class OrbRenderer:
             qp.drawImage(QRectF(x - side / 2, y - side / 2, side, side), spark)
         qp.restore()
 
+    # Estela corta: fase actual + 1 fantasma. Con 140 partículas cada
+    # `drawImage()` extra por partícula cuenta — perfilado: 3 pasos costaban
+    # ~0.45s/80 frames (32% del paint() completo), el mayor costo de toda la
+    # capa. 2 pasos se siguen leyendo como estela, sin ese presupuesto.
+    _TRAIL_STEPS = (0.0, -0.14)
+    _TRAIL_OPACITY = (1.0, 0.35)
+
     def _paint_particles(self, qp, c, R, A, front: bool) -> None:
         cx, cy = c.x(), c.y()
         unit = max(0.8, R / 190.0)
         spark = self._spark_sprite(A)
         pt_time = self._pt * 2.2
+        steps = (0.0,) if self.reduced_motion else self._TRAIL_STEPS
+        opac = (1.0,) if self.reduced_motion else self._TRAIL_OPACITY
         qp.save()
         for pt in self._particles:
-            phi = pt.phase + pt.speed * pt_time
-            sphi = math.sin(phi)
-            z = sphi * math.sin(pt.tilt)
-            if (z >= 0) != front:
-                continue
-            ro = pt.radius * R
-            x0 = math.cos(phi) * ro
-            y0 = sphi * ro * math.cos(pt.tilt)
-            co, so = math.cos(pt.orient), math.sin(pt.orient)
-            depth = (z + 1) / 2
-            side = pt.size * unit * (0.65 + 0.6 * depth) * 7.0
-            qp.setOpacity(0.20 + 0.70 * depth)
-            x = cx + x0 * co - y0 * so
-            y = cy + x0 * so + y0 * co
-            qp.drawImage(QRectF(x - side / 2, y - side / 2, side, side), spark)
+            for step, trail_op in zip(steps, opac):
+                phi = pt.phase + pt.speed * (pt_time + step * TAU)
+                sphi = math.sin(phi)
+                z = sphi * math.sin(pt.tilt)
+                if (z >= 0) != front:
+                    continue
+                ro = pt.radius * R
+                x0 = math.cos(phi) * ro
+                y0 = sphi * ro * math.cos(pt.tilt)
+                co, so = math.cos(pt.orient), math.sin(pt.orient)
+                depth = (z + 1) / 2
+                side = pt.size * unit * (0.65 + 0.6 * depth) * 7.0 * (1.0 - 0.25 * (1 - trail_op))
+                qp.setOpacity((0.20 + 0.70 * depth) * trail_op)
+                x = cx + x0 * co - y0 * so
+                y = cy + x0 * so + y0 * co
+                qp.drawImage(QRectF(x - side / 2, y - side / 2, side, side), spark)
         qp.restore()
 
     def _paint_spectrum(self, qp, c, rb, R, P, A, vis, lvl) -> None:
+        """Anillo de espectro — dato REAL (FFT del micrófono o del TTS, ver
+        `set_spectrum`), ya remuestreado/suavizado en `advance()`. Sin dato
+        (todavía no llegó ninguno) `_spectrum_smooth` decae a 0 solo: el
+        anillo se calla, nunca inventa una forma."""
         if vis < 0.02:
             return
-        n = _SPECTRUM_BARS
-        t = self._t
         cx, cy = c.x(), c.y()
         hw = 0.55 if R < 150 else 0.8  # separación de los 2 trazos que forman cada barra
         QLineF = QtCore.QLineF
-        sin = math.sin
+        sm = self._spectrum_smooth
         lines: list = []
         append = lines.append
         for i, (ca, sa) in enumerate(_SPEC_TRIG):
-            j = min(i, n - i)  # simetría espejo
-            shape = 0.5 + 0.5 * sin(j * 0.55 + t * 5.2) * sin(j * 0.21 - t * 3.1 + 1.3)
-            jitter = 0.5 + 0.5 * sin(t * (9.0 + (j % 7)) + j)
-            ln = R * (
-                0.012
-                + vis * (0.018 + 0.30 * lvl * (0.35 + 0.65 * shape) * (0.6 + 0.4 * jitter) + 0.022 * shape)
-            )
+            amp = sm[i] if i < len(sm) else 0.0
+            ln = R * (0.012 + vis * (0.018 + 0.19 * amp))
             x0, y0 = cx + ca * rb, cy + sa * rb
             x1, y1 = x0 + ca * ln, y0 + sa * ln
             ox, oy = -sa * hw, ca * hw
@@ -619,6 +729,87 @@ class OrbRenderer:
         qp.setPen(_hairline_brush(QtGui.QBrush(g)))
         qp.drawLines(lines)
         qp.setPen(Qt.PenStyle.NoPen)
+
+    def _paint_plasma(self, qp, c, Rr, P, A, core_k) -> None:
+        """Filamentos de plasma curvos girando dentro del núcleo (siempre
+        vivos, más lentos en reposo vía `motion`/`_def_t`)."""
+        if Rr < 30:
+            return
+        t = self._def_t
+        cx, cy = c.x(), c.y()
+        steps = 10
+        for i, (ph0, spd, ph1) in enumerate(self._plasma):
+            pts = []
+            for k in range(steps + 1):
+                u = TAU * k / steps
+                rx = Rr * (0.30 + 0.14 * math.sin(u * 2 + ph1))
+                ang = u + ph0 + t * spd
+                x = cx + math.cos(ang) * rx * (0.9 + 0.25 * math.sin(u * 3 - t * 1.3))
+                y = cy + math.sin(ang) * rx * 0.62 * (0.9 + 0.25 * math.cos(u * 2 + t * 0.9))
+                pts.append(QPointF(x, y))
+            path = QtGui.QPainterPath()
+            path.moveTo(pts[0])
+            for k in range(1, len(pts) - 1):
+                mid = QPointF((pts[k].x() + pts[k + 1].x()) / 2, (pts[k].y() + pts[k + 1].y()) / 2)
+                path.quadTo(pts[k], mid)
+            path.closeSubpath()
+            colr = P if i % 2 == 0 else A
+            glow = _hairline(_col(colr, 0.10 * core_k))
+            glow.setWidthF(3.0)
+            qp.setPen(glow)
+            qp.drawPath(path)
+            qp.setPen(_hairline(_col((235, 250, 255), 0.20 * core_k)))
+            qp.drawPath(path)
+
+    def _paint_arcs(self, qp, c, R, Rr, A) -> None:
+        """Arcos eléctricos breves núcleo→borde (PROCESANDO, 3-5/s, ~150 ms)."""
+        if not self._arcs:
+            return
+        cx, cy = c.x(), c.y()
+        qp.save()
+        qp.setCompositionMode(Plus)
+        qp.setBrush(Qt.BrushStyle.NoBrush)
+        for born, ang0, ang1, seed in self._arcs:
+            k = _clamp((self._t - born) / self.ARC_LIFE)
+            fade = (1 - k) ** 1.6
+            if fade < 0.02:
+                continue
+            rnd = random.Random(seed)
+            segs = 5
+            path = QtGui.QPainterPath()
+            r0, r1 = Rr * 0.98, R * 1.05
+            a0, a1 = math.radians(ang0), math.radians(ang1)
+            for si in range(segs + 1):
+                u = si / segs
+                r = r0 + (r1 - r0) * u
+                ang = a0 + (a1 - a0) * u + math.radians(rnd.uniform(-9, 9)) * math.sin(u * math.pi)
+                x, y = cx + math.cos(ang) * r, cy - math.sin(ang) * r
+                path.lineTo(x, y) if si else path.moveTo(x, y)
+            pen = _hairline(_col(A, 0.85 * fade))
+            pen.setWidthF(1.6)
+            qp.setPen(pen)
+            qp.drawPath(path)
+            pen2 = _hairline(_col((240, 250, 255), 0.9 * fade))
+            qp.setPen(pen2)
+            qp.drawPath(path)
+        qp.restore()
+
+    def _paint_flash(self, qp, c, R, A) -> None:
+        """Destello + onda al cambiar de estado o detectar la wake word."""
+        k = self._t - self._flash_ts
+        if k < 0 or k >= self.FLASH_LIFE:
+            return
+        fade = (1 - k / self.FLASH_LIFE) ** 2
+        qp.save()
+        qp.setCompositionMode(Plus)
+        g = QtGui.QRadialGradient(c, R * 1.05)
+        g.setColorAt(0.0, _col(A, 0.55 * fade))
+        g.setColorAt(0.5, _col(A, 0.18 * fade))
+        g.setColorAt(1.0, _col(A, 0.0))
+        qp.setPen(Qt.PenStyle.NoPen)
+        qp.setBrush(g)
+        qp.drawEllipse(c, R * 1.05, R * 1.05)
+        qp.restore()
 
     def _blob_path(self, c, Rr, deform, lvl) -> QtGui.QPainterPath:
         """Contorno orgánico del núcleo (suma de senos + reacción al audio)."""
@@ -657,7 +848,13 @@ class OrbRenderer:
         qp.scale(k, k)
         cx = cy = half
         c = QPointF(cx, cy)
-        core = p["core"] * (1.0 + 0.25 * lvl)
+        # parpadeo leve del núcleo (reposo/siempre): ruido barato de dos
+        # senos, no una animación de "amplitud" real — pura textura de vida.
+        flicker = 1.0
+        if not self.reduced_motion:
+            fn = math.sin(self._t * 13.7 + self._flicker_seed) * math.sin(self._t * 5.3 + self._flicker_seed * 0.7)
+            flicker = 1.0 + 0.035 * fn
+        core = p["core"] * (1.0 + 0.25 * lvl) * flicker * (1.0 + 0.20 * self._hover_k)
 
         base = QtGui.QRadialGradient(QPointF(cx - Rr * 0.16, cy - Rr * 0.2), Rr * 1.2)
         base.setColorAt(0.0, _col((S[0] * 0.75, S[1] * 0.75, S[2] * 0.85), 1.0))
@@ -681,6 +878,8 @@ class OrbRenderer:
             g.setColorAt(1.0, _col(colr, 0.0))
             qp.setBrush(g)
             qp.drawEllipse(gp, rad, rad)
+
+        self._paint_plasma(qp, c, Rr, P, A, core)
 
         sw = QtGui.QConicalGradient(c, (self._ring * 22.0) % 360)
         stripes = 18
@@ -746,6 +945,7 @@ class OrbWidget(QtWidgets.QWidget):
     """Widget animado del orbe. Transparente: se dibuja sobre el fondo del padre."""
 
     stateChanged = Signal(str)
+    clicked = Signal()  # push-to-talk: mismo handler que el botón de micrófono
 
     IDLE_FPS = 30  # reposo: movimiento lento, 30 fps se ven fluidos y cuestan la mitad
     BACKGROUND_FPS = 20  # reposo + ventana sin foco
@@ -757,6 +957,9 @@ class OrbWidget(QtWidgets.QWidget):
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self.setMinimumSize(240, 240)
         self.setAccessibleName("Orbe de estado de JARVIS")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Clic para hablar  (push-to-talk)")
+        self.setMouseTracking(True)
 
         self._renderer = OrbRenderer()
         self._renderer.reduced_motion = os.environ.get("JARVIS_REDUCED_MOTION", "") == "1"
@@ -790,6 +993,17 @@ class OrbWidget(QtWidgets.QWidget):
     def set_level(self, level: float) -> None:
         """Nivel de audio 0..1 (RMS normalizado). Seguro a alta frecuencia."""
         self._renderer.set_level(level)
+
+    def set_spectrum(self, bands: Optional[list]) -> None:
+        """Espectro real 0..1 (FFT del micrófono o del TTS). `None`/vacío
+        apaga el anillo — nunca se inventa una forma sintética."""
+        self._renderer.set_spectrum(bands)
+
+    def flash(self) -> None:
+        """Destello + onda de choque (~400 ms) sin cambiar de estado — para
+        la wake word, que no tiene un OrbState propio."""
+        self._renderer.flash()
+        self.update()
 
     def set_reduced_motion(self, enabled: bool) -> None:
         self._renderer.reduced_motion = bool(enabled)
@@ -863,3 +1077,17 @@ class OrbWidget(QtWidgets.QWidget):
 
     def sizeHint(self) -> QtCore.QSize:
         return QtCore.QSize(520, 520)
+
+    # ── Interacción: hover (+20% de brillo) y clic (push-to-talk) ──────────
+    def enterEvent(self, event: QtCore.QEvent) -> None:  # noqa: N802
+        self._renderer.set_hover(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:  # noqa: N802
+        self._renderer.set_hover(False)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)

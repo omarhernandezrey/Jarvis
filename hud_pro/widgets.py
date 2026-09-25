@@ -65,6 +65,54 @@ def make_icon(kind: str, color: str = theme.TEXT, size: int = 20) -> QtGui.QIcon
         qp.drawLine(QPointF(s * 0.22, s * 0.32), QPointF(s * 0.40, s * 0.50))
         qp.drawLine(QPointF(s * 0.40, s * 0.50), QPointF(s * 0.22, s * 0.68))
         qp.drawLine(QPointF(s * 0.48, s * 0.70), QPointF(s * 0.78, s * 0.70))
+    elif kind == "tool":
+        pen.setWidthF(1.9)
+        qp.setPen(pen)
+        qp.drawLine(QPointF(s * 0.30, s * 0.70), QPointF(s * 0.62, s * 0.38))
+        path = QtGui.QPainterPath()
+        path.addEllipse(QRectF(s * 0.56, s * 0.14, s * 0.30, s * 0.30))
+        qp.drawPath(path)
+        qp.drawLine(QPointF(s * 0.18, s * 0.82), QPointF(s * 0.30, s * 0.70))
+    elif kind == "check":
+        pen.setWidthF(2.0)
+        qp.setPen(pen)
+        qp.drawLine(QPointF(s * 0.20, s * 0.52), QPointF(s * 0.42, s * 0.74))
+        qp.drawLine(QPointF(s * 0.42, s * 0.74), QPointF(s * 0.82, s * 0.26))
+    elif kind == "error":
+        pen.setWidthF(2.0)
+        qp.setPen(pen)
+        qp.drawLine(QPointF(s * 0.24, s * 0.24), QPointF(s * 0.76, s * 0.76))
+        qp.drawLine(QPointF(s * 0.76, s * 0.24), QPointF(s * 0.24, s * 0.76))
+    elif kind == "memory":
+        qp.drawRoundedRect(QRectF(s * 0.18, s * 0.18, s * 0.64, s * 0.64), s * 0.10, s * 0.10)
+        qp.drawLine(QPointF(s * 0.32, s * 0.40), QPointF(s * 0.68, s * 0.40))
+        qp.drawLine(QPointF(s * 0.32, s * 0.58), QPointF(s * 0.68, s * 0.58))
+    elif kind == "new":
+        pen.setWidthF(2.0)
+        qp.setPen(pen)
+        qp.drawLine(QPointF(s * 0.5, s * 0.18), QPointF(s * 0.5, s * 0.82))
+        qp.drawLine(QPointF(s * 0.18, s * 0.5), QPointF(s * 0.82, s * 0.5))
+    elif kind == "mute":
+        qp.drawRoundedRect(QRectF(s * 0.20, s * 0.36, s * 0.22, s * 0.28), s * 0.04, s * 0.04)
+        path = QtGui.QPainterPath()
+        path.moveTo(s * 0.42, s * 0.36)
+        path.lineTo(s * 0.64, s * 0.20)
+        path.lineTo(s * 0.64, s * 0.80)
+        path.lineTo(s * 0.42, s * 0.64)
+        path.closeSubpath()
+        qp.drawPath(path)
+        pen.setWidthF(1.8)
+        qp.setPen(pen)
+        qp.drawLine(QPointF(s * 0.72, s * 0.36), QPointF(s * 0.88, s * 0.64))
+        qp.drawLine(QPointF(s * 0.88, s * 0.36), QPointF(s * 0.72, s * 0.64))
+    elif kind == "wake":
+        pen.setWidthF(1.6)
+        qp.setPen(pen)
+        bars = (0.30, 0.55, 0.75, 0.55, 0.30)
+        for i, hfrac in enumerate(bars):
+            x = s * (0.20 + i * 0.15)
+            h = s * hfrac
+            qp.drawLine(QPointF(x, s * 0.5 - h / 2), QPointF(x, s * 0.5 + h / 2))
     qp.end()
     return QtGui.QIcon(pm)
 
@@ -215,6 +263,157 @@ class StatusChip(QtWidgets.QFrame):
         return self._label.text()
 
 
+class _PulseDot(_Dot):
+    """Punto que late (opacidad oscilante) mientras el servicio trabaja de
+    verdad — no decorativo: lo enciende/apaga `HudBridge.set_service_active`."""
+
+    def __init__(self, color: str, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(color, parent)
+        self._active = False
+        self._phase = 0.0
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._tick)
+
+    def set_active(self, active: bool) -> None:
+        active = bool(active)
+        if active == self._active:
+            return
+        self._active = active
+        if active:
+            self._timer.start(40)
+        else:
+            self._timer.stop()
+            self.update()
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 0.12) % (2 * math.pi)
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        if not self._active:
+            super().paintEvent(event)
+            return
+        qp = QtGui.QPainter(self)
+        qp.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        qp.setPen(Qt.PenStyle.NoPen)
+        c = QPointF(self.width() / 2, self.height() / 2)
+        k = 0.5 + 0.5 * math.sin(self._phase)
+        glow = QtGui.QColor(self._color)
+        glow.setAlpha(int(40 + 60 * k))
+        qp.setBrush(glow)
+        qp.drawEllipse(c, 6.5 + 2.0 * k, 6.5 + 2.0 * k)
+        qp.setBrush(self._color)
+        qp.drawEllipse(c, 3.2, 3.2)
+        qp.end()
+
+
+class ServiceChip(QtWidgets.QFrame):
+    """Chip de un servicio real (mic/wake/tts/memoria): ícono + etiqueta +
+    punto que late si está trabajando. Sólo se muestra si el dato existe."""
+
+    def __init__(self, icon_kind: str, label: str, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ServiceChip")
+        self.setFixedHeight(24)
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(7, 0, 9, 0)
+        lay.setSpacing(5)
+        self._icon = QtWidgets.QLabel(self)
+        self._icon.setPixmap(make_icon(icon_kind, theme.TEXT_DIM, 13).pixmap(13, 13))
+        self._label = QtWidgets.QLabel(label, self)
+        self._label.setObjectName("ServiceChipLabel")
+        self._dot = _PulseDot(theme.TEXT_MUTED, self)
+        lay.addWidget(self._icon)
+        lay.addWidget(self._label)
+        lay.addWidget(self._dot)
+        self.setVisible(False)
+
+    def set_state(self, *, on: Optional[bool] = None, active: bool = False, tip: str = "") -> None:
+        """`on=None` → dato desconocido (chip oculto: no se inventa). `on`
+        real → color según disponibilidad; `active` → el punto late."""
+        if on is None:
+            self.setVisible(False)
+            return
+        self.setVisible(True)
+        self._dot.set_color(theme.ACCENT if on else theme.TEXT_MUTED)
+        self._dot.set_active(active and on)
+        if tip:
+            self.setToolTip(tip)
+
+    def is_active(self) -> bool:
+        return self._dot._active
+
+    def set_active(self, active: bool) -> None:
+        if self.isVisible():
+            self._dot.set_active(active)
+
+
+class Toast(QtWidgets.QFrame):
+    """Aviso no intrusivo (error/recordatorio/info) que se apaga solo a los
+    5 s. `kind='error'` es lo único que sale del azul/cian (rojo)."""
+
+    LIFETIME_MS = 5000
+
+    def __init__(self, message: str, kind: str, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("Toast")
+        self.setProperty("kind", kind)
+        self.setMaximumWidth(360)
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(12, 8, 12, 8)
+        label = QtWidgets.QLabel(message, self)
+        label.setObjectName("ToastText")
+        label.setWordWrap(True)
+        lay.addWidget(label)
+
+        effect = QtWidgets.QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(effect)
+        self._in = QtCore.QPropertyAnimation(effect, b"opacity", self)
+        self._in.setDuration(180)
+        self._in.setStartValue(0.0)
+        self._in.setEndValue(1.0)
+        self._in.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        self._in.start()
+        self._effect = effect
+
+        QtCore.QTimer.singleShot(self.LIFETIME_MS, self._dismiss)
+
+    def _dismiss(self) -> None:
+        out = QtCore.QPropertyAnimation(self._effect, b"opacity", self)
+        out.setDuration(220)
+        out.setStartValue(1.0)
+        out.setEndValue(0.0)
+        out.finished.connect(self.deleteLater)
+        out.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+        self._out = out
+
+
+class ToastOverlay(QtWidgets.QWidget):
+    """Contenedor flotante (esquina superior derecha) que no participa del
+    layout: se posiciona a mano sobre el resto de la ventana."""
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        lay.addStretch(1)  # los toasts se apilan desde abajo del contenedor
+        self._layout = lay
+
+    def add(self, message: str, kind: str) -> None:
+        toast = Toast(message, kind, self)
+        toast.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self._layout.addWidget(toast)
+        toast.destroyed.connect(lambda: None)
+
+    def reposition(self, parent_rect: QtCore.QRect) -> None:
+        w = 360
+        margin = 16
+        self.setGeometry(parent_rect.width() - w - margin, margin, w, parent_rect.height() - 2 * margin)
+        self.raise_()
+
+
 class _MiniOrb(QtWidgets.QWidget):
     """Logotipo: mini orbe estático."""
 
@@ -277,10 +476,33 @@ class TopBar(QtWidgets.QWidget):
         self.model_label.setVisible(False)
         lay.addWidget(self.model_label)
 
+        # Ollama: único punto verde/rojo del HUD (pedido así explícitamente
+        # para este indicador — el resto de la paleta se queda en azul/cian).
+        self.ollama_dot = _Dot(theme.TEXT_MUTED, self)
+        self.ollama_label = QtWidgets.QLabel("", self)
+        self.ollama_label.setObjectName("Metric")
+        self.ollama_label.setVisible(False)
+        self.ollama_dot.setVisible(False)
+        lay.addWidget(self.ollama_dot)
+        lay.addWidget(self.ollama_label)
+
+        # tokens/s + tiempo al primer token: sólo tienen sentido durante una
+        # respuesta en curso — se ocultan en cuanto no hay dato reciente.
+        self.speed_label = QtWidgets.QLabel("", self)
+        self.speed_label.setObjectName("Metric")
+        self.speed_label.setVisible(False)
+        lay.addWidget(self.speed_label)
+
         self.metrics_label = QtWidgets.QLabel("", self)
         self.metrics_label.setObjectName("Metric")
         self.metrics_label.setVisible(psutil is not None)
         lay.addWidget(self.metrics_label)
+
+        # VRAM (nvidia-smi): sólo aparece si la máquina de verdad lo tiene.
+        self.vram_label = QtWidgets.QLabel("", self)
+        self.vram_label.setObjectName("Metric")
+        self.vram_label.setVisible(False)
+        lay.addWidget(self.vram_label)
         lay.addWidget(_divider(self))
 
         self.chip = StatusChip(self)
@@ -302,6 +524,49 @@ class TopBar(QtWidgets.QWidget):
         name = (name or "").strip()
         self.model_label.setText(f"MODELO  {name}" if name else "")
         self.model_label.setVisible(bool(name))
+
+    def update_metrics(self, data: dict) -> None:
+        """Datos reales del backend (Ollama, tokens/s, ttft, VRAM). Una
+        clave ausente no toca lo que ya se mostraba; `None` explícito oculta
+        ese campo — nunca se rellena con un valor inventado."""
+        if "online" in data:
+            online = data["online"]
+            if online is None:
+                self.ollama_dot.setVisible(False)
+                self.ollama_label.setVisible(False)
+            else:
+                self.ollama_dot.set_color("#22C55E" if online else theme.DANGER)
+                self.ollama_dot.setVisible(True)
+                ping = data.get("pingMs")
+                text = "OLLAMA" + (f"  {ping} ms" if online and ping is not None else "")
+                self.ollama_label.setText(text)
+                self.ollama_label.setStyleSheet(
+                    f"color: {'#22C55E' if online else theme.DANGER};"
+                )
+                self.ollama_label.setVisible(True)
+        if "tokensPerSecond" in data or "ttftMs" in data:
+            tps = data.get("tokensPerSecond")
+            ttft = data.get("ttftMs")
+            bits = []
+            if tps:
+                bits.append(f"{tps:.0f} tok/s")
+            if ttft:
+                bits.append(f"{ttft:.0f} ms al primer token")
+            self.speed_label.setText("  ·  ".join(bits))
+            self.speed_label.setVisible(bool(bits))
+        if "vramUsedMb" in data:
+            vram = data.get("vramUsedMb")
+            total = data.get("vramTotalMb")
+            if vram is None:
+                self.vram_label.setVisible(False)
+            else:
+                text = f"VRAM {vram:.0f}"
+                if total:
+                    text += f"/{total:.0f} MB"
+                else:
+                    text += " MB"
+                self.vram_label.setText(text)
+                self.vram_label.setVisible(True)
 
     def _refresh(self) -> None:
         self.clock.setText(time.strftime("%H:%M"))
@@ -348,6 +613,7 @@ class StatusBlock(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed
         )
         self.transcript.setFixedHeight(QtGui.QFontMetrics(f).lineSpacing() * 2 + 4)
+        self.transcript.setVisible(False)  # vacía al arrancar: no reserva alto
 
         lay.addWidget(self.title)
         lay.addWidget(self.hint)
@@ -369,3 +635,6 @@ class StatusBlock(QtWidgets.QWidget):
         if len(text) > self.MAX_TRANSCRIPT:
             text = "…" + text[-self.MAX_TRANSCRIPT :]
         self.transcript.setText(f"“{text}”" if text else "")
+        # Vacía = no reserva alto (capa bajo el orbe, no una franja fija
+        # esperando texto): un widget oculto no ocupa espacio en el layout.
+        self.transcript.setVisible(bool(text))

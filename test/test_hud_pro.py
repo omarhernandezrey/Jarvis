@@ -208,8 +208,16 @@ def test_layout_orb_and_chat_centered(qapp, win, size):
     assert abs(orb_c.x() - cx) <= 2
     assert abs(chat_cx - cx) <= 2
     assert win.chat.width() <= CHAT_MAX_WIDTH
-    assert HudWindow.CHAT_MIN_HEIGHT <= win.chat.height() <= HudWindow.CHAT_MAX_HEIGHT
+    # Consola compacta por defecto (~150 px); expandida cae en el rango viejo.
+    if win._console_expanded:
+        assert HudWindow.CHAT_MIN_HEIGHT <= win.chat.height() <= HudWindow.CHAT_MAX_HEIGHT
+    else:
+        assert win.chat.height() == HudWindow.CHAT_COMPACT_HEIGHT
     assert win.orb.height() >= 240
+    # El orbe ocupa al menos el 55% del alto de la ventana (compacta, el
+    # modo por defecto — con la consola expandida puede ceder algo de sitio).
+    if not win._console_expanded:
+        assert win.orb.height() >= round(win.height() * HudWindow.STAGE_MIN_FRACTION) - 2
 
 
 def test_state_propagates_to_all_indicators(qapp, win):
@@ -381,3 +389,189 @@ def test_screenshot_grab_not_blank(qapp, win):
     img = win.grab().toImage()
     c = QtGui.QColor(img.pixel(win.orb.mapTo(win, win.orb.rect().center())))
     assert c.lightness() > 100
+
+
+# ── Orbe vivo: espectro real, radio mínimo, hover/clic ──────────────────────
+def test_set_spectrum_real_data_drives_the_ring_no_synthetic_shape():
+    r = OrbRenderer()
+    r.set_state(OrbState.LISTENING)
+    r.snap()
+    # sin dato real: el anillo no inventa una forma, decae a 0
+    for _ in range(90):
+        r.advance(1 / 60)
+    assert max(r._spectrum_smooth) < 0.02
+
+    # banda 0 al máximo, el resto en silencio: sólo esa banda debe destacar.
+    # set_spectrum() se llama cada frame, como en el uso real (VoiceService
+    # emite `audio` por cada bloque de audio, ~decenas de Hz) — así nunca
+    # vence el LEVEL_TIMEOUT que apaga el anillo sin dato reciente.
+    bands = [0.0] * 48
+    bands[0] = 1.0
+    for _ in range(30):
+        r.set_spectrum(bands)
+        r.advance(1 / 60)
+    assert r._spectrum_smooth[0] > 0.5
+    assert r._spectrum_smooth[-1] < 0.1
+
+
+def test_set_spectrum_none_or_empty_turns_the_ring_off():
+    r = OrbRenderer()
+    r.set_spectrum([0.9] * 48)
+    for _ in range(20):
+        r.advance(1 / 60)
+    assert max(r._spectrum_smooth) > 0.3
+    r.set_spectrum(None)
+    for _ in range(60):
+        r.advance(1 / 60)
+    assert max(r._spectrum_smooth) < 0.02
+
+
+def test_set_spectrum_rejects_nan_without_crashing():
+    r = OrbRenderer()
+    r.set_spectrum([0.5, float("nan"), 0.3])
+    r.advance(1 / 60)  # no debe lanzar
+
+
+@pytest.mark.parametrize(
+    "size,min_diameter",
+    [((1920, 1080), 340), ((1366, 768), 220)],
+)
+def test_orb_minimum_diameter_by_resolution(qapp, win, size, min_diameter):
+    """Consola compacta (por defecto): el orbe alcanza el diámetro mínimo
+    pedido para cada resolución de referencia."""
+    assert not win._console_expanded
+    win.resize(*size)
+    pump(qapp, 100)
+    diameter = win.orb.orb_radius() * 2
+    assert diameter >= min_diameter, f"{size}: diámetro {diameter:.0f}px < {min_diameter}px"
+
+
+def test_orb_occupies_at_least_55_percent_of_window_height_when_compact(qapp, win):
+    win.resize(1920, 1080)
+    pump(qapp, 100)
+    assert win.orb.height() >= round(win.height() * HudWindow.STAGE_MIN_FRACTION) - 2
+
+
+## `QSettings("JarvisLocal", "hud_pro")` escribe a un archivo REAL y
+## compartido por todo el proceso de tests (aislado por el sandbox de
+## test/conftest.py, pero no entre tests entre sí): cualquier test que
+## cambie "console/expanded" tiene que devolverlo a False, o contamina la
+## suposición "compacta por defecto" de los tests que corren después.
+@pytest.fixture(autouse=True)
+def _console_default_settings():
+    """autouse: se resuelve ANTES que `win` sin depender del orden de los
+    parámetros de cada test — si no, un test que deja "expanded" en el
+    archivo real de QSettings podría contaminar el `HudWindow()` que la
+    fixture `win` construye para el test siguiente."""
+    QtCore.QSettings("JarvisLocal", "hud_pro").setValue("console/expanded", False)
+    yield
+    QtCore.QSettings("JarvisLocal", "hud_pro").setValue("console/expanded", False)
+
+
+# ── Consola: compacta / expandida ────────────────────────────────────────────
+def test_console_compact_by_default_and_ctrl_j_toggles(qapp, win):
+    assert not win._console_expanded
+    assert win.chat.height() == HudWindow.CHAT_COMPACT_HEIGHT
+    win.toggle_console_mode()
+    pump(qapp, 400)  # deja correr la animación de 250ms
+    assert win._console_expanded
+    assert win.chat.height() > HudWindow.CHAT_COMPACT_HEIGHT
+    win.toggle_console_mode()
+    pump(qapp, 400)
+    assert not win._console_expanded
+    assert win.chat.height() == HudWindow.CHAT_COMPACT_HEIGHT
+
+
+def test_console_header_click_toggles_mode(qapp, win):
+    assert not win._console_expanded
+    win.chat.header_clicked.emit()
+    pump(qapp, 400)
+    assert win._console_expanded
+
+
+def test_console_mode_persists_via_qsettings(qapp):
+    w1 = HudWindow()
+    assert not w1._console_expanded
+    w1.toggle_console_mode()
+    assert w1._console_expanded
+    w1.close()
+    w1.deleteLater()
+
+    w2 = HudWindow()
+    assert w2._console_expanded, "la preferencia expandida debía sobrevivir vía QSettings"
+    w2.close()
+    w2.deleteLater()
+
+
+# ── Tarjeta de actividad de herramienta ──────────────────────────────────────
+def test_tool_card_shows_running_then_real_result(qapp, win):
+    win.tool_start("clima")
+    assert win.chat._tool_card is not None
+    assert win.chat._tool_card.property("state") == "running"
+
+    win.tool_end("clima", 342.0, True)
+    assert win.chat._tool_card is None  # se cierra: ya no es "la tarjeta activa"
+
+
+def test_tool_card_error_state_shows_ms_and_error_label(qapp, win):
+    win.tool_start("abrir_app")
+    card = win.chat._tool_card
+    card.finish(88.0, False)
+    assert card.property("state") == "error"
+    assert "88" in card._status.text()
+    assert "error" in card._status.text()
+
+
+def test_tool_start_ends_any_open_stream_first(qapp, win):
+    win.stream_assistant("parcial")
+    assert win.chat.is_streaming()
+    win.tool_start("clima")
+    assert not win.chat.is_streaming()
+
+
+# ── Interacción del orbe: hover y clic (push-to-talk) ────────────────────────
+def test_orb_click_triggers_mic_button_same_handler(qapp, win):
+    HudBridge(win)  # conecta orb.clicked -> chat.input.mic.click()
+    toggles: list[bool] = []
+    win.mic_toggled.connect(toggles.append)
+    assert not win.chat.input.mic.isChecked()
+    win.orb.clicked.emit()
+    assert win.chat.input.mic.isChecked()
+    assert toggles == [True]
+
+
+def test_orb_hover_boosts_brightness():
+    r = OrbRenderer()
+    r.set_hover(True)
+    for _ in range(30):
+        r.advance(1 / 60)
+    assert r._hover_k > 0.8
+    r.set_hover(False)
+    for _ in range(30):
+        r.advance(1 / 60)
+    assert r._hover_k < 0.1
+
+
+def test_orb_has_pointing_cursor_and_tooltip():
+    w = OrbWidget()
+    assert w.cursor().shape() == QtCore.Qt.CursorShape.PointingHandCursor
+    assert w.toolTip()
+    w.deleteLater()
+
+
+# ── Flash / onda de choque en cambios de estado ──────────────────────────────
+def test_state_change_triggers_flash_and_shockwave():
+    r = OrbRenderer()
+    r.set_state(OrbState.LISTENING)
+    assert r._flash_ts == r._t  # el flash se marca en el instante del cambio
+    assert r._ripples  # y dispara una onda
+
+
+def test_reduced_motion_suppresses_arcs_and_ripples():
+    r = OrbRenderer()
+    r.reduced_motion = True
+    r.set_state(OrbState.THINKING)  # arcs=4.0 en THINKING
+    for _ in range(120):
+        r.advance(1 / 60)
+    assert r._arcs == []
+    assert r._ripples == []

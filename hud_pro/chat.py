@@ -15,6 +15,23 @@ MAX_MESSAGES = 300
 SUBMIT_MIN_INTERVAL_MS = 300
 STREAM_RENDER_MS = 45
 
+def _fade_slide_in(widget: QtWidgets.QWidget) -> None:
+    """Entrada sutil de mensajes/tarjetas nuevas: fade ~180 ms (OutCubic).
+    Sin deslizamiento de posición real: un QWidget dentro de un QVBoxLayout
+    pelea con cualquier animación de `pos`/`geometry` (el layout la
+    reafirma en cada pasada) — el fade solo es la versión robusta."""
+    effect = QtWidgets.QGraphicsOpacityEffect(widget)
+    widget.setGraphicsEffect(effect)
+    anim = QtCore.QPropertyAnimation(effect, b"opacity", widget)
+    anim.setDuration(180)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+    anim.finished.connect(lambda: widget.setGraphicsEffect(None))
+    anim.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+    widget._fade_anim = anim  # referencia fuerte: si no, el GC la corta a medias
+
+
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _ANCHOR_RE = re.compile(r'<a\s+href="([^"]*)"\s*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
@@ -142,6 +159,85 @@ class MessageBubble(QtWidgets.QFrame):
             QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
 
 
+class _Spinner(QtWidgets.QWidget):
+    """Spinner giratorio (sin porcentaje: no hay progreso real que mostrar,
+    sólo que la herramienta está corriendo)."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(14, 14)
+        self._angle = 0.0
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(33)
+
+    def _tick(self) -> None:
+        self._angle = (self._angle + 18) % 360
+        self.update()
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        qp = QtGui.QPainter(self)
+        qp.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        pen = QtGui.QPen(QtGui.QColor(theme.ACCENT))
+        pen.setWidthF(1.8)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        qp.setPen(pen)
+        r = QtCore.QRectF(1.5, 1.5, self.width() - 3, self.height() - 3)
+        qp.drawArc(r, int(-self._angle * 16), int(230 * 16))
+        qp.end()
+
+
+class ToolCard(QtWidgets.QFrame):
+    """Actividad de herramienta en vivo: ícono + nombre + spinner mientras
+    corre → duración real + resultado ok/error al terminar. Dato real: la
+    duración y el resultado vienen de HudBridge.tool_end(), no se inventan."""
+
+    def __init__(self, name: str, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ToolCard")
+        self.setProperty("state", "running")
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setSpacing(8)
+
+        self._icon = QtWidgets.QLabel(self)
+        self._icon.setPixmap(make_icon("tool", theme.ACCENT, 16).pixmap(16, 16))
+        lay.addWidget(self._icon)
+
+        self._name = QtWidgets.QLabel(name or "herramienta", self)
+        self._name.setObjectName("ToolCardName")
+        self._name.setFont(theme.font(theme.FONT_MONO, 12, QtGui.QFont.Weight.Medium))
+        lay.addWidget(self._name)
+        lay.addStretch(1)
+
+        self._spinner = _Spinner(self)
+        lay.addWidget(self._spinner)
+
+        self._status = QtWidgets.QLabel("", self)
+        self._status.setObjectName("ToolCardStatus")
+        self._status.setFont(theme.font(theme.FONT_MONO, 11))
+        self._status.setVisible(False)
+        lay.addWidget(self._status)
+
+    def finish(self, ms: float, ok: bool) -> None:
+        self._spinner.stop()
+        self._spinner.setVisible(False)
+        self.setProperty("state", "ok" if ok else "error")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        icon_kind = "check" if ok else "error"
+        self._icon.setPixmap(
+            make_icon(icon_kind, theme.ACCENT if ok else theme.DANGER, 16).pixmap(16, 16)
+        )
+        label = "ok" if ok else "error"
+        self._status.setText(f"{ms:.0f} ms · {label}")
+        self._status.setStyleSheet(f"color: {theme.ACCENT if ok else theme.DANGER};")
+        self._status.setVisible(True)
+
+
 class ChatView(QtWidgets.QScrollArea):
     """Lista de mensajes con autoscroll inteligente (no roba el scroll si el usuario subió)."""
 
@@ -197,7 +293,22 @@ class ChatView(QtWidgets.QScrollArea):
         self._bubbles.append(bubble)
         self._apply_widths(bubble)
         self._trim()
+        _fade_slide_in(bubble)
         return bubble
+
+    def add_tool_card(self, name: str) -> ToolCard:
+        """Tarjeta viva de actividad de herramienta — no es un mensaje (no
+        entra en `bubbles`/history), sólo actividad visible en la consola."""
+        self._empty.setVisible(False)
+        card = ToolCard(name, self._list)
+        row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(card, 1)
+        holder = QtWidgets.QWidget(self._list)
+        holder.setLayout(row)
+        self._layout.addWidget(holder)
+        _fade_slide_in(card)
+        return card
 
     def clear(self) -> None:
         for b in self._bubbles:
@@ -355,12 +466,26 @@ class InputBar(QtWidgets.QFrame):
         return super().eventFilter(obj, event)
 
 
+class _ClickableBar(QtWidgets.QWidget):
+    """Encabezado clicable: alterna consola compacta/expandida (Ctrl+J hace
+    lo mismo). Los hijos (botón de limpiar) consumen su propio clic antes de
+    que llegue aquí — Qt no lo propaga si el hijo lo aceptó."""
+
+    clicked = Signal()
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
 class ChatPanel(QtWidgets.QFrame):
     """Panel de consola centrado con ancho máximo controlado."""
 
     submitted = Signal(str)
     mic_toggled = Signal(bool)
     cleared = Signal()
+    header_clicked = Signal()
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -374,14 +499,21 @@ class ChatPanel(QtWidgets.QFrame):
         lay.setContentsMargins(16, 12, 14, 14)
         lay.setSpacing(10)
 
-        head = QtWidgets.QHBoxLayout()
+        head_widget = _ClickableBar(self)
+        head_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        head_widget.setToolTip("Consola compacta / expandida  (Ctrl+J)")
+        head_widget.clicked.connect(self.header_clicked.emit)
+        head = QtWidgets.QHBoxLayout(head_widget)
+        head.setContentsMargins(0, 0, 0, 0)
         head.setSpacing(10)
-        title = QtWidgets.QLabel("CONSOLA", self)
+        title = QtWidgets.QLabel("CONSOLA", head_widget)
         title.setObjectName("PanelTitle")
         title.setFont(theme.font(theme.FONT_DISPLAY, 10, QtGui.QFont.Weight.DemiBold, 3.0))
-        self.meta = QtWidgets.QLabel("", self)
+        self.meta = QtWidgets.QLabel("", head_widget)
         self.meta.setObjectName("PanelMeta")
-        self.clear_btn = QtWidgets.QToolButton(self)
+        self.mode_chevron = QtWidgets.QLabel("▾", head_widget)
+        self.mode_chevron.setObjectName("PanelMeta")
+        self.clear_btn = QtWidgets.QToolButton(head_widget)
         self.clear_btn.setObjectName("IconButton")
         self.clear_btn.setIcon(make_icon("trash", theme.TEXT_DIM, 16))
         self.clear_btn.setIconSize(QtCore.QSize(16, 16))
@@ -393,8 +525,9 @@ class ChatPanel(QtWidgets.QFrame):
         head.addWidget(title)
         head.addWidget(self.meta)
         head.addStretch(1)
+        head.addWidget(self.mode_chevron)
         head.addWidget(self.clear_btn)
-        lay.addLayout(head)
+        lay.addWidget(head_widget)
 
         sep = QtWidgets.QFrame(self)
         sep.setObjectName("PanelSeparator")
@@ -409,6 +542,7 @@ class ChatPanel(QtWidgets.QFrame):
         lay.addWidget(self.input)
 
         self._stream: Optional[MessageBubble] = None
+        self._tool_card: Optional[ToolCard] = None
         self._update_meta()
 
     # API
@@ -420,6 +554,18 @@ class ChatPanel(QtWidgets.QFrame):
         bubble = self.view.add(role, text)
         self._update_meta()
         return bubble
+
+    def tool_start(self, name: str) -> None:
+        """Arranca la tarjeta viva de la herramienta que JARVIS está usando."""
+        self.end_stream()
+        self._tool_card = self.view.add_tool_card(name)
+        self._update_meta()
+
+    def tool_end(self, name: str, ms: float, ok: bool) -> None:
+        """Cierra la tarjeta con la duración real y el resultado."""
+        if self._tool_card is not None:
+            self._tool_card.finish(ms, ok)
+            self._tool_card = None
 
     def stream(self, chunk: str) -> None:
         if self._stream is None:
@@ -447,3 +593,13 @@ class ChatPanel(QtWidgets.QFrame):
     def _update_meta(self) -> None:
         n = len(self.view.bubbles)
         self.meta.setText(f"· {n} mensaje{'s' if n != 1 else ''}" if n else "")
+
+    # Property animable (QPropertyAnimation) para la transición de ~250 ms
+    # entre consola compacta/expandida — `setFixedHeight` normal no se anima.
+    def _get_panel_height(self) -> int:
+        return self.height()
+
+    def _set_panel_height(self, value: int) -> None:
+        self.setFixedHeight(int(value))
+
+    panelHeight = QtCore.Property(int, _get_panel_height, _set_panel_height)
