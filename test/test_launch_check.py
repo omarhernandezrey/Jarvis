@@ -114,14 +114,18 @@ def test_main_no_abre_hud_si_falla_precondicion(monkeypatch):
 
 
 def test_main_abre_hud_si_todo_bien(monkeypatch):
+    """Si las precondiciones pasan, main() delega en hud_select.
+    open_desktop_hud() -- el único punto de verdad de pro/legado (antes
+    llamaba a jarvis_local.ui.hud.app.main directo, ignorando JARVIS_HUD;
+    ver jarvis_local/ui/hud_select.py)."""
     monkeypatch.setattr(launch_check, "check_preconditions", lambda: None)
     llamado = {}
 
-    def fake_hud_main():
+    def fake_open_desktop_hud():
         llamado["ok"] = True
         return 0
 
-    monkeypatch.setattr("jarvis_local.ui.hud.app.main", fake_hud_main)
+    monkeypatch.setattr("jarvis_local.ui.hud_select.open_desktop_hud", fake_open_desktop_hud)
     assert launch_check.main() == 0
     assert llamado.get("ok") is True
 

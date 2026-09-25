@@ -640,34 +640,11 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
 
 
 def _run_desktop_hud() -> None:
-    """Abre el HUD de escritorio: JARVIS_HUD=pro|legacy elige cuál (por
-    defecto "pro"). Si el HUD pro falla al IMPORTARSE o al CREAR su
-    ventana, se registra el motivo en el log y se cae al HUD legado (Qt
-    Quick) en vez de dejar al usuario sin interfaz de escritorio. Un fallo
-    ya con la ventana en uso (dentro del bucle de eventos) no cae a nada:
-    ahí no tiene sentido abrir una segunda interfaz distinta."""
-    which = os.environ.get("JARVIS_HUD", "pro").strip().lower()
-    if which not in ("pro", "legacy"):
-        logger.error(f"JARVIS_HUD={which!r} no reconocido (usa 'pro' o 'legacy'); usando 'pro'.")
-        which = "pro"
-
-    if which == "pro":
-        try:
-            from hud_pro.qt_compat import exec_app
-            from jarvis_local.ui.hud_pro_runtime import create_window
-            app, win = create_window()
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            logger.error(f"HUD pro no disponible ({e}); usando el HUD legado.")
-            print(f"[HUD pro no disponible: {e}] Abriendo el HUD legado...")
-        else:
-            win.show()
-            exec_app(app)
-            return
-
-    from jarvis_local.ui.hud import main as desktop_main
-    desktop_main()
+    """Abre el HUD de escritorio. La elección pro/legado y el fallback viven
+    en jarvis_local.ui.hud_select (un único punto de verdad: también lo usa
+    el lanzador de escritorio real, jarvis_local/ui/hud/launch_check.py)."""
+    from jarvis_local.ui.hud_select import open_desktop_hud
+    open_desktop_hud()
 
 
 def main():

@@ -78,8 +78,8 @@ def main() -> int:
         print(f"[jarvis-launch] {error}", file=sys.stderr)
         return 1
 
-    from jarvis_local.ui.hud.app import main as hud_main
-    return hud_main()
+    from jarvis_local.ui.hud_select import open_desktop_hud
+    return open_desktop_hud()
 
 
 if __name__ == "__main__":
