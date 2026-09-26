@@ -24,24 +24,34 @@ class QualitySettings:
     grain: float
     aberration: float       # px máximos de desplazamiento cromático en la esquina
     vignette: float
+    godray_samples: int = 32     # 32..48 — nunca menos, mandato de presupuesto de GPU
+    raymarch_steps: int = 24     # FASE C: pasos del raymarch del orbe (24 high / 40 ultra)
 
 
 QUALITY_PRESETS: dict[Quality, QualitySettings] = {
     Quality.LOW: QualitySettings(
         bloom_scale=0.125, kawase_levels=2, streak_enabled=False,
         grain=0.018, aberration=0.6, vignette=0.22,
+        godray_samples=32, raymarch_steps=16,
     ),
     Quality.MEDIUM: QualitySettings(
         bloom_scale=0.20, kawase_levels=3, streak_enabled=True,
         grain=0.024, aberration=1.0, vignette=0.28,
+        godray_samples=32, raymarch_steps=20,
     ),
     Quality.HIGH: QualitySettings(
         bloom_scale=0.25, kawase_levels=4, streak_enabled=True,
         grain=0.030, aberration=1.4, vignette=0.32,
+        # 32, no 40: medido en la Intel HD 520 real — los rayos de dios
+        # son el pase más caro del pipeline: 40 muestras dejaba HIGH en
+        # ~6-7ms GPU/1080p, por encima del presupuesto de FASE B (≤5ms).
+        # 32 es el PISO del mandato (32-48), nunca menos.
+        godray_samples=32, raymarch_steps=24,
     ),
     Quality.ULTRA: QualitySettings(
         bloom_scale=0.333, kawase_levels=5, streak_enabled=True,
         grain=0.034, aberration=1.8, vignette=0.34,
+        godray_samples=48, raymarch_steps=40,
     ),
 }
 
@@ -96,6 +106,11 @@ class AutoQualityController:
             grain=self._base.grain,
             aberration=self._base.aberration,
             vignette=self._base.vignette,
+            # el mandato de 32-48 muestras para los rayos de dios es un
+            # PISO, no un objetivo — AUTO nunca lo cruza aunque degrade
+            # todo lo demás.
+            godray_samples=max(32, round(self._base.godray_samples * (0.5 + 0.5 * s))),
+            raymarch_steps=max(12, round(self._base.raymarch_steps * (0.4 + 0.6 * s))),
         )
 
     @property

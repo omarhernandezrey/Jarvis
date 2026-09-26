@@ -7,9 +7,11 @@ out vec4 fragColor;
 uniform sampler2D u_scene;    // resolución completa
 uniform sampler2D u_bloom;    // 1/4 (o el nivel final del dual-Kawase)
 uniform sampler2D u_streak;   // 1/4
+uniform sampler2D u_godray;   // 1/4 — upsample bilineal (filtro de hardware GL_LINEAR)
 uniform float u_time;
 uniform float u_bloomStrength;
 uniform float u_streakStrength;
+uniform float u_godrayStrength;
 uniform float u_aberration;   // 0..~3 px en la esquina
 uniform float u_grain;        // 0..~0.05
 uniform float u_vignette;     // 0..~0.5
@@ -47,8 +49,9 @@ void main() {
 
     vec3 bloom = texture(u_bloom, vUv).rgb * u_bloomStrength;
     vec3 streak = texture(u_streak, vUv).rgb * u_streakStrength;
+    vec3 godray = texture(u_godray, vUv).rgb * u_godrayStrength;
 
-    vec3 col = scene + bloom + streak;
+    vec3 col = scene + bloom + streak + godray;
     col = aces(col);
 
     // viñeta

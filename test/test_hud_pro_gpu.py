@@ -100,6 +100,7 @@ def test_qopenglwidget_supported_here_matches_platform(qapp):
     [
         "scene.frag",
         "bloom_extract.frag",
+        "godray.frag",
         "kawase_down.frag",
         "kawase_up.frag",
         "streak.frag",
@@ -108,6 +109,12 @@ def test_qopenglwidget_supported_here_matches_platform(qapp):
 )
 def test_real_shader_compiles_and_links(gl_context, frag):
     program = ShaderProgram("fullscreen.vert", frag)
+    assert program.qt_program is not None
+    assert program.qt_program.isLinked()
+
+
+def test_dust_shader_compiles_and_links(gl_context):
+    program = ShaderProgram("dust.vert", "dust.frag")
     assert program.qt_program is not None
     assert program.qt_program.isLinked()
 
@@ -215,6 +222,17 @@ def test_quality_presets_scale_monotonically_with_level():
     levels = [QUALITY_PRESETS[q].kawase_levels for q in order]
     assert scales == sorted(scales)
     assert levels == sorted(levels)
+
+
+def test_quality_presets_never_undercut_godray_sample_floor():
+    """Mandato explícito: nunca menos de 32 muestras para los rayos de
+    dios, en ningún nivel fijo ni bajo degradación de AUTO."""
+    for settings in QUALITY_PRESETS.values():
+        assert settings.godray_samples >= 32
+    ctl = AutoQualityController()
+    for _ in range(ctl.WINDOW * 50):
+        ctl.update(100.0)  # peor caso: fuerza la mínima escala posible
+    assert ctl.current.godray_samples >= 32
 
 
 def test_auto_quality_scales_down_under_sustained_heavy_frames():
@@ -358,6 +376,106 @@ def test_hud_window_respects_gpu_off_with_real_display():
         print("OK")
         """,
         {"JARVIS_HUD_GPU": "off"},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+# ── FASE B: ruido 3D (puro Python, sin GL — determinista y tileable) ────
+def test_noise3d_is_deterministic_and_cached(tmp_path, monkeypatch):
+    from hud_pro.gpu import noise3d
+
+    monkeypatch.setattr(noise3d, "CACHE_DIR", tmp_path)
+    data1 = noise3d.generate_or_load(16)
+    cached_path = tmp_path / "noise3d_16.bin"
+    assert cached_path.exists()
+    data2 = noise3d.generate_or_load(16)  # debe leer la caché, no regenerar
+    assert data1 == data2
+    assert len(data1) == 16 * 16 * 16 * 2
+
+
+def test_noise3d_tiles_without_seams():
+    import numpy as np
+
+    from hud_pro.gpu import noise3d
+
+    data = noise3d._generate(24)
+    arr = np.frombuffer(data, dtype=np.uint8).reshape(24, 24, 24, 2).astype(int)
+    edge_diff = np.abs(arr[0, :, :, :] - arr[-1, :, :, :]).mean()
+    interior_diff = np.abs(arr[12, :, :, :] - arr[11, :, :, :]).mean()
+    # el borde (que envuelve) no debe ser drásticamente más brusco que
+    # cualquier transición interior — si hubiera costura sería un salto
+    # mucho mayor, no un valor del mismo orden.
+    assert edge_diff < interior_diff * 3 + 5
+
+
+# ── FASE B: comportamiento real de HoloStage (necesita sesión gráfica) ──
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_scan_wave_triggers_on_state_change_and_energy_onset():
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        from hud_pro.state import OrbState
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        w = HoloStage()
+        w.resize(300, 200)
+        w.show()
+        for _ in range(10):
+            app.processEvents()
+        assert w._scan_start <= -900.0, "no debe haber onda activa al arrancar"
+
+        w.set_state(OrbState.LISTENING)
+        assert w._scan_start == w._time, "cambiar de estado debe disparar la onda"
+
+        w._scan_start = -900.0
+        w.set_energy(0.0)
+        w.set_energy(0.9)  # pico real de energía mientras escucha
+        assert w._scan_start == w._time, "un pico real de energía en ESCUCHANDO debe disparar la onda"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_hud_window_background_is_not_corrupted_after_many_frames():
+    """Regresión directa: `glBlendFunc(sfactor, GL_ONE)` (aditivo real)
+    en el pase de polvo reventaba TODO el resto del pipeline en esta GPU
+    (Intel HD 520 / Mesa) — no con un error visible, sino con valores no
+    representables (Inf/NaN) que colapsan bloom/rayos de dios/streak a
+    negro o blanco sólido tras unas ~30 vueltas del pipeline. El fix
+    usa alpha estándar (`GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`) — ver el
+    comentario en `HoloStage._render_dust`. Corre muchos frames (más de
+    los que hacía falta para reproducirlo) y confirma que el centro de la
+    pantalla NO quedó en negro puro."""
+    result = _run_subprocess_script(
+        """
+        import sys, time
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.window import HudWindow
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        w = HudWindow()
+        w.resize(960, 540)
+        w.show()
+        for _ in range(60):
+            app.processEvents()
+            time.sleep(0.01)
+        assert w.gpu_active, "el fondo GPU debía seguir activo"
+        img = w.gpu_stage.grabFramebuffer()
+        c = img.pixelColor(img.width() // 2, img.height() // 2)
+        assert (c.red(), c.green(), c.blue()) != (0, 0, 0), (
+            f"fondo colapsado a negro puro tras muchos frames: {c.red()},{c.green()},{c.blue()}"
+        )
+        w.close()
+        del w
+        app.processEvents()
+        print("OK")
+        """,
+        {},
     )
     assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
     assert "OK" in result.stdout

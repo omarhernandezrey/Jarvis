@@ -129,6 +129,29 @@ class BackgroundWidget(QtWidgets.QWidget):
         self._cache: Optional[QtGui.QPixmap] = None
         self._cache_size = QtCore.QSize()
         self._focus = QPointF(0.5, 0.38)  # relativo (0..1)
+        self._paint_enabled = True
+
+    def set_paint_enabled(self, enabled: bool) -> None:
+        """Cuando `HoloStage` (fondo GPU) está activo, ESTE widget no debe
+        pintar nada: su propio repintado (disparado por cualquier cosa que
+        llame `update()` aquí, no sólo por `set_focus_point`) corre encima
+        del último frame ya compuesto del hijo GL y lo tapa — confirmado
+        empíricamente como una carrera real (fondo GPU en negro o partido
+        a la mitad según qué región se repintara). Al desactivarlo también
+        se quita `WA_OpaquePaintEvent`: si no, Qt asume que este widget
+        rellenó cada píxel y el contenido de `HoloStage` por debajo queda
+        indefinido en vez de mostrarse."""
+        if self._paint_enabled == enabled:
+            return
+        self._paint_enabled = enabled
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, enabled)
+        # sin esto, la región que este widget deja sin pintar no se trata
+        # como "veo lo de detrás" sino como negro sólido — Qt necesita
+        # saber que puede ALPHA-BLENDEAR el contenido GL de `HoloStage`
+        # con lo que este widget (no) dibuja encima, no basta con omitir
+        # el paintEvent.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, not enabled)
+        self.update()
 
     def set_focus_point(self, point: QPointF) -> None:
         if self.width() <= 0 or self.height() <= 0:
@@ -197,6 +220,8 @@ class BackgroundWidget(QtWidgets.QWidget):
         return pm
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        if not self._paint_enabled:
+            return
         if self._cache is None or self._cache_size != self.size():
             self._cache = self._render()
             self._cache_size = self.size()

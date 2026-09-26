@@ -13,6 +13,9 @@ logs/
 data/*.json
 data/*.corrupt*
 
+# Cachés generados (reproducibles, no se versionan)
+hud_pro/gpu/_cache/
+
 # Entorno virtual
 venv/
 .venv/

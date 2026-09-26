@@ -154,9 +154,24 @@ class HudWindow(QtWidgets.QMainWindow):
         self.chat.mic_toggled.connect(self.mic_toggled.emit)
         self.chat.header_clicked.connect(self.toggle_console_mode)
         self.orb.installEventFilter(self)
+        if self.gpu_stage is not None:
+            # el nivel del orbe (real cuando hay audio; síntesis de reposo
+            # cuando no) varía frame a frame por su propio suavizado — el
+            # fondo GPU lo necesita al mismo ritmo, no sólo cuando llega un
+            # set_audio_level() externo nuevo. Reutiliza el MISMO valor
+            # que ya pinta el orbe raster (`OrbRenderer.level`), nunca uno
+            # sintetizado aparte.
+            self._gpu_energy_timer = QtCore.QTimer(self)
+            self._gpu_energy_timer.setTimerType(QtCore.Qt.TimerType.CoarseTimer)
+            self._gpu_energy_timer.timeout.connect(self._sync_gpu_energy)
+            self._gpu_energy_timer.start(33)
 
         self._install_shortcuts()
         self.set_state(OrbState.IDLE)
+
+    def _sync_gpu_energy(self) -> None:
+        if self.gpu_stage is not None:
+            self.gpu_stage.set_energy(self.orb.renderer.level)
 
     def _make_quick_action(self, icon_kind: str, tooltip: str) -> QtWidgets.QToolButton:
         from .widgets import make_icon
@@ -194,6 +209,7 @@ class HudWindow(QtWidgets.QMainWindow):
             return None
         stage.lower()
         stage.setGeometry(root.rect())
+        root.set_paint_enabled(False)
         return stage
 
     def _sync_gpu_stage_geometry(self) -> None:
@@ -216,6 +232,7 @@ class HudWindow(QtWidgets.QMainWindow):
             stage.setParent(None)
             stage.deleteLater()
             self.gpu_stage = None
+            self._root.set_paint_enabled(True)
 
     @property
     def gpu_active(self) -> bool:
@@ -231,6 +248,8 @@ class HudWindow(QtWidgets.QMainWindow):
         st = parse_state(state)
         previous = self.orb.state
         self.orb.set_state(st)
+        if self.gpu_stage is not None:
+            self.gpu_stage.set_state(st)
         self.status.set_state(st, detail)
         self.top_bar.chip.set_state(st)
         self.chat.input.set_mic_checked(st is OrbState.LISTENING)
@@ -369,6 +388,10 @@ class HudWindow(QtWidgets.QMainWindow):
         if obj is self.orb and event.type() in (QtCore.QEvent.Type.Resize, QtCore.QEvent.Type.Move):
             g = self.orb.geometry()
             self._root.set_focus_point(QtCore.QPointF(g.center().x(), g.center().y()))
+            if self.gpu_stage is not None and self._root.width() > 0 and self._root.height() > 0:
+                self.gpu_stage.set_light_uv(
+                    g.center().x() / self._root.width(), g.center().y() / self._root.height(),
+                )
         return super().eventFilter(obj, event)
 
     def _target_chat_height(self) -> int:
