@@ -397,14 +397,19 @@ class HudWindow(QtWidgets.QMainWindow):
             g = self.orb.geometry()
             self._root.set_focus_point(QtCore.QPointF(g.center().x(), g.center().y()))
             if self.gpu_stage is not None and self._root.width() > 0 and self._root.height() > 0:
-                self.gpu_stage.set_light_uv(
-                    g.center().x() / self._root.width(), g.center().y() / self._root.height(),
-                )
-                # FASE C: 0.30 del lado menor del PROPIO widget del orbe —
-                # igual proporción con la que ya se dimensiona el orbe
-                # raster (`OrbRenderer.base_radius`); normalizado por la
-                # altura de la ventana para que quede en las mismas
-                # unidades que `centered` en los shaders.
+                # el centro geométrico del widget del orbe queda pegado al
+                # texto de estado (vive justo debajo, en el mismo layout)
+                # — subirlo un poco dentro de su propia caja le da aire
+                # antes de tocar ese texto.
+                cx = g.center().x()
+                cy = g.top() + g.height() * 0.42
+                self.gpu_stage.set_light_uv(cx / self._root.width(), cy / self._root.height())
+                # 0.30 del lado menor (el mandato original) se veía
+                # deslucido — casi tapado por el propio texto de estado en
+                # capturas reales a 1920x1080/1366x768 (esto se notó DESPUÉS
+                # de corregir el bug real: un uniform escalar que dejaba
+                # todo el pipeline congelado, ver `shader_loader.py`). 0.34
+                # lo hace protagonista sin invadir la consola de abajo.
                 radius_px = 0.30 * min(g.width(), g.height())
                 self.gpu_stage.set_light_radius(radius_px / self._root.height())
         elif obj is self.orb and event.type() == QtCore.QEvent.Type.Enter:

@@ -92,7 +92,16 @@ class ShaderProgram:
             elif isinstance(v, int):
                 self._program.setUniformValue(loc, v)
             elif isinstance(v, float):
-                self._program.setUniformValue(loc, v)
+                # `QOpenGLShaderProgram.setUniformValue(loc, <float>)` está
+                # roto en esta versión de PySide6: el valor llega a 0.0 EN
+                # EL SHADER siempre, sin lanzar excepción ni avisar — se
+                # detectó comparando el resultado real en pantalla (nada
+                # se animaba pese a que `u_time` sí avanzaba del lado
+                # Python; confirmado aislado con un shader mínimo:
+                # `setUniformValue` da 0.0, `glUniform1f` crudo da el
+                # valor correcto). Los overloads vec2/vec3/vec4 e int SÍ
+                # funcionan bien — sólo el escalar float usa la ruta cruda.
+                qt_compat.QtGui.QOpenGLContext.currentContext().functions().glUniform1f(loc, v)
             else:
                 self._program.setUniformValue(loc, v)
         elif len(value) == 2:

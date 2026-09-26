@@ -631,3 +631,49 @@ def test_holostage_orb_renders_filled_not_hollow():
     )
     assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
     assert "OK" in result.stdout
+
+
+# ── regresión crítica: uniform escalar float ────────────────────────────
+def test_scalar_float_uniform_actually_reaches_the_shader(gl_context, tmp_path, monkeypatch):
+    """`QOpenGLShaderProgram.setUniformValue(loc, <python float>)` está
+    roto en esta versión de PySide6: el valor queda en 0.0 EN EL SHADER
+    sin lanzar ninguna excepción — se detectó porque el fondo entero
+    (rayos de dios, orbe, radar, deriva del polvo) estaba CONGELADO pese
+    a que `u_time` sí avanzaba del lado Python. `ShaderProgram.set_uniform`
+    usa `glUniform1f` crudo para este caso específico (vec2/vec3/vec4 e
+    int SÍ funcionan con `setUniformValue`, confirmado aparte). Esta
+    prueba lee el valor de vuelta pintándolo como color — si el fix se
+    revierte, vuelve a fallar de inmediato."""
+    from hud_pro.gpu import shader_loader
+
+    monkeypatch.setattr(shader_loader, "SHADERS_DIR", tmp_path)
+    (tmp_path / "ok.vert").write_text(open(
+        __import__("pathlib").Path(__file__).parent.parent / "hud_pro" / "gpu" / "shaders" / "fullscreen.vert"
+    ).read())
+    (tmp_path / "scalar.frag").write_text(
+        "#version 330 core\nuniform float u_x;\nout vec4 c;\nvoid main(){ c = vec4(u_x, 0.0, 0.0, 1.0); }\n"
+    )
+    program = ShaderProgram("ok.vert", "scalar.frag")
+    program.bind()
+    program.set_uniform("u_x", 0.75)
+
+    from PySide6 import QtOpenGL as _QtOpenGL  # solo para el VAO/FBO de la prueba
+
+    vao = _QtOpenGL.QOpenGLVertexArrayObject()
+    vao.create()
+    fmt = _QtOpenGL.QOpenGLFramebufferObjectFormat()
+    target = _QtOpenGL.QOpenGLFramebufferObject(16, 16, fmt)
+    target.bind()
+    ctx_functions = gl_context.functions()
+    ctx_functions.glViewport(0, 0, 16, 16)
+    vao.bind()
+    ctx_functions.glDrawArrays(0x0004, 0, 3)
+    vao.release()
+    target.release()
+
+    img = target.toImage()
+    red = img.pixelColor(8, 8).red() / 255.0
+    assert red > 0.5, (
+        f"el uniform escalar float no llegó al shader (leído={red}, esperado ~0.75) — "
+        "¿se revirtió el fix de glUniform1f en ShaderProgram.set_uniform?"
+    )
