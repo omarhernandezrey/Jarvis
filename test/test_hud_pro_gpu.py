@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -264,6 +265,51 @@ def test_auto_quality_never_exceeds_bounds():
     for _ in range(ctl.WINDOW * 30):
         ctl.update(0.1)
     assert ctl.scale <= 1.0
+
+
+def test_auto_quality_does_not_oscillate_inside_the_hysteresis_gap():
+    """Tiempos de frame REALISTAS (con ruido) que se quedan entre
+    RECOVER_MS (10) y TARGET_MS (14) — la "zona muerta" entre bajar y
+    subir — NUNCA deben mover la escala, ni una vez. Simula 40 ventanas
+    (800 frames) con ruido ±1ms alrededor de 12ms."""
+    import random
+
+    rng = random.Random(20260926)
+    ctl = AutoQualityController()
+    scales_seen = set()
+    for _ in range(ctl.WINDOW * 40):
+        frame_ms = 12.0 + rng.uniform(-1.0, 1.0)  # 11..13, dentro de la zona muerta
+        ctl.update(frame_ms)
+        scales_seen.add(round(ctl.scale, 6))
+    assert scales_seen == {1.0}, (
+        f"la escala se movió dentro de la zona muerta (10-14ms): {scales_seen}"
+    )
+
+
+def test_auto_quality_settles_without_oscillating_near_the_target_edge():
+    """Tiempos de frame que rondan justo TARGET_MS (14ms, con ruido ±0.5ms)
+    — un caso más agresivo que la zona muerta completa. Con histéresis de
+    verdad, la escala baja unos pocos escalones y se ESTABILIZA (no
+    rebota siempre entre dos valores) — nunca vuelve a subir, porque
+    12.5-14.5ms nunca baja de RECOVER_MS(10)."""
+    import random
+
+    rng = random.Random(20260926)
+    ctl = AutoQualityController()
+    history = []
+    for _ in range(ctl.WINDOW * 60):
+        frame_ms = 14.0 + rng.uniform(-0.5, 0.5)
+        ctl.update(frame_ms)
+        history.append(ctl.scale)
+    # una vez estable, los últimos N valores deben ser IDÉNTICOS —
+    # nunca sube (nunca cruza RECOVER_MS) y deja de bajar al tocar
+    # MIN_SCALE o al promediar justo por debajo de TARGET_MS.
+    tail = history[-10:]
+    assert len(set(round(v, 6) for v in tail)) == 1, f"no se estabilizó, sigue moviéndose: {tail[-5:]}"
+    # y en ningún punto de toda la corrida subió (sería oscilación real).
+    assert all(b <= a + 1e-9 for a, b in zip(history[:-1], history[1:], strict=True)), (
+        "la escala subió — eso sería oscilación"
+    )
 
 
 # ── integración con HudWindow (fallback) ─────────────────────────────────
@@ -633,47 +679,199 @@ def test_holostage_orb_renders_filled_not_hollow():
     assert "OK" in result.stdout
 
 
-# ── regresión crítica: uniform escalar float ────────────────────────────
-def test_scalar_float_uniform_actually_reaches_the_shader(gl_context, tmp_path, monkeypatch):
-    """`QOpenGLShaderProgram.setUniformValue(loc, <python float>)` está
-    roto en esta versión de PySide6: el valor queda en 0.0 EN EL SHADER
-    sin lanzar ninguna excepción — se detectó porque el fondo entero
-    (rayos de dios, orbe, radar, deriva del polvo) estaba CONGELADO pese
-    a que `u_time` sí avanzaba del lado Python. `ShaderProgram.set_uniform`
-    usa `glUniform1f` crudo para este caso específico (vec2/vec3/vec4 e
-    int SÍ funcionan con `setUniformValue`, confirmado aparte). Esta
-    prueba lee el valor de vuelta pintándolo como color — si el fix se
-    revierte, vuelve a fallar de inmediato."""
+# ── auditoría de uniforms: cada tipo/aridad, verificado de verdad ───────
+#
+# `glGetUniformfv`/`glGetUniformiv` (lo estándar para esto) NO escriben de
+# vuelta en el parámetro de salida en esta build de PySide6 — se probó con
+# una `list`, un `array.array` y un `VoidPtr` sobre un buffer `ctypes`;
+# ninguno funciona (siempre False/valores sin tocar, incluso para tipos
+# que SÍ se envían bien). Por eso la verificación real de este archivo
+# pinta el valor como color y lo lee del framebuffer — más lento de
+# escribir, pero es el único camino que de verdad demuestra que el valor
+# llegó al shader en ESTE entorno.
+FULLSCREEN_VERT_SRC = (Path(__file__).parent.parent / "hud_pro" / "gpu" / "shaders" / "fullscreen.vert").read_text()
+
+
+def _render_uniform_probe(gl_context, tmp_path, monkeypatch, frag_uniform_decl, frag_body, setter):
+    """Compila un shader mínimo, aplica `setter(program)` y devuelve el
+    RGBA (0..1) del píxel central de un FBO de 16x16 — la única forma
+    confiable de verificar un uniform en este entorno (ver arriba)."""
+    from PySide6 import QtOpenGL as _QtOpenGL
+
     from hud_pro.gpu import shader_loader
 
     monkeypatch.setattr(shader_loader, "SHADERS_DIR", tmp_path)
-    (tmp_path / "ok.vert").write_text(open(
-        __import__("pathlib").Path(__file__).parent.parent / "hud_pro" / "gpu" / "shaders" / "fullscreen.vert"
-    ).read())
-    (tmp_path / "scalar.frag").write_text(
-        "#version 330 core\nuniform float u_x;\nout vec4 c;\nvoid main(){ c = vec4(u_x, 0.0, 0.0, 1.0); }\n"
+    (tmp_path / "probe.vert").write_text(FULLSCREEN_VERT_SRC)
+    (tmp_path / "probe.frag").write_text(
+        f"#version 330 core\n{frag_uniform_decl}\nout vec4 c;\nvoid main(){{ {frag_body} }}\n"
     )
-    program = ShaderProgram("ok.vert", "scalar.frag")
+    program = ShaderProgram("probe.vert", "probe.frag")
     program.bind()
-    program.set_uniform("u_x", 0.75)
-
-    from PySide6 import QtOpenGL as _QtOpenGL  # solo para el VAO/FBO de la prueba
+    setter(program)
 
     vao = _QtOpenGL.QOpenGLVertexArrayObject()
     vao.create()
-    fmt = _QtOpenGL.QOpenGLFramebufferObjectFormat()
-    target = _QtOpenGL.QOpenGLFramebufferObject(16, 16, fmt)
+    target = _QtOpenGL.QOpenGLFramebufferObject(16, 16, _QtOpenGL.QOpenGLFramebufferObjectFormat())
     target.bind()
-    ctx_functions = gl_context.functions()
-    ctx_functions.glViewport(0, 0, 16, 16)
+    gl = gl_context.functions()
+    gl.glViewport(0, 0, 16, 16)
     vao.bind()
-    ctx_functions.glDrawArrays(0x0004, 0, 3)
+    gl.glDrawArrays(0x0004, 0, 3)
     vao.release()
     target.release()
 
-    img = target.toImage()
-    red = img.pixelColor(8, 8).red() / 255.0
-    assert red > 0.5, (
-        f"el uniform escalar float no llegó al shader (leído={red}, esperado ~0.75) — "
-        "¿se revirtió el fix de glUniform1f en ShaderProgram.set_uniform?"
+    # OJO: `toImage()` da `Format_ARGB32_Premultiplied` y `pixelColor()`
+    # des-premultiplica (divide RGB por alfa) — con alfa < 1 en el color
+    # de prueba eso INFLA los canales leídos y parece "el uniform no
+    # llegó" sin ser cierto. Por eso las pruebas de este archivo siempre
+    # fuerzan alfa=1.0 en el color de salida del shader de prueba (el
+    # componente que sí hace falta comprobar con alfa real se empaqueta
+    # aparte, en un canal con alfa=1 — ver `test_uniform_vec4_...`).
+    c = target.toImage().pixelColor(8, 8)
+    return (c.red() / 255.0, c.green() / 255.0, c.blue() / 255.0, c.alpha() / 255.0)
+
+
+def test_uniform_float_scalar_reaches_shader(gl_context, tmp_path, monkeypatch):
+    """Regresión directa del bug: escalar float suelto vía
+    `setUniformValue` daba 0.0 siempre, sin excepción. `set_uniform` usa
+    `glUniform1f` crudo — falla de inmediato si se revierte."""
+    rgba = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform float u_x;", "c = vec4(u_x, 0.0, 0.0, 1.0);",
+        lambda p: p.set_uniform("u_x", 0.75),
     )
+    assert rgba[0] == pytest.approx(0.75, abs=0.01), rgba
+
+
+def test_uniform_int_scalar_reaches_shader(gl_context, tmp_path, monkeypatch):
+    rgba = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform int u_x;", "c = vec4(float(u_x) / 10.0, 0.0, 0.0, 1.0);",
+        lambda p: p.set_uniform("u_x", 7),
+    )
+    assert rgba[0] == pytest.approx(0.7, abs=0.01), rgba
+
+
+def test_uniform_bool_scalar_reaches_shader(gl_context, tmp_path, monkeypatch):
+    rgba = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform bool u_x;", "c = vec4(u_x ? 1.0 : 0.0, 0.0, 0.0, 1.0);",
+        lambda p: p.set_uniform("u_x", True),
+    )
+    assert rgba[0] == pytest.approx(1.0, abs=0.01), rgba
+
+
+def test_uniform_vec2_reaches_shader(gl_context, tmp_path, monkeypatch):
+    rgba = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform vec2 u_x;", "c = vec4(u_x, 0.0, 1.0);",
+        lambda p: p.set_uniform("u_x", 0.3, 0.4),
+    )
+    assert rgba[0] == pytest.approx(0.3, abs=0.01)
+    assert rgba[1] == pytest.approx(0.4, abs=0.01)
+
+
+def test_uniform_vec3_reaches_shader(gl_context, tmp_path, monkeypatch):
+    rgba = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform vec3 u_x;", "c = vec4(u_x, 1.0);",
+        lambda p: p.set_uniform("u_x", 0.1, 0.2, 0.3),
+    )
+    assert rgba[:3] == pytest.approx((0.1, 0.2, 0.3), abs=0.01)
+
+
+def test_uniform_vec4_reaches_shader(gl_context, tmp_path, monkeypatch):
+    """`c = u_x` directo (con la `w` real como alfa) haría que
+    `pixelColor()` des-premultiplique R/G/B por esa alfa al leer —
+    artefacto de `QImage`, no del uniform (confirmado: los valores
+    leídos son exactamente los enviados divididos por la alfa enviada).
+    Se empaqueta cada componente en un canal con alfa=1 para evitarlo."""
+    rgba = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform vec4 u_x;", "c = vec4(u_x.x, u_x.y, u_x.z, 1.0);",
+        lambda p: p.set_uniform("u_x", 0.1, 0.2, 0.3, 0.4),
+    )
+    assert rgba[:3] == pytest.approx((0.1, 0.2, 0.3), abs=0.01)
+
+    rgba_w = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform vec4 u_x;", "c = vec4(u_x.w, 0.0, 0.0, 1.0);",
+        lambda p: p.set_uniform("u_x", 0.1, 0.2, 0.3, 0.4),
+    )
+    assert rgba_w[0] == pytest.approx(0.4, abs=0.01)
+
+
+def test_uniform_float_array_reaches_shader(gl_context, tmp_path, monkeypatch):
+    rgba = _render_uniform_probe(
+        gl_context, tmp_path, monkeypatch,
+        "uniform float u_arr[4];", "c = vec4(u_arr[2], 0.0, 0.0, 1.0);",
+        lambda p: p.set_uniform_array("u_arr", [0.1, 0.2, 0.9, 0.4]),
+    )
+    assert rgba[0] == pytest.approx(0.9, abs=0.01)
+
+
+def test_uniform_location_is_cached_not_requeried_every_call(gl_context, tmp_path, monkeypatch):
+    """`_location()` debe llamar a `uniformLocation()` UNA sola vez por
+    nombre — el resto de las veces usa el caché. Un programa nuevo
+    (recompilado) invalida el caché entero."""
+    from hud_pro.gpu import shader_loader
+
+    monkeypatch.setattr(shader_loader, "SHADERS_DIR", tmp_path)
+    (tmp_path / "probe.vert").write_text(FULLSCREEN_VERT_SRC)
+    (tmp_path / "probe.frag").write_text(
+        "#version 330 core\nuniform float u_x;\nout vec4 c;\nvoid main(){ c = vec4(u_x); }\n"
+    )
+    program = ShaderProgram("probe.vert", "probe.frag")
+    program.bind()
+
+    calls = []
+    real_uniform_location = program.qt_program.uniformLocation
+
+    def traced(name):
+        calls.append(name)
+        return real_uniform_location(name)
+
+    program.qt_program.uniformLocation = traced
+    for _ in range(5):
+        program.set_uniform("u_x", 0.5)
+    assert calls == ["u_x"], f"uniformLocation debía llamarse una sola vez, se llamó: {calls}"
+
+
+def test_dev_mode_warns_once_on_missing_uniform_location(gl_context, tmp_path, monkeypatch, caplog):
+    """`JARVIS_HUD_DEV=1`: la primera vez que un nombre resuelve a
+    location -1 (typo, o uniform optimizado fuera por no usarse) se
+    registra un aviso — una sola vez por nombre, no en cada frame."""
+    from hud_pro.gpu import shader_loader
+
+    monkeypatch.setenv("JARVIS_HUD_DEV", "1")
+    monkeypatch.setattr(shader_loader, "SHADERS_DIR", tmp_path)
+    (tmp_path / "probe.vert").write_text(FULLSCREEN_VERT_SRC)
+    # el frag NO declara "u_no_existe" — location será -1 siempre.
+    (tmp_path / "probe.frag").write_text(
+        "#version 330 core\nout vec4 c;\nvoid main(){ c = vec4(1.0); }\n"
+    )
+    program = ShaderProgram("probe.vert", "probe.frag")
+    assert program._dev is True
+    program.bind()
+    with caplog.at_level("WARNING", logger="jarvis.hud_pro.gpu"):
+        for _ in range(3):
+            program.set_uniform("u_no_existe", 1.0)
+    warnings = [r for r in caplog.records if "u_no_existe" in r.message]
+    assert len(warnings) == 1, f"debía avisar una sola vez, avisó {len(warnings)} veces"
+
+
+def test_no_dev_mode_never_warns_on_missing_uniform_location(gl_context, tmp_path, monkeypatch, caplog):
+    from hud_pro.gpu import shader_loader
+
+    monkeypatch.delenv("JARVIS_HUD_DEV", raising=False)
+    monkeypatch.setattr(shader_loader, "SHADERS_DIR", tmp_path)
+    (tmp_path / "probe.vert").write_text(FULLSCREEN_VERT_SRC)
+    (tmp_path / "probe.frag").write_text(
+        "#version 330 core\nout vec4 c;\nvoid main(){ c = vec4(1.0); }\n"
+    )
+    program = ShaderProgram("probe.vert", "probe.frag")
+    assert program._dev is False
+    program.bind()
+    with caplog.at_level("WARNING", logger="jarvis.hud_pro.gpu"):
+        program.set_uniform("u_no_existe", 1.0)
+    assert not any("u_no_existe" in r.message for r in caplog.records)

@@ -106,6 +106,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._spectrum: list[float] | None = None
         self._scan_start = -_SCAN_STATE_GAP_S
         self._orb_fbo_size = (0, 0)
+        self._last_logged_settings = None
+        self._last_logged_size: tuple[int, int] | None = None
 
         self._programs: dict[str, ShaderProgram] = {}
         self._fbos: dict[str, QtOpenGL.QOpenGLFramebufferObject] = {}
@@ -385,6 +387,28 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # extra no se nota.
         gw, gh = max(4, bw // 4), max(4, bh // 4)
         self._fbos["godray"] = QtOpenGL.QOpenGLFramebufferObject(gw, gh, fmt)
+
+        self._log_effective_config(w, h, bw, bh, levels, gw, gh)
+
+    def _log_effective_config(
+        self, w: int, h: int, bw: int, bh: int, kawase_levels: int, gw: int, gh: int,
+    ) -> None:
+        """Config real de ESTE nivel, una vez por cambio (no en cada
+        resize idéntico) — para poder confirmar que low/high/ultra de
+        verdad difieren, no sólo de nombre."""
+        s = self._settings
+        if s == self._last_logged_settings and (w, h) == self._last_logged_size:
+            return
+        self._last_logged_settings = s
+        self._last_logged_size = (w, h)
+        tag = self._quality_fixed.value if self._quality_fixed else "auto"
+        log.info(
+            "HUD GPU config efectiva [%s] ventana=%dx%d | escena=%dx%d | "
+            "bloom/kawase=%dx%d x%d niveles | rayos_dios=%dx%d muestras=%d | "
+            "orbe pasos_raymarch=%d | polvo_partículas=%d | streak=%s",
+            tag, w, h, w, h, bw, bh, kawase_levels, gw, gh, s.godray_samples,
+            s.raymarch_steps, _DUST_COUNT, s.streak_enabled,
+        )
 
     def paintGL(self) -> None:  # noqa: N802
         if not self._init_ok:

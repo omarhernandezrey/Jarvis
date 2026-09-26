@@ -131,6 +131,7 @@ class HudWindow(QtWidgets.QMainWindow):
         # el orbe en otro widget.
         stage = QtWidgets.QVBoxLayout()
         stage.setSpacing(4)
+        self._stage_layout = stage
         self.orb = OrbWidget(root)
         if self.gpu_stage is not None:
             # FASE C: HoloStage ya dibuja el orbe real (raymarch); este
@@ -139,7 +140,18 @@ class HudWindow(QtWidgets.QMainWindow):
             self.orb.set_render_visible(False)
         self.status = StatusBlock(root)
         stage.addWidget(self.orb, 1)
-        stage.addWidget(self.status)
+        if self.gpu_stage is None:
+            stage.addWidget(self.status)
+            self._status_manual_position = False
+        else:
+            # el orbe GPU (anillos + bloom, que sangra bastante más allá
+            # del borde geométrico) puede necesitar más espacio del que
+            # el layout automático le deja a `status` sin invadir el resto
+            # — la caja del layout de `orb` no tiene margen de sobra para
+            # crecer (su minimumHeight ya se lleva el 55% de la ventana),
+            # así que aquí se posiciona a mano en cada resize/move de
+            # `orb` (ver `eventFilter`) en vez de dejarlo en el layout.
+            self._status_manual_position = True
         outer.addLayout(stage, 1)
 
         self.chat = ChatPanel(root)
@@ -389,6 +401,30 @@ class HudWindow(QtWidgets.QMainWindow):
         sc("Ctrl+K", self.chat.focus_input)
         sc("F11", self._toggle_fullscreen)
 
+    def _position_status_below_rings(
+        self, orb_geom: QtCore.QRect, cy: float, radius_px: float,
+    ) -> None:
+        """El texto de estado NUNCA sobre el orbe. Con el orbe GPU, la
+        caja de layout de `orb` (fijada por `setMinimumHeight` al 55% de
+        la ventana, sin margen de sobra) no tiene espacio libre para que
+        el propio layout empuje `status` más abajo — por eso se posiciona
+        a mano aquí, fuera del layout de `stage`. El bloom del anillo
+        exterior sangra bastante más allá de su borde geométrico (2.8x el
+        radio, medido a ojo contra capturas reales — no una fórmula
+        exacta del falloff); se acota para no invadir la consola.
+
+        OJO: la consola COMPACTA (modo por defecto) ya está diseñada para
+        flotar sobre la parte baja del escenario del orbe — el panel
+        semitransparente de `ChatPanel` ya convive ahí con el piso
+        hexagonal en toda captura existente. El único tope real es no
+        tapar la CABECERA de la consola (su título), no el panel entero."""
+        ring_outer_bottom = cy + radius_px * 1.8
+        status_h = self.status.sizeHint().height() or 60
+        max_y = self.chat.geometry().top() + 18  # deja ver la cabecera "CONSOLA"
+        y = min(round(ring_outer_bottom), max_y)
+        y = max(y, orb_geom.top())
+        self.status.setGeometry(orb_geom.x(), y, orb_geom.width(), status_h)
+
     def _toggle_fullscreen(self) -> None:
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
@@ -412,6 +448,8 @@ class HudWindow(QtWidgets.QMainWindow):
                 # lo hace protagonista sin invadir la consola de abajo.
                 radius_px = 0.30 * min(g.width(), g.height())
                 self.gpu_stage.set_light_radius(radius_px / self._root.height())
+                if self._status_manual_position:
+                    self._position_status_below_rings(g, cy, radius_px)
         elif obj is self.orb and event.type() == QtCore.QEvent.Type.Enter:
             if self.gpu_stage is not None:
                 self.gpu_stage.set_hover(True)
