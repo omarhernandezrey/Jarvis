@@ -102,3 +102,11 @@ class ShaderProgram:
         elif len(value) == 4:
             self._program.setUniformValue(
                 loc, float(value[0]), float(value[1]), float(value[2]), float(value[3]))
+
+    def set_uniform_array(self, name: str, values: list) -> None:
+        """`uniform float name[N]` — FASE C (espectro real en el anillo)."""
+        loc = self._program.uniformLocation(name)
+        if loc < 0:
+            return
+        floats = [float(v) for v in values]
+        self._program.setUniformValueArray(loc, floats, len(floats), 1)

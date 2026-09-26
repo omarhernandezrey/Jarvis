@@ -105,6 +105,9 @@ def test_qopenglwidget_supported_here_matches_platform(qapp):
         "kawase_up.frag",
         "streak.frag",
         "composite.frag",
+        "orb.frag",
+        "blit.frag",
+        "rings.frag",
     ],
 )
 def test_real_shader_compiles_and_links(gl_context, frag):
@@ -473,6 +476,155 @@ def test_hud_window_background_is_not_corrupted_after_many_frames():
         w.close()
         del w
         app.processEvents()
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+# ── FASE C: setters del orbe raymarched ─────────────────────────────────
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_orb_setters_clamp_and_toggle():
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        w = HoloStage()
+        w.resize(300, 200)
+        w.show()
+        for _ in range(10):
+            app.processEvents()
+
+        w.set_light_radius(-5.0)
+        assert w._light_radius > 0.0, "el radio nunca debe quedar en 0 o negativo"
+
+        w.set_hover(True)
+        assert w._hover is True
+        w.set_hover(False)
+        assert w._hover is False
+
+        w.set_spectrum([0.5, 1.5, -1.0])  # fuera de rango: debe recortarse a 0..1
+        assert w._spectrum == [0.5, 1.0, 0.0]
+        w.set_spectrum(None)
+        assert w._spectrum is None
+        w.set_spectrum([])
+        assert w._spectrum is None
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_orb_survives_resize_after_quality_change():
+    """Regresión directa: `_rebuild_fbos` (disparado por un resize o por
+    un cambio de calidad de AUTO) borraba el FBO propio del orbe del
+    dict sin avisarle a `_ensure_orb_fbo`, que veía el tamaño "sin
+    cambios" y no lo recreaba — `KeyError: 'orb'` en el frame siguiente.
+    Fuerza varios resizes + cambios de calidad y sigue pintando."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        from hud_pro.gpu.quality import Quality
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        w = HoloStage()
+        w.resize(400, 300)
+        w.show()
+        for _ in range(10):
+            app.processEvents()
+        assert w.ok, w.init_error
+
+        for size, q in [
+            (500, Quality.LOW), (300, Quality.ULTRA),
+            (600, Quality.MEDIUM), (350, Quality.HIGH),
+        ]:
+            w.resize(size, 300)
+            w.set_quality(q)
+            for _ in range(5):
+                app.processEvents()
+        assert w.ok, "no debía haber caído tras los cambios"
+        w.close()
+        del w
+        app.processEvents()
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_hud_window_hides_raster_orb_and_forwards_hover_and_spectrum():
+    result = _run_subprocess_script(
+        """
+        import sys, time
+        from hud_pro.qt_compat import QtCore, QtWidgets
+        from hud_pro.window import HudWindow
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        w = HudWindow()
+        w.resize(1000, 640)
+        w.show()
+        for _ in range(30):
+            app.processEvents()
+            time.sleep(0.01)
+        assert w.gpu_active
+        assert w.orb._render_visible is False, "el orbe raster debe quedar invisible con GPU activo"
+
+        enter = QtCore.QEvent(QtCore.QEvent.Type.Enter)
+        app.sendEvent(w.orb, enter)
+        assert w.gpu_stage._hover is True, "el hover debe reenviarse al orbe GPU"
+
+        w.set_spectrum([0.2, 0.4, 0.9])
+        assert w.gpu_stage._spectrum == [0.2, 0.4, 0.9]
+        w.set_spectrum(None)
+        assert w.gpu_stage._spectrum is None
+
+        assert w.gpu_stage._light_radius > 0.0
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_orb_renders_filled_not_hollow():
+    """Regresión del modelo de densidad: la primera versión sólo acumulaba
+    densidad muy cerca de la superficie de la esfera (`shell`), lo que
+    dejaba el CENTRO casi transparente y sólo el borde visible (un aro
+    hueco, no una bola sólida). El fix acumula densidad en TODO el
+    interior del recorrido del rayo. Verifica que el centro del FBO del
+    orbe queda más opaco que un punto cercano al borde."""
+    result = _run_subprocess_script(
+        """
+        import sys, time
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.window import HudWindow
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        w = HudWindow()
+        w.resize(1000, 640)
+        w.show()
+        for _ in range(30):
+            app.processEvents()
+            time.sleep(0.01)
+        img = w.gpu_stage._fbos["orb"].toImage()
+        cw, ch = img.width(), img.height()
+        center_alpha = img.pixelColor(cw // 2, ch // 2).alpha()
+        edge_alpha = img.pixelColor(int(cw * 0.1), ch // 2).alpha()
+        assert center_alpha > edge_alpha, (
+            f"el centro del orbe debe verse más opaco que el borde: centro={center_alpha} borde={edge_alpha}"
+        )
+        assert center_alpha > 40, f"el centro no debe quedar casi transparente: {center_alpha}"
         print("OK")
         """,
         {},

@@ -132,6 +132,11 @@ class HudWindow(QtWidgets.QMainWindow):
         stage = QtWidgets.QVBoxLayout()
         stage.setSpacing(4)
         self.orb = OrbWidget(root)
+        if self.gpu_stage is not None:
+            # FASE C: HoloStage ya dibuja el orbe real (raymarch); este
+            # widget se queda invisible pero sigue siendo el control real
+            # de push-to-talk (clic/hover/geometría intactos).
+            self.orb.set_render_visible(False)
         self.status = StatusBlock(root)
         stage.addWidget(self.orb, 1)
         stage.addWidget(self.status)
@@ -233,6 +238,7 @@ class HudWindow(QtWidgets.QMainWindow):
             stage.deleteLater()
             self.gpu_stage = None
             self._root.set_paint_enabled(True)
+            self.orb.set_render_visible(True)
 
     @property
     def gpu_active(self) -> bool:
@@ -309,6 +315,8 @@ class HudWindow(QtWidgets.QMainWindow):
         """Espectro real (FFT del micrófono o del TTS) para el anillo del
         orbe. `None`/vacío lo apaga — nunca inventa una forma."""
         self.orb.set_spectrum(bands)
+        if self.gpu_stage is not None:
+            self.gpu_stage.set_spectrum(bands)
 
     def update_metrics(self, data: dict) -> None:
         """Métricas reales de la barra superior y de los chips de servicio.
@@ -392,6 +400,19 @@ class HudWindow(QtWidgets.QMainWindow):
                 self.gpu_stage.set_light_uv(
                     g.center().x() / self._root.width(), g.center().y() / self._root.height(),
                 )
+                # FASE C: 0.30 del lado menor del PROPIO widget del orbe —
+                # igual proporción con la que ya se dimensiona el orbe
+                # raster (`OrbRenderer.base_radius`); normalizado por la
+                # altura de la ventana para que quede en las mismas
+                # unidades que `centered` en los shaders.
+                radius_px = 0.30 * min(g.width(), g.height())
+                self.gpu_stage.set_light_radius(radius_px / self._root.height())
+        elif obj is self.orb and event.type() == QtCore.QEvent.Type.Enter:
+            if self.gpu_stage is not None:
+                self.gpu_stage.set_hover(True)
+        elif obj is self.orb and event.type() == QtCore.QEvent.Type.Leave:
+            if self.gpu_stage is not None:
+                self.gpu_stage.set_hover(False)
         return super().eventFilter(obj, event)
 
     def _target_chat_height(self) -> int:

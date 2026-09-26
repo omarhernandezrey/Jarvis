@@ -963,6 +963,7 @@ class OrbWidget(QtWidgets.QWidget):
 
         self._renderer = OrbRenderer()
         self._renderer.reduced_motion = os.environ.get("JARVIS_REDUCED_MOTION", "") == "1"
+        self._render_visible = True
 
         env_fps = os.environ.get("JARVIS_HUD_FPS", "")
         self._fps = max(10, min(144, int(fps or (int(env_fps) if env_fps.isdigit() else 60))))
@@ -1068,7 +1069,20 @@ class OrbWidget(QtWidgets.QWidget):
         super().hideEvent(event)
         self._sync_timer()
 
+    def set_render_visible(self, visible: bool) -> None:
+        """FASE C: cuando `HoloStage` dibuja el orbe raymarched de verdad
+        en la misma posición de pantalla, este widget deja de pintar el
+        SUYO (evita el doble orbe) pero sigue recibiendo hover/clic/
+        geometría con normalidad — sigue siendo el mismo control real de
+        push-to-talk, sólo que invisible."""
+        if self._render_visible == visible:
+            return
+        self._render_visible = visible
+        self.update()
+
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        if not self._render_visible:
+            return
         painter = QtGui.QPainter(self)
         try:
             self._renderer.paint(painter, self.width(), self.height())

@@ -41,9 +41,11 @@ _GL_PROGRAM_POINT_SIZE = 0x8642
 _GL_POINTS = 0x0000
 _GL_FLOAT = 0x1406
 _GL_ARRAY_BUFFER = 0x8892
+_GL_SCISSOR_TEST = 0x0C11
 
 _DUST_COUNT = 300
 _SCAN_STATE_GAP_S = 999.0  # "hace mucho" — apaga el término de la onda en el shader
+_ORB_MARGIN = 1.6  # margen alrededor del radio real del orbe para el fresnel/glow del borde
 
 # Energía real por encima de la cual, ESCUCHANDO, se considera "arranque de
 # palabra" (subida real de nivel de audio, no un dato inventado) y dispara
@@ -99,7 +101,11 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._init_ok = False
         self._init_error = ""
         self._light_uv = (0.5, 0.42)
+        self._light_radius = 0.16
+        self._hover = False
+        self._spectrum: list[float] | None = None
         self._scan_start = -_SCAN_STATE_GAP_S
+        self._orb_fbo_size = (0, 0)
 
         self._programs: dict[str, ShaderProgram] = {}
         self._fbos: dict[str, QtOpenGL.QOpenGLFramebufferObject] = {}
@@ -159,6 +165,25 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         rayos de dios y el reflejo del piso. La alimenta `window.py` desde
         la geometría real de `OrbWidget`, nunca un valor fijo inventado."""
         self._light_uv = (float(u), float(v))
+
+    def set_light_radius(self, radius: float) -> None:
+        """Radio real del orbe (unidades de `centered`, ver `scene.frag`:
+        mismo sistema que `u_lightUv`) — 0.30 del lado menor del propio
+        widget del orbe, calculado en `window.py` desde su geometría real."""
+        self._light_radius = max(0.01, float(radius))
+
+    def set_hover(self, hovering: bool) -> None:
+        """+20% de brillo del orbe — mismo gesto que ya soporta el orbe
+        raster (`OrbRenderer.set_hover`)."""
+        self._hover = bool(hovering)
+
+    def set_spectrum(self, bands: list[float] | None) -> None:
+        """Espectro real (FFT) para las barras del anillo. `None`/vacío lo
+        apaga — nunca se inventa una forma cuando no hay datos."""
+        if not bands:
+            self._spectrum = None
+        else:
+            self._spectrum = [max(0.0, min(1.0, float(b))) for b in bands][:64]
 
     def _trigger_scan(self) -> None:
         self._scan_start = self._time
@@ -271,6 +296,9 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             "kawase_up": "kawase_up.frag",
             "streak": "streak.frag",
             "composite": "composite.frag",
+            "orb": "orb.frag",
+            "blit": "blit.frag",
+            "rings": "rings.frag",
         }
         for key, frag in specs.items():
             self._programs[key] = ShaderProgram("fullscreen.vert", frag)
@@ -328,6 +356,13 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         for fbo in self._fbos.values():
             fbo.release() if hasattr(fbo, "release") else None
         self._fbos.clear()
+        # el FBO del orbe vive fuera de este método (`_ensure_orb_fbo`, se
+        # reconstruye sólo si su tamaño cambia) — pero ESTE método acaba
+        # de borrarlo del dict igual; sin este reset, `_ensure_orb_fbo`
+        # cree que el tamaño no cambió y NO lo vuelve a crear → KeyError
+        # la primera vez que se pinta después de un resize/cambio de
+        # calidad (confirmado: reproducible, no es hipotético).
+        self._orb_fbo_size = (0, 0)
 
         fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
         fmt.setInternalTextureFormat(0x881A)  # GL_RGBA16F: rango HDR para el bloom/tonemap
@@ -374,6 +409,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             gl_started = True
 
         self._render_scene()
+        self._render_orb()
+        self._render_rings()
         self._render_bloom_chain()
         if self._settings.streak_enabled:
             self._render_streak()
@@ -473,6 +510,131 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._gl.glDisable(_GL_BLEND)
         self._gl.glDisable(_GL_PROGRAM_POINT_SIZE)
         p.release()
+
+    def _ensure_orb_fbo(self) -> None:
+        """FBO propio del orbe (FASE C), cuadrado, a la MITAD de la
+        resolución de su propio cuadro en pantalla — el raymarch (24-40
+        pasos) sólo cuesta ahí, nunca en el resto de la escena. Se
+        reconstruye SOLO si el tamaño cambia (orbe se mueve/cambia de
+        tamaño con la ventana), no cada frame."""
+        _, dh = self._device_size()
+        diameter_px = self._light_radius * dh * 2.0 * _ORB_MARGIN
+        size = max(8, min(round(diameter_px * 0.5), dh * 2))
+        if self._orb_fbo_size != (size, size):
+            fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
+            fmt.setInternalTextureFormat(0x881A)
+            self._fbos["orb"] = QtOpenGL.QOpenGLFramebufferObject(size, size, fmt)
+            self._orb_fbo_size = (size, size)
+
+    def _scissor_rect_around_orb(self, margin: float, fbo_w: int, fbo_h: int) -> tuple[int, int, int, int]:
+        """Rectángulo (x, y, w, h) en coordenadas de `glScissor` (origen
+        abajo-izquierda) que encierra al orbe con el margen dado — evita
+        invocar el fragment shader de rayos/anillos fuera de esa zona:
+        medido, el pase de anillos a pantalla completa SIN esto costaba
+        más que el propio raymarch del orbe (fill-rate, no el shader en
+        sí — barato mate por píxel, pero cada píxel de la PANTALLA
+        ENTERA). `u_resolution`/`centered` en los shaders siguen usando
+        UV normal — esto sólo acota qué píxeles se procesan."""
+        half_px = self._light_radius * margin * fbo_h
+        cx_px = self._light_uv[0] * fbo_w
+        cy_top_px = self._light_uv[1] * fbo_h
+        cy_bottom_px = fbo_h - cy_top_px  # glScissor: origen abajo-izquierda
+        x0 = max(0, int(cx_px - half_px))
+        y0 = max(0, int(cy_bottom_px - half_px))
+        x1 = min(fbo_w, int(cx_px + half_px))
+        y1 = min(fbo_h, int(cy_bottom_px + half_px))
+        return x0, y0, max(1, x1 - x0), max(1, y1 - y0)
+
+    def _render_orb(self) -> None:
+        """Raymarch real del orbe (plasma vía textura de ruido 3D, 2
+        muestras — nunca fbm de varias octavas), restringido al cuadro
+        pequeño de `_ensure_orb_fbo`, y compuesto luego sobre la escena
+        (pase barato de pantalla completa, ver `blit.frag`)."""
+        self._gl.glDisable(_GL_BLEND)
+        self._ensure_orb_fbo()
+        fbo = self._fbos["orb"]
+        fbo.bind()
+        self._gl.glViewport(0, 0, fbo.width(), fbo.height())
+        self._gl.glClear(_GL_COLOR_BUFFER_BIT)
+        style = STATE_STYLES[self._state]
+        tint = tuple(c / 255.0 for c in style.primary) if self._state != OrbState.ERROR else (1.0, 0.25, 0.32)
+        state_mult = 1.8 if self._state is OrbState.THINKING else 1.0
+        p = self._programs["orb"]
+        p.maybe_reload()
+        p.bind()
+        p.set_uniform("u_time", self._time)
+        p.set_uniform("u_energy", self._energy)
+        p.set_uniform("u_tint", *tint)
+        p.set_uniform("u_stateMult", state_mult)
+        p.set_uniform("u_hover", 1.0 if self._hover else 0.0)
+        p.set_uniform("u_steps", self._settings.raymarch_steps)
+        self._noise_tex.bind(3)
+        p.set_uniform("u_noise3d", 3)
+        self._draw_fullscreen()
+        self._noise_tex.release()
+        p.release()
+        fbo.release()
+
+        scene = self._fbos["scene"]
+        scene.bind()
+        self._gl.glViewport(0, 0, scene.width(), scene.height())
+        sx, sy, sw, sh = self._scissor_rect_around_orb(_ORB_MARGIN * 1.1, scene.width(), scene.height())
+        self._gl.glEnable(_GL_SCISSOR_TEST)
+        self._gl.glScissor(sx, sy, sw, sh)
+        self._gl.glEnable(_GL_BLEND)
+        self._gl.glBlendFunc(_GL_SRC_ALPHA, _GL_ONE_MINUS_SRC_ALPHA)
+        bp = self._programs["blit"]
+        bp.maybe_reload()
+        bp.bind()
+        self._bind_texture(bp, "u_source", 0, fbo.texture())
+        bp.set_uniform("u_lightUv", *self._light_uv)
+        bp.set_uniform("u_lightRadius", self._light_radius)
+        bp.set_uniform("u_resolution", float(scene.width()), float(scene.height()))
+        bp.set_uniform("u_margin", _ORB_MARGIN)
+        self._draw_fullscreen()
+        bp.release()
+        self._gl.glDisable(_GL_BLEND)
+        self._gl.glDisable(_GL_SCISSOR_TEST)
+        scene.release()
+
+    def _render_rings(self) -> None:
+        """Anillos HUD + espectro real, SDF en un pase aparte a
+        resolución completa (nítido pese a que el orbe vaya a media res).
+        Acotado con `glScissor` a la zona real del orbe — medido: sin
+        esto, este pase (matemática barata por píxel, pero sobre la
+        PANTALLA ENTERA) costaba más que el propio raymarch."""
+        scene = self._fbos["scene"]
+        scene.bind()
+        self._gl.glViewport(0, 0, scene.width(), scene.height())
+        sx, sy, sw, sh = self._scissor_rect_around_orb(1.9, scene.width(), scene.height())
+        self._gl.glEnable(_GL_SCISSOR_TEST)
+        self._gl.glScissor(sx, sy, sw, sh)
+        self._gl.glEnable(_GL_BLEND)
+        self._gl.glBlendFunc(_GL_SRC_ALPHA, _GL_ONE_MINUS_SRC_ALPHA)
+        style = STATE_STYLES[self._state]
+        tint = tuple(c / 255.0 for c in style.primary) if self._state != OrbState.ERROR else (1.0, 0.25, 0.32)
+        state_mult = 1.8 if self._state is OrbState.THINKING else 1.0
+        p = self._programs["rings"]
+        p.maybe_reload()
+        p.bind()
+        p.set_uniform("u_time", self._time)
+        p.set_uniform("u_stateMult", state_mult)
+        p.set_uniform("u_resolution", float(scene.width()), float(scene.height()))
+        p.set_uniform("u_lightUv", *self._light_uv)
+        p.set_uniform("u_lightRadius", self._light_radius)
+        p.set_uniform("u_tint", *tint)
+        if self._spectrum:
+            p.set_uniform("u_hasSpectrum", 1)
+            p.set_uniform("u_spectrumCount", len(self._spectrum))
+            p.set_uniform_array("u_spectrum", self._spectrum)
+        else:
+            p.set_uniform("u_hasSpectrum", 0)
+            p.set_uniform("u_spectrumCount", 0)
+        self._draw_fullscreen()
+        p.release()
+        self._gl.glDisable(_GL_BLEND)
+        self._gl.glDisable(_GL_SCISSOR_TEST)
+        scene.release()
 
     def _render_bloom_chain(self) -> None:
         extract = self._programs["extract"]

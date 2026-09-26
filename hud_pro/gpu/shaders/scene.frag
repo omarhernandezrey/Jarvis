@@ -1,11 +1,13 @@
 #version 330 core
 // FASE B — fondo cinematográfico: niebla azul profunda (densidad real de
 // `u_energy`, forma de `u_noise3d`), suelo hexagonal analítico (SDF, sin
-// texturas), resplandor central del orbe (placeholder — el raymarch real
-// llega en FASE C), onda de escaneo al cambiar de estado o al detectar un
-// pico de energía real mientras escucha, barrido de radar y líneas de
-// datos verticales. Todo el "peso" (niebla, hexágonos) es matemática
-// analítica evaluada unas pocas veces por píxel — nunca un bucle de fbm.
+// texturas), onda de escaneo al cambiar de estado o al detectar un pico
+// de energía real mientras escucha, barrido de radar y líneas de datos
+// verticales. El orbe en sí (FASE C) se dibuja en pases aparte —
+// `orb.frag` (raymarch) y `rings.frag` (SDF) — compuestos encima de este
+// fondo, no aquí. Todo el "peso" de este archivo (niebla, hexágonos) es
+// matemática analítica evaluada unas pocas veces por píxel — nunca un
+// bucle de fbm.
 in vec2 vUv;
 out vec4 fragColor;
 
@@ -71,12 +73,10 @@ void main() {
     float fogMask = smoothstep(1.0, 0.15, length(centered)) * (0.18 + 0.5 * u_energy);
     col += u_tint * fog * fogMask;
 
-    // ── resplandor central (placeholder del orbe — FASE C lo reemplaza
-    // por un raymarch real) ────────────────────────────────────────────
-    float pulse = 0.5 + 0.5 * sin(u_time * 1.3 * u_stateMult);
+    // distancia al centro del orbe real — FASE C lo dibuja en su propio
+    // pase (`orb.frag` + `rings.frag`); aquí sólo hace falta para la onda
+    // de escaneo, que sigue viviendo en el fondo.
     float r = length(centered - (u_lightUv - 0.5));
-    float glow = smoothstep(0.42, 0.0, r) * (0.55 + 0.45 * pulse) * (0.5 + 0.5 * u_energy);
-    col += u_tint * glow;
 
     // ── onda de escaneo: anillo expansivo desde el orbe al cambiar de
     // estado o al detectar un pico de energía real mientras escucha ───
