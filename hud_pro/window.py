@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional
 
 from . import theme
 from .chat import ChatPanel, MessageBubble
+from .gpu import capabilities as gpu_capabilities
+from .gpu.stage import HoloStage, HoloStageError
 from .orb import OrbWidget
 from .qt_compat import Qt, QtCore, QtGui, QtWidgets, Signal
 from .state import OrbState, StateLike, parse_state
 from .widgets import BackgroundWidget, ServiceChip, StatusBlock, ToastOverlay, TopBar
+
+log = logging.getLogger("jarvis.hud_pro.gpu")
 
 
 class HudWindow(QtWidgets.QMainWindow):
@@ -56,6 +61,19 @@ class HudWindow(QtWidgets.QMainWindow):
         root = BackgroundWidget(self)
         self.setCentralWidget(root)
         self._root = root
+
+        # Motor GPU (FASE A de la 3ª iteración): fondo de toda la ventana,
+        # por DEBAJO de todo lo demás — se crea primero (nace al fondo de
+        # la pila en z-order) y ocupa el rect completo de `root`, en
+        # sincronía con cada resize (ver `_sync_gpu_stage_geometry`).
+        # `JARVIS_HUD_GPU=off` lo desactiva sin más; con `auto` (por
+        # defecto) sólo se intenta si hay binding OpenGL, la plataforma no
+        # es `offscreen` (ahí QOpenGLWidget se niega a pintar — no es un
+        # bug, es la plataforma) y `detect()` ve un contexto usable. Si
+        # falla la creación o la compilación de shaders, `HoloStage.ok`
+        # queda en `False` y el fondo raster de `BackgroundWidget` (ya
+        # existente, sin tocar) sigue siendo lo único visible.
+        self.gpu_stage: Optional[HoloStage] = self._create_gpu_stage(root)
 
         outer = QtWidgets.QVBoxLayout(root)
         outer.setContentsMargins(22, 10, 22, 18)
@@ -154,6 +172,54 @@ class HudWindow(QtWidgets.QMainWindow):
     def _on_mute_toggled(self, muted: bool) -> None:
         self._muted = muted
         self.mute_toggled.emit(muted)
+
+    # ── Motor GPU (fondo) ────────────────────────────────────────────────
+    def _create_gpu_stage(self, root: QtWidgets.QWidget) -> Optional[HoloStage]:
+        mode = os.environ.get("JARVIS_HUD_GPU", "auto").strip().lower()
+        if mode == "off":
+            log.info("HUD GPU: desactivado por JARVIS_HUD_GPU=off, fondo raster.")
+            return None
+        supported, reason = gpu_capabilities.qopenglwidget_supported_here()
+        if not supported:
+            log.info("HUD GPU: %s, fondo raster.", reason)
+            return None
+        caps = gpu_capabilities.detect()
+        if not caps.available:
+            log.info("HUD GPU: capacidades insuficientes (%s), fondo raster.", caps.summary())
+            return None
+        try:
+            stage = HoloStage(root)
+        except HoloStageError as exc:
+            log.error("HUD GPU: fallo al crear HoloStage (%s), fondo raster.", exc)
+            return None
+        stage.lower()
+        stage.setGeometry(root.rect())
+        return stage
+
+    def _sync_gpu_stage_geometry(self) -> None:
+        if self.gpu_stage is not None:
+            self.gpu_stage.setGeometry(self._root.rect())
+
+    def _check_gpu_stage_after_first_paint(self) -> None:
+        """Un fallo de compilación de shaders se detecta DENTRO de
+        `initializeGL` (síncrono con el primer paint) — por eso basta un
+        `singleShot(0, ...)` tras el primer show real, no hace falta
+        sondear varios frames."""
+        stage = self.gpu_stage
+        if stage is None:
+            return
+        if not stage.ok:
+            log.error(
+                "HUD GPU: %s — se retira el fondo GPU, queda el raster.",
+                stage.init_error or "fallo de inicialización desconocido",
+            )
+            stage.setParent(None)
+            stage.deleteLater()
+            self.gpu_stage = None
+
+    @property
+    def gpu_active(self) -> bool:
+        return self.gpu_stage is not None and self.gpu_stage.ok
 
     # ── API pública ───────────────────────────────────────────────────────
     @property
@@ -345,17 +411,27 @@ class HudWindow(QtWidgets.QMainWindow):
         super().resizeEvent(event)
         self._fit_chat_height()
         self._fit_stage_height()
+        self._sync_gpu_stage_geometry()
         if hasattr(self, "_toasts"):
             self._toasts.reposition(self._root.rect())
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        if self.gpu_stage is not None:
+            QtCore.QTimer.singleShot(0, self._check_gpu_stage_after_first_paint)
 
     def changeEvent(self, event: QtCore.QEvent) -> None:  # noqa: N802
         if event.type() == QtCore.QEvent.Type.WindowStateChange:
             self.orb.set_paused(self.isMinimized())
+            if self.gpu_stage is not None:
+                self.gpu_stage.set_paused(self.isMinimized())
         elif event.type() == QtCore.QEvent.Type.ActivationChange:
             self.orb.refresh_frame_rate()
         super().changeEvent(event)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802
         self.orb.set_paused(True)
+        if self.gpu_stage is not None:
+            self.gpu_stage.set_paused(True)
         self.closing.emit()
         super().closeEvent(event)

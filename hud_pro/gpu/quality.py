@@ -1,0 +1,103 @@
+"""Niveles de calidad del pipeline GPU + modo AUTO adaptivo por ms/frame real.
+
+`JARVIS_HUD_QUALITY=low|medium|high|ultra|auto` (por defecto ``auto``).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+class Quality(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    ULTRA = "ultra"
+
+
+@dataclass(frozen=True)
+class QualitySettings:
+    bloom_scale: float     # fracción de la resolución de pantalla para el FBO de bloom (1/4 en HIGH)
+    kawase_levels: int      # niveles del pirámide dual-Kawase (downs + ups)
+    streak_enabled: bool
+    grain: float
+    aberration: float       # px máximos de desplazamiento cromático en la esquina
+    vignette: float
+
+
+QUALITY_PRESETS: dict[Quality, QualitySettings] = {
+    Quality.LOW: QualitySettings(
+        bloom_scale=0.125, kawase_levels=2, streak_enabled=False,
+        grain=0.018, aberration=0.6, vignette=0.22,
+    ),
+    Quality.MEDIUM: QualitySettings(
+        bloom_scale=0.20, kawase_levels=3, streak_enabled=True,
+        grain=0.024, aberration=1.0, vignette=0.28,
+    ),
+    Quality.HIGH: QualitySettings(
+        bloom_scale=0.25, kawase_levels=4, streak_enabled=True,
+        grain=0.030, aberration=1.4, vignette=0.32,
+    ),
+    Quality.ULTRA: QualitySettings(
+        bloom_scale=0.333, kawase_levels=5, streak_enabled=True,
+        grain=0.034, aberration=1.8, vignette=0.34,
+    ),
+}
+
+
+def parse_quality(value: str) -> Quality | None:
+    """`None` -> modo AUTO (el valor no es un nivel fijo, o vino vacío)."""
+    v = (value or "").strip().lower()
+    if v in ("", "auto"):
+        return None
+    try:
+        return Quality(v)
+    except ValueError:
+        return None
+
+
+class AutoQualityController:
+    """AUTO: parte de HIGH y escala `bloom_scale`/`kawase_levels` hacia
+    abajo si el frame sostiene más de `TARGET_MS`, y los recupera cuando
+    sobra margen — con histéresis para no oscilar cada frame."""
+
+    TARGET_MS = 14.0
+    RECOVER_MS = 10.0  # sólo sube si hay este margen por debajo del objetivo
+    MIN_SCALE = 0.4    # nunca baja de esta fracción del preset base
+    STEP = 0.06
+    WINDOW = 20        # frames que promedia antes de decidir
+
+    def __init__(self, base: QualitySettings = QUALITY_PRESETS[Quality.HIGH]) -> None:
+        self._base = base
+        self._scale = 1.0
+        self._samples: list[float] = []
+
+    def update(self, frame_ms: float) -> QualitySettings:
+        self._samples.append(max(0.0, frame_ms))
+        if len(self._samples) < self.WINDOW:
+            return self.current
+        avg = sum(self._samples) / len(self._samples)
+        self._samples.clear()
+        if avg > self.TARGET_MS:
+            self._scale = max(self.MIN_SCALE, self._scale - self.STEP)
+        elif avg < self.RECOVER_MS:
+            self._scale = min(1.0, self._scale + self.STEP)
+        return self.current
+
+    @property
+    def current(self) -> QualitySettings:
+        s = self._scale
+        levels = max(1, round(self._base.kawase_levels * (0.5 + 0.5 * s)))
+        return QualitySettings(
+            bloom_scale=max(0.06, self._base.bloom_scale * s),
+            kawase_levels=levels,
+            streak_enabled=self._base.streak_enabled and s > 0.55,
+            grain=self._base.grain,
+            aberration=self._base.aberration,
+            vignette=self._base.vignette,
+        )
+
+    @property
+    def scale(self) -> float:
+        return self._scale

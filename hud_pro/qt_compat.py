@@ -45,6 +45,24 @@ IS_QT5 = QT_API == "pyqt5"
 
 Qt = QtCore.Qt
 
+# ── OpenGL (opcional: el motor GPU de hud_pro/gpu/ lo necesita; el resto del
+# paquete —orbe raster, consola, chips— sigue funcionando sin esto) ────────
+QtOpenGL: Any = None
+QtOpenGLWidgets: Any = None
+try:
+    if QT_API == "pyside6":
+        from PySide6 import QtOpenGL as _QtOpenGL  # type: ignore[no-redef]
+        from PySide6 import QtOpenGLWidgets as _QtOpenGLWidgets  # type: ignore[no-redef]
+    elif QT_API == "pyqt6":
+        from PyQt6 import QtOpenGL as _QtOpenGL  # type: ignore[no-redef]
+        from PyQt6 import QtOpenGLWidgets as _QtOpenGLWidgets  # type: ignore[no-redef]
+    else:  # pyqt5: QOpenGLWidget vive en QtWidgets, no hay módulo QtOpenGLWidgets aparte
+        from PyQt5 import QtOpenGL as _QtOpenGL  # type: ignore[no-redef]
+        _QtOpenGLWidgets = QtWidgets
+    QtOpenGL, QtOpenGLWidgets = _QtOpenGL, _QtOpenGLWidgets
+except ImportError:
+    pass  # sin binding de OpenGL: hud_pro.gpu detecta esto y no se activa
+
 
 def exec_app(app: Any) -> int:
     """Ejecuta el event loop de forma compatible (exec vs exec_)."""
@@ -65,6 +83,8 @@ __all__ = [
     "QtCore",
     "QtGui",
     "QtWidgets",
+    "QtOpenGL",
+    "QtOpenGLWidgets",
     "Qt",
     "Signal",
     "Slot",
