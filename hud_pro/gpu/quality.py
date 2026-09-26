@@ -26,18 +26,19 @@ class QualitySettings:
     vignette: float
     godray_samples: int = 32     # 32..48 — nunca menos, mandato de presupuesto de GPU
     raymarch_steps: int = 24     # FASE C: pasos del raymarch del orbe (24 high / 40 ultra)
+    bg_dynamic_scale: float = 0.6  # resolución de la capa DINÁMICA del fondo (niebla/reflejo/radar)
 
 
 QUALITY_PRESETS: dict[Quality, QualitySettings] = {
     Quality.LOW: QualitySettings(
         bloom_scale=0.125, kawase_levels=2, streak_enabled=False,
         grain=0.018, aberration=0.6, vignette=0.22,
-        godray_samples=32, raymarch_steps=16,
+        godray_samples=32, raymarch_steps=16, bg_dynamic_scale=0.35,
     ),
     Quality.MEDIUM: QualitySettings(
         bloom_scale=0.20, kawase_levels=3, streak_enabled=True,
         grain=0.024, aberration=1.0, vignette=0.28,
-        godray_samples=32, raymarch_steps=20,
+        godray_samples=32, raymarch_steps=20, bg_dynamic_scale=0.5,
     ),
     Quality.HIGH: QualitySettings(
         bloom_scale=0.25, kawase_levels=4, streak_enabled=True,
@@ -46,12 +47,12 @@ QUALITY_PRESETS: dict[Quality, QualitySettings] = {
         # son el pase más caro del pipeline: 40 muestras dejaba HIGH en
         # ~6-7ms GPU/1080p, por encima del presupuesto de FASE B (≤5ms).
         # 32 es el PISO del mandato (32-48), nunca menos.
-        godray_samples=32, raymarch_steps=24,
+        godray_samples=32, raymarch_steps=24, bg_dynamic_scale=0.6,
     ),
     Quality.ULTRA: QualitySettings(
         bloom_scale=0.333, kawase_levels=5, streak_enabled=True,
         grain=0.034, aberration=1.8, vignette=0.34,
-        godray_samples=48, raymarch_steps=40,
+        godray_samples=48, raymarch_steps=40, bg_dynamic_scale=0.75,
     ),
 }
 
@@ -111,6 +112,7 @@ class AutoQualityController:
             # todo lo demás.
             godray_samples=max(32, round(self._base.godray_samples * (0.5 + 0.5 * s))),
             raymarch_steps=max(12, round(self._base.raymarch_steps * (0.4 + 0.6 * s))),
+            bg_dynamic_scale=max(0.3, self._base.bg_dynamic_scale * (0.5 + 0.5 * s)),
         )
 
     @property

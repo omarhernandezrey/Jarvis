@@ -99,7 +99,8 @@ def test_qopenglwidget_supported_here_matches_platform(qapp):
 @pytest.mark.parametrize(
     "frag",
     [
-        "scene.frag",
+        "static_bg.frag",
+        "dynamic_bg.frag",
         "bloom_extract.frag",
         "godray.frag",
         "kawase_down.frag",
@@ -108,6 +109,7 @@ def test_qopenglwidget_supported_here_matches_platform(qapp):
         "composite.frag",
         "orb.frag",
         "blit.frag",
+        "passthrough.frag",
         "rings.frag",
     ],
 )

@@ -108,6 +108,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._orb_fbo_size = (0, 0)
         self._last_logged_settings = None
         self._last_logged_size: tuple[int, int] | None = None
+        self._static_bg_size = (0, 0)
+        self._dynamic_bg_size = (0, 0)
 
         self._programs: dict[str, ShaderProgram] = {}
         self._fbos: dict[str, QtOpenGL.QOpenGLFramebufferObject] = {}
@@ -291,7 +293,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
 
     def _compile_programs(self) -> None:
         specs = {
-            "scene": "scene.frag",
+            "static_bg": "static_bg.frag",
+            "dynamic_bg": "dynamic_bg.frag",
             "extract": "bloom_extract.frag",
             "godray": "godray.frag",
             "kawase_down": "kawase_down.frag",
@@ -300,6 +303,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             "composite": "composite.frag",
             "orb": "orb.frag",
             "blit": "blit.frag",
+            "passthrough": "passthrough.frag",
             "rings": "rings.frag",
         }
         for key, frag in specs.items():
@@ -365,6 +369,12 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # la primera vez que se pinta después de un resize/cambio de
         # calidad (confirmado: reproducible, no es hipotético).
         self._orb_fbo_size = (0, 0)
+        # mismo motivo que el del orbe arriba: este método acaba de
+        # borrar "static_bg"/"dynamic_bg" del dict — sin resetear su
+        # tamaño registrado, `_ensure_static_bg`/`_ensure_dynamic_bg_fbo`
+        # creerían que no cambió nada y no los recrearían.
+        self._static_bg_size = (0, 0)
+        self._dynamic_bg_size = (0, 0)
 
         fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
         fmt.setInternalTextureFormat(0x881A)  # GL_RGBA16F: rango HDR para el bloom/tonemap
@@ -469,27 +479,58 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._gl.glBindTexture(_GL_TEXTURE_2D, tex_id)
         program.set_uniform(uniform, unit)
 
-    def _render_scene(self) -> None:
-        # ningún pase de este pipeline asume blending activo salvo el
-        # polvo (aditivo, al final de ESTE mismo método) — si por lo que
-        # sea quedó encendido de un frame anterior, esto lo reinicia
-        # ANTES de dibujar nada; un blend aditivo colándose en pases que
-        # asumen sobreescritura opaca acumula sin tope frame tras frame.
-        self._gl.glDisable(_GL_BLEND)
-        fbo = self._fbos["scene"]
+    def _ensure_static_bg(self) -> None:
+        """Capa ESTÁTICA (gradiente + retícula hexagonal + viñeta): se
+        renderiza a una textura propia UNA sola vez por tamaño — nunca
+        depende del estado/tiempo, así que no hace falta invalidarla por
+        eso. El resto de los frames la reutilizan con una sola lectura de
+        textura (`blit.frag`), sin recalcular el SDF del hexágono."""
+        dw, dh = self._device_size()
+        if self._static_bg_size == (dw, dh) and "static_bg" in self._fbos:
+            return
+        fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
+        fmt.setInternalTextureFormat(0x881A)
+        self._fbos["static_bg"] = QtOpenGL.QOpenGLFramebufferObject(dw, dh, fmt)
+        self._static_bg_size = (dw, dh)
+        fbo = self._fbos["static_bg"]
         fbo.bind()
-        self._gl.glViewport(0, 0, fbo.width(), fbo.height())
+        self._gl.glViewport(0, 0, dw, dh)
         self._gl.glClear(_GL_COLOR_BUFFER_BIT)
-        p = self._programs["scene"]
+        p = self._programs["static_bg"]
         p.maybe_reload()
         p.bind()
-        style = STATE_STYLES[self._state]
-        tint = tuple(c / 255.0 for c in style.primary) if self._state != OrbState.ERROR else (1.0, 0.25, 0.32)
-        state_mult = 1.8 if self._state is OrbState.THINKING else 1.0
-        scan_age = self._time - self._scan_start
+        p.set_uniform("u_resolution", float(dw), float(dh))
+        self._draw_fullscreen()
+        p.release()
+        fbo.release()
+
+    def _ensure_dynamic_bg_fbo(self) -> tuple[int, int]:
+        dw, dh = self._device_size()
+        scale = self._settings.bg_dynamic_scale
+        w, h = max(4, round(dw * scale)), max(4, round(dh * scale))
+        if self._dynamic_bg_size != (w, h) or "dynamic_bg" not in self._fbos:
+            fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
+            fmt.setInternalTextureFormat(0x881A)
+            self._fbos["dynamic_bg"] = QtOpenGL.QOpenGLFramebufferObject(w, h, fmt)
+            self._dynamic_bg_size = (w, h)
+        return w, h
+
+    def _render_dynamic_bg(self, tint: tuple, state_mult: float, scan_age: float) -> None:
+        """Capa DINÁMICA (niebla, reflejo del orbe, onda de escaneo,
+        radar, líneas) — a RESOLUCIÓN REDUCIDA (`bg_dynamic_scale`, según
+        calidad), compuesta luego sobre la escena con upsample bilineal
+        de hardware al muestrear su textura (ver `_render_scene`)."""
+        w, h = self._ensure_dynamic_bg_fbo()
+        fbo = self._fbos["dynamic_bg"]
+        fbo.bind()
+        self._gl.glViewport(0, 0, w, h)
+        self._gl.glClear(_GL_COLOR_BUFFER_BIT)
+        p = self._programs["dynamic_bg"]
+        p.maybe_reload()
+        p.bind()
         p.set_uniform("u_time", self._time)
         p.set_uniform("u_energy", self._energy)
-        p.set_uniform("u_resolution", float(fbo.width()), float(fbo.height()))
+        p.set_uniform("u_resolution", float(w), float(h))
         p.set_uniform("u_tint", *tint)
         p.set_uniform("u_stateMult", state_mult)
         p.set_uniform("u_scanAge", scan_age)
@@ -498,8 +539,54 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p.set_uniform("u_noise3d", 3)
         self._draw_fullscreen()
         self._noise_tex.release()
-        self._render_dust(tint)
         p.release()
+        fbo.release()
+
+    def _render_scene(self) -> None:
+        # ningún pase de este pipeline asume blending activo salvo el
+        # dinámico y el polvo (ambos con alpha, al final de ESTE mismo
+        # método) — si por lo que sea quedó encendido de un frame
+        # anterior, esto lo reinicia ANTES de dibujar nada; un blend
+        # colándose en pases que asumen sobreescritura opaca acumula sin
+        # tope frame tras frame.
+        self._gl.glDisable(_GL_BLEND)
+        self._ensure_static_bg()
+
+        style = STATE_STYLES[self._state]
+        tint = tuple(c / 255.0 for c in style.primary) if self._state != OrbState.ERROR else (1.0, 0.25, 0.32)
+        state_mult = 1.8 if self._state is OrbState.THINKING else 1.0
+        scan_age = self._time - self._scan_start
+        self._render_dynamic_bg(tint, state_mult, scan_age)
+
+        fbo = self._fbos["scene"]
+        fbo.bind()
+        self._gl.glViewport(0, 0, fbo.width(), fbo.height())
+        self._gl.glClear(_GL_COLOR_BUFFER_BIT)
+
+        # 1) estático: una sola lectura de textura, sin blending (opaco).
+        # `passthrough.frag`, NUNCA `blit.frag` — ese programa es del
+        # orbe y retiene entre frames u_lightUv/u_lightRadius/u_margin de
+        # su propio compositing; reusarlo aquí (sin fijar esos uniforms)
+        # colaba el discard del cuadro del orbe sobre todo el fondo.
+        pt = self._programs["passthrough"]
+        pt.maybe_reload()
+        pt.bind()
+        self._bind_texture(pt, "u_source", 0, self._fbos["static_bg"].texture())
+        self._draw_fullscreen()
+        pt.release()
+
+        # 2) dinámico: compuesto encima con alpha — el upsample de la
+        # resolución reducida a la completa es el filtro bilineal de
+        # hardware de la propia textura, sin pasada de upsample aparte.
+        self._gl.glEnable(_GL_BLEND)
+        self._gl.glBlendFunc(_GL_SRC_ALPHA, _GL_ONE_MINUS_SRC_ALPHA)
+        pt.bind()
+        self._bind_texture(pt, "u_source", 0, self._fbos["dynamic_bg"].texture())
+        self._draw_fullscreen()
+        pt.release()
+        self._gl.glDisable(_GL_BLEND)
+
+        self._render_dust(tint)
         fbo.release()
 
     def _render_dust(self, tint: tuple) -> None:
