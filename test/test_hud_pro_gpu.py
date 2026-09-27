@@ -411,6 +411,47 @@ def test_hud_window_activates_real_gpu_background():
 
 
 @pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_hud_window_gpu_energy_timer_only_runs_while_listening_or_speaking():
+    """CPU EN REPOSO: perfilado con py-spy (JARVIS en LISTO, render
+    pausado) mostró este timer de 33ms/30Hz disparando SIEMPRE, sin
+    importar el estado — coste real por cero beneficio visual fuera de
+    ESCUCHANDO/HABLANDO, los únicos estados donde la energía de audio es
+    real (no la síntesis de reposo del orbe)."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.window import HudWindow
+        from hud_pro.state import OrbState
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+        w = HudWindow()
+        w.show()
+        for _ in range(15):
+            app.processEvents()
+
+        w.set_state(OrbState.IDLE)
+        assert not w._gpu_energy_timer.isActive(), "IDLE no debe correr el timer de energía"
+
+        w.set_state(OrbState.LISTENING)
+        assert w._gpu_energy_timer.isActive(), "LISTENING sí debe correr el timer de energía"
+
+        w.set_state(OrbState.THINKING)
+        assert not w._gpu_energy_timer.isActive(), "THINKING no debe correr el timer de energía"
+
+        w.set_state(OrbState.SPEAKING)
+        assert w._gpu_energy_timer.isActive(), "SPEAKING sí debe correr el timer de energía"
+
+        w.set_state(OrbState.IDLE)
+        assert not w._gpu_energy_timer.isActive(), "debe pararse de nuevo al volver a IDLE"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
 def test_hud_window_respects_gpu_off_with_real_display():
     result = _run_subprocess_script(
         """

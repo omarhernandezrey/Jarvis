@@ -176,17 +176,32 @@ class HudWindow(QtWidgets.QMainWindow):
         if self.gpu_stage is not None:
             # el nivel del orbe (real cuando hay audio; síntesis de reposo
             # cuando no) varía frame a frame por su propio suavizado — el
-            # fondo GPU lo necesita al mismo ritmo, no sólo cuando llega un
-            # set_audio_level() externo nuevo. Reutiliza el MISMO valor
-            # que ya pinta el orbe raster (`OrbRenderer.level`), nunca uno
-            # sintetizado aparte.
+            # fondo GPU lo necesita al mismo ritmo mientras importa
+            # visualmente. Reutiliza el MISMO valor que ya pinta el orbe
+            # raster (`OrbRenderer.level`), nunca uno sintetizado aparte.
+            #
+            # CPU EN REPOSO: perfilado con py-spy (JARVIS en LISTO, render
+            # pausado) mostró este timer disparando a 30Hz SIEMPRE, sin
+            # importar el estado — coste real (cruzar shiboken + leer
+            # `orb.renderer.level` + `set_energy`) por CERO beneficio
+            # visual fuera de ESCUCHANDO/HABLANDO (el único momento en que
+            # la energía de audio es real, no la síntesis de reposo).
+            # Arrancar/parar por estado en vez de dejarlo siempre vivo.
             self._gpu_energy_timer = QtCore.QTimer(self)
             self._gpu_energy_timer.setTimerType(QtCore.Qt.TimerType.CoarseTimer)
             self._gpu_energy_timer.timeout.connect(self._sync_gpu_energy)
-            self._gpu_energy_timer.start(33)
 
         self._install_shortcuts()
         self.set_state(OrbState.IDLE)
+
+    def _sync_gpu_energy_timer_active(self, state: OrbState) -> None:
+        if not hasattr(self, "_gpu_energy_timer"):
+            return
+        should_run = state in (OrbState.LISTENING, OrbState.SPEAKING)
+        if should_run and not self._gpu_energy_timer.isActive():
+            self._gpu_energy_timer.start(33)
+        elif not should_run and self._gpu_energy_timer.isActive():
+            self._gpu_energy_timer.stop()
 
     def _sync_gpu_energy(self) -> None:
         if self.gpu_stage is not None:
@@ -270,6 +285,7 @@ class HudWindow(QtWidgets.QMainWindow):
         self.orb.set_state(st)
         if self.gpu_stage is not None:
             self.gpu_stage.set_state(st)
+        self._sync_gpu_energy_timer_active(st)
         self.status.set_state(st, detail)
         self.top_bar.chip.set_state(st)
         self.chat.input.set_mic_checked(st is OrbState.LISTENING)
