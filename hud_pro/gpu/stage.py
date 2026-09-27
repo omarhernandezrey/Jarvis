@@ -87,11 +87,18 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
 
         self._reduced_motion = os.environ.get("JARVIS_REDUCED_MOTION", "") == "1"
         fixed_q = parse_quality(os.environ.get("JARVIS_HUD_QUALITY", ""))
-        self._auto = None if fixed_q else AutoQualityController(QUALITY_PRESETS[Quality.HIGH])
+        self._auto = None if fixed_q else AutoQualityController(QUALITY_PRESETS[Quality.MEDIUM])
         self._settings: QualitySettings = (
             QUALITY_PRESETS[fixed_q] if fixed_q else self._auto.current
         )
         self._quality_fixed = fixed_q
+        # bajada temporal a MEDIUM mientras el LLM genera (PROCESANDO):
+        # medido con Ollama real — con la GPU activa, generar compite por
+        # ancho de banda de RAM con la gráfica integrada y pierde tokens/s
+        # bastante más de lo tolerable. Sólo aplica si el nivel fijo actual
+        # es más caro que MEDIUM (HIGH/ULTRA); AUTO ya nunca pasa de
+        # MEDIUM, así que no tiene nada que bajar.
+        self._settings_before_llm: QualitySettings | None = None
 
         self._time = 0.0
         self._energy = 0.0
@@ -145,14 +152,45 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         """`None` = AUTO."""
         self._quality_fixed = quality
         if quality is None:
-            self._auto = self._auto or AutoQualityController(QUALITY_PRESETS[Quality.HIGH])
+            self._auto = self._auto or AutoQualityController(QUALITY_PRESETS[Quality.MEDIUM])
         else:
             self._settings = QUALITY_PRESETS[quality]
 
     def set_state(self, state: OrbState) -> None:
         if state != self._state:
             self._trigger_scan()
+        entering_thinking = state is OrbState.THINKING and self._state is not OrbState.THINKING
+        leaving_thinking = state is not OrbState.THINKING and self._state is OrbState.THINKING
         self._state = state
+        if entering_thinking:
+            self._maybe_downgrade_for_llm()
+        elif leaving_thinking:
+            self._restore_quality_after_llm()
+
+    def _maybe_downgrade_for_llm(self) -> None:
+        """Sólo cambia campos que YA se leen de `self._settings` en cada
+        frame sin depender del tamaño de ningún FBO (`godray_samples`,
+        `raymarch_steps`, `streak_enabled`, `bg_dynamic_scale` — este
+        último sí redimensiona su propia FBO, pero dentro del propio
+        render loop, con contexto GL ya activo — ver `_ensure_dynamic_bg_
+        fbo`). Deliberadamente NO toca `bloom_scale`/`kawase_levels` (esos
+        exigen `_rebuild_fbos`, que fuera del ciclo de pintado no tiene
+        garantizado un contexto GL corriente) — su costo real, medido, es
+        menor que el de rayos de dios + raymarch, así que el ahorro
+        principal ya se logra sin ese riesgo."""
+        expensive = self._quality_fixed in (Quality.HIGH, Quality.ULTRA)
+        if not expensive:
+            return  # AUTO nunca pasa de MEDIUM; nada que bajar.
+        self._settings_before_llm = self._settings
+        self._settings = QUALITY_PRESETS[Quality.MEDIUM]
+        log.info("HUD GPU: bajando a MEDIUM mientras el LLM genera (era %s)", self._quality_fixed.value)
+
+    def _restore_quality_after_llm(self) -> None:
+        if self._settings_before_llm is None:
+            return
+        self._settings = self._settings_before_llm
+        self._settings_before_llm = None
+        log.info("HUD GPU: calidad restaurada a %s tras terminar de generar", self._quality_fixed.value)
 
     def set_energy(self, energy: float) -> None:
         e = max(0.0, min(1.0, float(energy)))
@@ -303,7 +341,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             "composite": "composite.frag",
             "orb": "orb.frag",
             "blit": "blit.frag",
-            "passthrough": "passthrough.frag",
+            "bg_composite": "bg_composite.frag",
             "rings": "rings.frag",
         }
         for key, frag in specs.items():
@@ -387,7 +425,11 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._kawase_sizes = [(max(2, bw >> i), max(2, bh >> i)) for i in range(levels)]
         for i, (lw, lh) in enumerate(self._kawase_sizes):
             self._fbos[f"kawase{i}"] = QtOpenGL.QOpenGLFramebufferObject(lw, lh, fmt)
-        self._fbos["streak"] = QtOpenGL.QOpenGLFramebufferObject(bw, bh, fmt)
+        # flare a 1/8 de la resolución de PANTALLA (no de `bloom_scale`,
+        # que en high ya es 1/4) — es un efecto muy difuminado de por sí,
+        # media res extra sobre el bloom no se nota y sólo cuesta fill-rate.
+        sw, sh = max(2, round(w / 8)), max(2, round(h / 8))
+        self._fbos["streak"] = QtOpenGL.QOpenGLFramebufferObject(sw, sh, fmt)
         # los rayos de dios son el pase más caro del pipeline (32-48
         # muestras por píxel, medido: ~2.4ms de los ~7.8ms totales en
         # HIGH) — el piso de muestras es un mandato ("nunca menos de 32"),
@@ -544,11 +586,10 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
 
     def _render_scene(self) -> None:
         # ningún pase de este pipeline asume blending activo salvo el
-        # dinámico y el polvo (ambos con alpha, al final de ESTE mismo
-        # método) — si por lo que sea quedó encendido de un frame
-        # anterior, esto lo reinicia ANTES de dibujar nada; un blend
-        # colándose en pases que asumen sobreescritura opaca acumula sin
-        # tope frame tras frame.
+        # polvo (al final de ESTE mismo método) — si por lo que sea quedó
+        # encendido de un frame anterior, esto lo reinicia ANTES de dibujar
+        # nada; un blend colándose en pases que asumen sobreescritura
+        # opaca acumula sin tope frame tras frame.
         self._gl.glDisable(_GL_BLEND)
         self._ensure_static_bg()
 
@@ -563,31 +604,26 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._gl.glViewport(0, 0, fbo.width(), fbo.height())
         self._gl.glClear(_GL_COLOR_BUFFER_BIT)
 
-        # 1) estático: una sola lectura de textura, sin blending (opaco).
-        # `passthrough.frag`, NUNCA `blit.frag` — ese programa es del
-        # orbe y retiene entre frames u_lightUv/u_lightRadius/u_margin de
-        # su propio compositing; reusarlo aquí (sin fijar esos uniforms)
-        # colaba el discard del cuadro del orbe sobre todo el fondo.
-        pt = self._programs["passthrough"]
-        pt.maybe_reload()
-        pt.bind()
-        self._bind_texture(pt, "u_source", 0, self._fbos["static_bg"].texture())
-        self._draw_fullscreen()
-        pt.release()
-
-        # 2) dinámico: compuesto encima con alpha — el upsample de la
-        # resolución reducida a la completa es el filtro bilineal de
-        # hardware de la propia textura, sin pasada de upsample aparte.
-        self._gl.glEnable(_GL_BLEND)
-        self._gl.glBlendFunc(_GL_SRC_ALPHA, _GL_ONE_MINUS_SRC_ALPHA)
-        pt.bind()
-        self._bind_texture(pt, "u_source", 0, self._fbos["dynamic_bg"].texture())
-        self._draw_fullscreen()
-        pt.release()
-        self._gl.glDisable(_GL_BLEND)
-
+        self._composite_background()
         self._render_dust(tint)
         fbo.release()
+
+    def _composite_background(self) -> None:
+        """Funde estático + dinámico en UN solo draw call (`bg_composite.
+        frag`, mezcla por alpha hecha en el shader con `mix`, sin blending
+        de hardware). Antes eran dos blits separados con un toggle de
+        `glBlendFunc` en medio — medido: ese segundo draw call + cambio de
+        estado de blend costaba más, en esta GPU, de lo que ahorraba
+        renderizar la capa dinámica a resolución reducida; fusionarlos
+        recuperó ese costo sin perder la resolución reducida de la capa
+        dinámica (su sampler sigue haciendo el upsample bilineal)."""
+        bc = self._programs["bg_composite"]
+        bc.maybe_reload()
+        bc.bind()
+        self._bind_texture(bc, "u_static", 0, self._fbos["static_bg"].texture())
+        self._bind_texture(bc, "u_dynamic", 1, self._fbos["dynamic_bg"].texture())
+        self._draw_fullscreen()
+        bc.release()
 
     def _render_dust(self, tint: tuple) -> None:
         """Polvo bokeh: ~300 point sprites (VBO propio, 3 capas), mezclado

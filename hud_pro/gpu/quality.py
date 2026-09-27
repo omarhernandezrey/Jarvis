@@ -50,7 +50,10 @@ QUALITY_PRESETS: dict[Quality, QualitySettings] = {
         godray_samples=32, raymarch_steps=24, bg_dynamic_scale=0.6,
     ),
     Quality.ULTRA: QualitySettings(
-        bloom_scale=0.333, kawase_levels=5, streak_enabled=True,
+        # kawase_levels=4, no 5: mandato "máximo 4 iteraciones" — un 5º
+        # nivel no se nota en un bloom ya difuminado y cuesta 2 pases más
+        # (down+up) de fill-rate.
+        bloom_scale=0.333, kawase_levels=4, streak_enabled=True,
         grain=0.034, aberration=1.8, vignette=0.34,
         godray_samples=48, raymarch_steps=40, bg_dynamic_scale=0.75,
     ),
@@ -69,9 +72,12 @@ def parse_quality(value: str) -> Quality | None:
 
 
 class AutoQualityController:
-    """AUTO: parte de HIGH y escala `bloom_scale`/`kawase_levels` hacia
-    abajo si el frame sostiene más de `TARGET_MS`, y los recupera cuando
-    sobra margen — con histéresis para no oscilar cada frame."""
+    """AUTO: parte de MEDIUM (medido en esta máquina: HIGH nunca sostiene
+    el presupuesto de frame ni con el escalado máximo de AUTO — arrancar
+    ahí sólo garantiza varios frames caros hasta que la histéresis baje el
+    nivel) y escala `bloom_scale`/`kawase_levels` hacia abajo si el frame
+    sostiene más de `TARGET_MS`, recuperándolos cuando sobra margen — con
+    histéresis para no oscilar cada frame."""
 
     TARGET_MS = 14.0
     RECOVER_MS = 10.0  # sólo sube si hay este margen por debajo del objetivo
@@ -79,7 +85,7 @@ class AutoQualityController:
     STEP = 0.06
     WINDOW = 20        # frames que promedia antes de decidir
 
-    def __init__(self, base: QualitySettings = QUALITY_PRESETS[Quality.HIGH]) -> None:
+    def __init__(self, base: QualitySettings = QUALITY_PRESETS[Quality.MEDIUM]) -> None:
         self._base = base
         self._scale = 1.0
         self._samples: list[float] = []
@@ -99,7 +105,7 @@ class AutoQualityController:
     @property
     def current(self) -> QualitySettings:
         s = self._scale
-        levels = max(1, round(self._base.kawase_levels * (0.5 + 0.5 * s)))
+        levels = min(4, max(1, round(self._base.kawase_levels * (0.5 + 0.5 * s))))
         return QualitySettings(
             bloom_scale=max(0.06, self._base.bloom_scale * s),
             kawase_levels=levels,

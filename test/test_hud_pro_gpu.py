@@ -109,7 +109,7 @@ def test_qopenglwidget_supported_here_matches_platform(qapp):
         "composite.frag",
         "orb.frag",
         "blit.frag",
-        "passthrough.frag",
+        "bg_composite.frag",
         "rings.frag",
     ],
 )
@@ -561,6 +561,51 @@ def test_holostage_orb_setters_clamp_and_toggle():
         assert w._spectrum is None
         w.set_spectrum([])
         assert w._spectrum is None
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_downgrades_to_medium_while_llm_thinks_then_restores():
+    """Medido con Ollama real: con la GPU en HIGH/ULTRA, generar pierde
+    más del 10% de tokens/s (contención de ancho de banda de RAM con la
+    gráfica integrada). Mientras el estado es THINKING (PROCESANDO, el
+    LLM generando), la calidad debe bajar a MEDIUM sin tocar los fps, y
+    restaurarse exactamente al salir de THINKING. AUTO nunca pasa de
+    MEDIUM, así que no tiene nada que bajar."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        from hud_pro.gpu.quality import Quality, QUALITY_PRESETS
+        from hud_pro.state import OrbState
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        w._quality_fixed = Quality.HIGH
+        w._settings = QUALITY_PRESETS[Quality.HIGH]
+        w.set_state(OrbState.LISTENING)  # 60fps, igual que THINKING — aísla fps de calidad
+        fps_before = w._current_fps()
+
+        w.set_state(OrbState.THINKING)
+        assert w._settings == QUALITY_PRESETS[Quality.MEDIUM], "no bajó a MEDIUM al entrar a THINKING"
+        assert w._current_fps() == fps_before, "no debe bajar los fps, sólo la calidad"
+
+        w.set_state(OrbState.LISTENING)
+        assert w._settings == QUALITY_PRESETS[Quality.HIGH], "no restauró HIGH al salir de THINKING"
+        assert w._settings_before_llm is None
+
+        # AUTO (quality_fixed=None): nunca pasa de MEDIUM, nada que bajar.
+        w2 = HoloStage()
+        w2._quality_fixed = None
+        auto_settings = w2._settings
+        w2.set_state(OrbState.THINKING)
+        assert w2._settings == auto_settings, "AUTO no debía cambiar (ya está en <= MEDIUM)"
         print("OK")
         """,
         {},
