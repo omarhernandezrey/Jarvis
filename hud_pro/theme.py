@@ -14,7 +14,10 @@ RGB = Tuple[int, int, int]
 # ── Tokens ────────────────────────────────────────────────────────────────
 BG_0 = "#03060D"
 BG_1 = "#060C18"
-BG_PANEL = "rgba(9, 18, 34, 0.78)"
+BG_PANEL = "rgba(9, 18, 34, 0.60)"  # más translúcido que 0.78: deja ver el
+# vidrio esmerilado GPU de FASE D (`HoloStage._render_glass`) detrás del
+# panel — con 0.78 el desenfoque quedaba prácticamente tapado y el efecto
+# no se notaba.
 BG_PANEL_SOLID = "#0A1426"
 BG_INPUT = "rgba(4, 10, 22, 0.85)"
 LINE = "rgba(110, 190, 255, 0.14)"

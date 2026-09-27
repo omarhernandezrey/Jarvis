@@ -171,6 +171,8 @@ class HudWindow(QtWidgets.QMainWindow):
         self.chat.mic_toggled.connect(self.mic_toggled.emit)
         self.chat.header_clicked.connect(self.toggle_console_mode)
         self.orb.installEventFilter(self)
+        self.chat.installEventFilter(self)
+        self._sync_glass_rect()
         if self.gpu_stage is not None:
             # el nivel del orbe (real cuando hay audio; síntesis de reposo
             # cuando no) varía frame a frame por su propio suavizado — el
@@ -456,7 +458,23 @@ class HudWindow(QtWidgets.QMainWindow):
         elif obj is self.orb and event.type() == QtCore.QEvent.Type.Leave:
             if self.gpu_stage is not None:
                 self.gpu_stage.set_hover(False)
+        elif obj is self.chat and event.type() in (QtCore.QEvent.Type.Resize, QtCore.QEvent.Type.Move):
+            self._sync_glass_rect()
         return super().eventFilter(obj, event)
+
+    def _sync_glass_rect(self) -> None:
+        """FASE D — vidrio del panel de consola: le pasa al fondo GPU la
+        geometría REAL de `self.chat` (nunca un rect inventado), en UV de
+        `_root` — misma convención que `set_light_uv`."""
+        if self.gpu_stage is None:
+            return
+        rw, rh = self._root.width(), self._root.height()
+        if rw <= 0 or rh <= 0:
+            return
+        g = self.chat.geometry()
+        self.gpu_stage.set_glass_rect(
+            g.x() / rw, g.y() / rh, g.width() / rw, g.height() / rh,
+        )
 
     def _target_chat_height(self) -> int:
         if self._console_expanded:

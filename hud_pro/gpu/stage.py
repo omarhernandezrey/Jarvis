@@ -117,6 +117,13 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._last_logged_size: tuple[int, int] | None = None
         self._static_bg_size = (0, 0)
         self._dynamic_bg_size = (0, 0)
+        # FASE D — vidrio de paneles: rect en UV de ventana (Qt, origen
+        # arriba-izquierda), lo alimenta `window.py` desde la geometría
+        # real del panel — `None` mientras no se haya fijado ninguno.
+        self._glass_rect: tuple[float, float, float, float] | None = None
+        self._glass_fbo_size = (0, 0)
+        self._glass_last_update = -999.0
+        self._glass_interval_s = 1.0 / 20.0  # 20Hz — el fondo tras el panel cambia despacio
 
         self._programs: dict[str, ShaderProgram] = {}
         self._fbos: dict[str, QtOpenGL.QOpenGLFramebufferObject] = {}
@@ -213,6 +220,16 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         mismo sistema que `u_lightUv`) — 0.30 del lado menor del propio
         widget del orbe, calculado en `window.py` desde su geometría real."""
         self._light_radius = max(0.01, float(radius))
+
+    def set_glass_rect(self, x: float, y: float, w: float, h: float) -> None:
+        """Rect del panel de vidrio (FASE D) en UV de VENTANA — Qt, origen
+        arriba-izquierda, igual convención que `set_light_uv`. `w`/`h`
+        nulos o negativos apagan el efecto (panel oculto/sin geometría
+        todavía) en vez de dejar un rect inválido a medio fijar."""
+        if w <= 0.0 or h <= 0.0:
+            self._glass_rect = None
+            return
+        self._glass_rect = (float(x), float(y), float(w), float(h))
 
     def set_hover(self, hovering: bool) -> None:
         """+20% de brillo del orbe — mismo gesto que ya soporta el orbe
@@ -342,6 +359,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             "orb": "orb.frag",
             "blit": "blit.frag",
             "bg_composite": "bg_composite.frag",
+            "glass_blur": "glass_blur.frag",
+            "glass_apply": "glass_apply.frag",
             "rings": "rings.frag",
         }
         for key, frag in specs.items():
@@ -413,6 +432,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # creerían que no cambió nada y no los recrearían.
         self._static_bg_size = (0, 0)
         self._dynamic_bg_size = (0, 0)
+        # mismo motivo, para la FBO del vidrio de paneles (FASE D).
+        self._glass_fbo_size = (0, 0)
 
         fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
         fmt.setInternalTextureFormat(0x881A)  # GL_RGBA16F: rango HDR para el bloom/tonemap
@@ -487,6 +508,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._render_scene()
         self._render_orb()
         self._render_rings()
+        self._render_glass()
         self._render_bloom_chain()
         if self._settings.streak_enabled:
             self._render_streak()
@@ -781,6 +803,79 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p.release()
         self._gl.glDisable(_GL_BLEND)
         self._gl.glDisable(_GL_SCISSOR_TEST)
+        scene.release()
+
+    def _glass_pixel_rect(self, dw: int, dh: int) -> tuple[int, int, int, int]:
+        """Convierte `_glass_rect` (UV de ventana, Qt: origen arriba-
+        izquierda) a píxeles bottom-up (origen abajo-izquierda) — misma
+        conversión que `_scissor_rect_around_orb` para `_light_uv`, la
+        convención de TODO el contenido dibujado por este pipeline."""
+        x_uv, y_uv, w_uv, h_uv = self._glass_rect
+        x0 = round(x_uv * dw)
+        w = max(1, round(w_uv * dw))
+        top_px = round(y_uv * dh)
+        h = max(1, round(h_uv * dh))
+        y0 = dh - top_px - h  # Qt (arriba-izq) → GL (abajo-izq)
+        return x0, y0, w, h
+
+    def _ensure_glass_fbo(self, pw: int, ph: int) -> tuple[int, int]:
+        gw, gh = max(2, pw // 4), max(2, ph // 4)
+        if self._glass_fbo_size != (gw, gh) or "glass" not in self._fbos:
+            fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
+            fmt.setInternalTextureFormat(0x881A)
+            self._fbos["glass"] = QtOpenGL.QOpenGLFramebufferObject(gw, gh, fmt)
+            self._glass_fbo_size = (gw, gh)
+        return gw, gh
+
+    def _render_glass(self) -> None:
+        """FASE D — vidrio esmerilado del panel de consola: desenfoque de
+        lo que hay detrás, calculado SÓLO en la región del panel (nunca
+        pantalla completa) y a 1/4 de SU resolución — el upsample de
+        vuelta es el filtro bilineal de hardware del sampler, igual que
+        el fondo dinámico. La parte cara (el blur en sí) sólo se
+        recalcula a 20Hz (`_glass_interval_s`): el fondo detrás de un
+        panel cambia despacio frame a frame, recalcularlo a 60fps sería
+        gastar presupuesto de GPU en algo imperceptible. Cuando toca
+        saltarse el recálculo, el blit de abajo sigue componiendo la
+        ÚLTIMA versión ya calculada — nunca deja el panel sin vidrio."""
+        if self._glass_rect is None:
+            return
+        dw, dh = self._device_size()
+        x0, y0, pw, ph = self._glass_pixel_rect(dw, dh)
+        if pw < 8 or ph < 8:
+            return  # panel casi invisible (colapsando/animando) — no vale la pena
+        gw, gh = self._ensure_glass_fbo(pw, ph)
+
+        due = (self._time - self._glass_last_update) >= self._glass_interval_s
+        if due:
+            self._glass_last_update = self._time
+            scene = self._fbos["scene"]
+            glass_fbo = self._fbos["glass"]
+            glass_fbo.bind()
+            self._gl.glViewport(0, 0, gw, gh)
+            p = self._programs["glass_blur"]
+            p.maybe_reload()
+            p.bind()
+            self._bind_texture(p, "u_source", 0, scene.texture())
+            # UV bottom-up del rect dentro de `scene` (misma conversión
+            # que `_glass_pixel_rect`, pero en UV 0..1 en vez de píxeles).
+            rect_min_v = 1.0 - self._glass_rect[1] - self._glass_rect[3]
+            p.set_uniform("u_rectMin", self._glass_rect[0], rect_min_v)
+            p.set_uniform("u_rectSize", self._glass_rect[2], self._glass_rect[3])
+            p.set_uniform("u_texel", 1.0 / scene.width(), 1.0 / scene.height())
+            self._draw_fullscreen()
+            p.release()
+            glass_fbo.release()
+
+        scene = self._fbos["scene"]
+        scene.bind()
+        self._gl.glViewport(x0, y0, pw, ph)
+        ap = self._programs["glass_apply"]
+        ap.maybe_reload()
+        ap.bind()
+        self._bind_texture(ap, "u_glass", 0, self._fbos["glass"].texture())
+        self._draw_fullscreen()
+        ap.release()
         scene.release()
 
     def _render_bloom_chain(self) -> None:

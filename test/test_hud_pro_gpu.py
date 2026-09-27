@@ -110,6 +110,8 @@ def test_qopenglwidget_supported_here_matches_platform(qapp):
         "orb.frag",
         "blit.frag",
         "bg_composite.frag",
+        "glass_blur.frag",
+        "glass_apply.frag",
         "rings.frag",
     ],
 )
@@ -606,6 +608,109 @@ def test_holostage_downgrades_to_medium_while_llm_thinks_then_restores():
         auto_settings = w2._settings
         w2.set_state(OrbState.THINKING)
         assert w2._settings == auto_settings, "AUTO no debía cambiar (ya está en <= MEDIUM)"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_glass_rect_setter_clamps_invalid_size():
+    """FASE D — `set_glass_rect` con ancho/alto <= 0 (panel oculto o
+    animando su colapso) apaga el efecto (`None`) en vez de dejar un
+    rect a medio fijar que `_render_glass` intentaría usar."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        w.set_glass_rect(0.2, 0.6, 0.5, 0.3)
+        assert w._glass_rect == (0.2, 0.6, 0.5, 0.3)
+
+        w.set_glass_rect(0.2, 0.6, 0.0, 0.3)
+        assert w._glass_rect is None, "ancho 0 debe apagar el efecto"
+
+        w.set_glass_rect(0.2, 0.6, 0.5, -1.0)
+        assert w._glass_rect is None, "alto negativo debe apagar el efecto"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_glass_pixel_rect_converts_qt_uv_to_gl_bottom_up():
+    """FASE D — `_glass_rect` llega en UV de Qt (origen arriba-izquierda,
+    igual que `set_light_uv`); `_glass_pixel_rect` debe convertirlo a
+    píxeles GL (origen abajo-izquierda) — mismo esquema ya probado para
+    el orbe en `_scissor_rect_around_orb`."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        # panel de 50%x30% de la ventana, pegado a 20% del borde izq y
+        # 60% desde ARRIBA (Qt) — en una ventana de 1000x1000 eso es
+        # y_top=600..900 en Qt, o sea y=100..400 en GL (abajo-izquierda).
+        w.set_glass_rect(0.20, 0.60, 0.50, 0.30)
+        x0, y0, pw, ph = w._glass_pixel_rect(1000, 1000)
+        assert (x0, pw) == (200, 500)
+        assert (y0, ph) == (100, 300), f"y0/ph esperados (100,300), salió ({y0},{ph})"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_glass_blur_recomputes_only_at_20hz():
+    """FASE D — el desenfoque caro sólo se recalcula cada 1/20s; entre
+    medio, `_render_glass` debe seguir componiendo la última versión sin
+    recalcular (ni crashear) — verificado avanzando `_time` a mano en vez
+    de esperar tiempo real de pared."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        w.resize(400, 300)
+        w.set_glass_rect(0.2, 0.6, 0.5, 0.3)
+        w.show()
+        for _ in range(10):
+            app.processEvents()
+        assert w._init_ok, "necesita GL real inicializado para ejercitar _render_glass"
+
+        w.makeCurrent()  # fuera de paintGL/resizeGL, el contexto no está corriente solo
+        try:
+            w._time = 10.0
+            w._render_glass()
+            first_update = w._glass_last_update
+            assert first_update == 10.0
+
+            w._time = 10.01  # bien dentro de la ventana de 1/20s == 0.05s
+            w._render_glass()
+            assert w._glass_last_update == first_update, "no debía recalcular tan pronto"
+
+            w._time = 10.2  # ya pasó de sobra la ventana de 20Hz
+            w._render_glass()
+            assert w._glass_last_update == 10.2, "sí debía recalcular pasada la ventana"
+        finally:
+            w.doneCurrent()
         print("OK")
         """,
         {},
