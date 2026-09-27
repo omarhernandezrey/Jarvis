@@ -73,6 +73,17 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
     frameRendered = Signal(float)  # ms de CPU del último frame (paintGL)
     initError = Signal(str)        # falló DESPUÉS de mostrarse (poco común); ver también HoloStageError
 
+    # Preset de THINKING (GOBERNADOR DE RENDER) — ver `_maybe_downgrade_
+    # for_llm` para el porqué. Deliberadamente más agresivo que el LOW
+    # normal: 1 sola iteración de Kawase (mandato explícito), no las 2 de
+    # LOW; el resto de los campos comparten el piso de LOW.
+    _THINKING_SETTINGS = QualitySettings(
+        bloom_scale=0.125, kawase_levels=1, streak_enabled=False,
+        grain=0.018, aberration=0.6, vignette=0.22,
+        godray_samples=32, raymarch_steps=16, bg_dynamic_scale=0.35,
+    )
+    _THINKING_RENDER_SCALE = 0.66
+
     def __init__(self, parent=None) -> None:
         if QtOpenGLWidgets is None:
             raise HoloStageError("binding Qt sin módulo QtOpenGLWidgets")
@@ -99,6 +110,15 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # es más caro que MEDIUM (HIGH/ULTRA); AUTO ya nunca pasa de
         # MEDIUM, así que no tiene nada que bajar.
         self._settings_before_llm: QualitySettings | None = None
+        self._llm_override_active = False
+        # GOBERNADOR DE RENDER: fps por estado + foco de la ventana
+        # (`_current_fps`/`_sync_timer`), fondo CONGELADO durante THINKING
+        # (`_bg_frozen` — reutiliza el último frame de fondo, ver
+        # `_render_scene`) y escala interna reducida de "scene" mientras
+        # el LLM genera (`_render_scale`, ver `_rebuild_fbos`).
+        self._window_focused = True
+        self._bg_frozen = False
+        self._render_scale = 1.0
 
         self._time = 0.0
         self._energy = 0.0
@@ -173,31 +193,66 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             self._maybe_downgrade_for_llm()
         elif leaving_thinking:
             self._restore_quality_after_llm()
+        self._sync_timer()  # el fps objetivo depende del estado — ver `_current_fps`
 
     def _maybe_downgrade_for_llm(self) -> None:
-        """Sólo cambia campos que YA se leen de `self._settings` en cada
-        frame sin depender del tamaño de ningún FBO (`godray_samples`,
-        `raymarch_steps`, `streak_enabled`, `bg_dynamic_scale` — este
-        último sí redimensiona su propia FBO, pero dentro del propio
-        render loop, con contexto GL ya activo — ver `_ensure_dynamic_bg_
-        fbo`). Deliberadamente NO toca `bloom_scale`/`kawase_levels` (esos
-        exigen `_rebuild_fbos`, que fuera del ciclo de pintado no tiene
-        garantizado un contexto GL corriente) — su costo real, medido, es
-        menor que el de rayos de dios + raymarch, así que el ahorro
-        principal ya se logra sin ese riesgo."""
-        expensive = self._quality_fixed in (Quality.HIGH, Quality.ULTRA)
-        if not expensive:
-            return  # AUTO nunca pasa de MEDIUM; nada que bajar.
+        """GOBERNADOR DE RENDER: diagnóstico con Ollama real + pidstat
+        confirmó que el cuello es CPU de 2 núcleos físicos compartidos,
+        no la calidad de sombreado — dos intentos previos (bajar sólo a
+        MEDIUM, luego a LOW, ambos sin tocar el fps) midieron ~33-42% de
+        pérdida de tokens/s, sin mejora real. `_THINKING_SETTINGS` +
+        24fps (`_current_fps`) + fondo congelado (`_bg_frozen`) + escala
+        interna reducida (`_render_scale`) es el intento que sí ataca la
+        causa real. `_rebuild_fbos` exige contexto GL corriente —
+        `_apply_settings_change_safely` lo envuelve en `makeCurrent()`/
+        `doneCurrent()`, el patrón que la propia documentación de Qt
+        indica para tocar GL fuera de paintGL/resizeGL. Esto es DISTINTO
+        del caso de `_cleanup_gl` (ver ese comentario): ahí revienta
+        porque el contexto se está DESTRUYENDO; aquí el widget sigue
+        vivo y visible."""
+        self._llm_override_active = True
         self._settings_before_llm = self._settings
-        self._settings = QUALITY_PRESETS[Quality.MEDIUM]
-        log.info("HUD GPU: bajando a MEDIUM mientras el LLM genera (era %s)", self._quality_fixed.value)
+        self._settings = self._THINKING_SETTINGS
+        self._bg_frozen = True
+        self._render_scale = self._THINKING_RENDER_SCALE
+        tag = self._quality_fixed.value if self._quality_fixed else "auto"
+        log.info(
+            "HUD GPU: bajando a preset THINKING (24fps, escala %.2f, fondo congelado, era %s)",
+            self._render_scale, tag,
+        )
+        self._apply_settings_change_safely()
 
     def _restore_quality_after_llm(self) -> None:
-        if self._settings_before_llm is None:
+        if not self._llm_override_active:
             return
-        self._settings = self._settings_before_llm
+        self._llm_override_active = False
+        self._bg_frozen = False
+        self._render_scale = 1.0
+        if self._quality_fixed is not None:
+            self._settings = self._settings_before_llm
+            log.info("HUD GPU: calidad restaurada a %s tras terminar de generar", self._quality_fixed.value)
+        else:
+            # AUTO: aplica YA su nivel real (no el snapshot de antes de
+            # entrar a THINKING, que podría estar obsoleto) — su propia
+            # histéresis (`_auto.update()`) siguió corriendo todo este
+            # tiempo con tiempos de frame reales, nunca se pausó.
+            self._settings = self._auto.current
+            log.info("HUD GPU: AUTO retoma su nivel real tras terminar de generar")
         self._settings_before_llm = None
-        log.info("HUD GPU: calidad restaurada a %s tras terminar de generar", self._quality_fixed.value)
+        self._apply_settings_change_safely()
+
+    def _apply_settings_change_safely(self) -> None:
+        """`_rebuild_fbos` exige contexto GL corriente. `set_state` (de
+        donde cuelgan los dos métodos de arriba) puede llegar desde fuera
+        del ciclo de pintado — `makeCurrent()`/`doneCurrent()` es el
+        patrón que Qt documenta para eso."""
+        if not self._init_ok:
+            return
+        self.makeCurrent()
+        try:
+            self._rebuild_fbos(*self._device_size())
+        finally:
+            self.doneCurrent()
 
     def set_energy(self, energy: float) -> None:
         e = max(0.0, min(1.0, float(energy)))
@@ -249,6 +304,17 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
 
     def set_paused(self, paused: bool) -> None:
         self._paused = bool(paused)
+        self._sync_timer()
+
+    def set_focused(self, focused: bool) -> None:
+        """Ventana sin foco: 15fps (GOBERNADOR DE RENDER) — la sigue
+        pintando por si se ve de reojo, pero sin competir en serio por
+        CPU con lo que sea que SÍ tiene el foco. "Minimizada u oculta:
+        pausa total" YA estaba cubierto antes de esta tarea — `window.py`
+        ya llama `set_paused(isMinimized())` en `WindowStateChange`, y
+        `_sync_timer` ya mira `self.isVisible()` — no hacía falta un
+        mecanismo nuevo para eso."""
+        self._window_focused = bool(focused)
         self._sync_timer()
 
     def last_frame_ms(self) -> tuple[float, float | None]:
@@ -435,22 +501,42 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # mismo motivo, para la FBO del vidrio de paneles (FASE D).
         self._glass_fbo_size = (0, 0)
 
+        # GOBERNADOR DE RENDER: `_render_scale` (0.66 durante THINKING,
+        # 1.0 el resto del tiempo) reduce la resolución INTERNA de
+        # "scene" y todo lo que cuelga de ella (bloom/streak/godray, que
+        # ya eran fracciones de este tamaño) — el paso final a pantalla
+        # completa (`_render_composite`) sigue muestreando "scene" con
+        # el filtro bilineal de hardware, así que el upsample es gratis,
+        # igual que ya hace el fondo dinámico con su propia escala.
+        rw = max(4, round(w * self._render_scale))
+        rh = max(4, round(h * self._render_scale))
+
         fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
         fmt.setInternalTextureFormat(0x881A)  # GL_RGBA16F: rango HDR para el bloom/tonemap
-        self._fbos["scene"] = QtOpenGL.QOpenGLFramebufferObject(w, h, fmt)
+        self._fbos["scene"] = QtOpenGL.QOpenGLFramebufferObject(rw, rh, fmt)
 
-        bw = max(4, round(w * self._settings.bloom_scale))
-        bh = max(4, round(h * self._settings.bloom_scale))
+        # el resto de las FBOs son buffers intermedios de post-proceso —
+        # nunca se leen para el tone mapping en sí (eso sólo pasa una vez,
+        # sobre "scene"), así que no necesitan rango HDR: RGBA8 les basta
+        # y es la mitad de ancho de banda de memoria por cada lectura/
+        # escritura — importa en esta GPU/RAM compartida (GOBERNADOR DE
+        # RENDER, diagnóstico: el cuello real es CPU/núcleos, pero cada
+        # byte de menos también ayuda al presupuesto de memoria).
+        fmt8 = QtOpenGL.QOpenGLFramebufferObjectFormat()
+        fmt8.setInternalTextureFormat(0x8058)  # GL_RGBA8
+
+        bw = max(4, round(rw * self._settings.bloom_scale))
+        bh = max(4, round(rh * self._settings.bloom_scale))
         self._bloom_base_size = (bw, bh)
         levels = max(1, self._settings.kawase_levels)
         self._kawase_sizes = [(max(2, bw >> i), max(2, bh >> i)) for i in range(levels)]
         for i, (lw, lh) in enumerate(self._kawase_sizes):
-            self._fbos[f"kawase{i}"] = QtOpenGL.QOpenGLFramebufferObject(lw, lh, fmt)
+            self._fbos[f"kawase{i}"] = QtOpenGL.QOpenGLFramebufferObject(lw, lh, fmt8)
         # flare a 1/8 de la resolución de PANTALLA (no de `bloom_scale`,
         # que en high ya es 1/4) — es un efecto muy difuminado de por sí,
         # media res extra sobre el bloom no se nota y sólo cuesta fill-rate.
-        sw, sh = max(2, round(w / 8)), max(2, round(h / 8))
-        self._fbos["streak"] = QtOpenGL.QOpenGLFramebufferObject(sw, sh, fmt)
+        sw, sh = max(2, round(rw / 8)), max(2, round(rh / 8))
+        self._fbos["streak"] = QtOpenGL.QOpenGLFramebufferObject(sw, sh, fmt8)
         # los rayos de dios son el pase más caro del pipeline (32-48
         # muestras por píxel, medido: ~2.4ms de los ~7.8ms totales en
         # HIGH) — el piso de muestras es un mandato ("nunca menos de 32"),
@@ -459,7 +545,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # muestras — es un efecto muy difuminado de por sí, la resolución
         # extra no se nota.
         gw, gh = max(4, bw // 4), max(4, bh // 4)
-        self._fbos["godray"] = QtOpenGL.QOpenGLFramebufferObject(gw, gh, fmt)
+        self._fbos["godray"] = QtOpenGL.QOpenGLFramebufferObject(gw, gh, fmt8)
 
         self._log_effective_config(w, h, bw, bh, levels, gw, gh)
 
@@ -522,8 +608,16 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
 
         self._last_cpu_ms = (time.perf_counter() - t0) * 1000.0
         if self._auto is not None and self._quality_fixed is None:
+            # `_auto.update()` sigue corriendo SIEMPRE (alimenta su
+            # histéresis con tiempos reales) aunque el override de LLM
+            # esté activo — sólo se SUPRIME aplicar su resultado a
+            # `self._settings` mientras tanto; al terminar la generación
+            # (`_llm_override_active` vuelve a False), este mismo bloque
+            # lo retoma solo en el frame siguiente, sin necesitar un
+            # snapshot propio para el caso AUTO (ver `_restore_quality_
+            # after_llm`).
             new_settings = self._auto.update(self._last_cpu_ms)
-            if new_settings != self._settings:
+            if not self._llm_override_active and new_settings != self._settings:
                 self._settings = new_settings
                 self._rebuild_fbos(*self._device_size())
         self.frameRendered.emit(self._last_cpu_ms)
@@ -553,7 +647,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         if self._static_bg_size == (dw, dh) and "static_bg" in self._fbos:
             return
         fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
-        fmt.setInternalTextureFormat(0x881A)
+        fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8 — nunca HDR, sólo compositing
         self._fbos["static_bg"] = QtOpenGL.QOpenGLFramebufferObject(dw, dh, fmt)
         self._static_bg_size = (dw, dh)
         fbo = self._fbos["static_bg"]
@@ -574,8 +668,18 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         w, h = max(4, round(dw * scale)), max(4, round(dh * scale))
         if self._dynamic_bg_size != (w, h) or "dynamic_bg" not in self._fbos:
             fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
-            fmt.setInternalTextureFormat(0x881A)
-            self._fbos["dynamic_bg"] = QtOpenGL.QOpenGLFramebufferObject(w, h, fmt)
+            fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8
+            fbo = QtOpenGL.QOpenGLFramebufferObject(w, h, fmt)
+            # el contenido de una textura recién creada es indefinido —
+            # si esto pasa con el fondo CONGELADO (`_bg_frozen`, GOBERNADOR
+            # DE RENDER), `_composite_background` leería basura de GPU en
+            # vez de "sin niebla/reflejo esta vez" hasta el próximo
+            # recálculo real; alfa=0 (transparente) es el resultado
+            # correcto de "todavía no se dibujó nada encima", no un hack.
+            fbo.bind()
+            self._gl.glClear(_GL_COLOR_BUFFER_BIT)
+            fbo.release()
+            self._fbos["dynamic_bg"] = fbo
             self._dynamic_bg_size = (w, h)
         return w, h
 
@@ -619,7 +723,22 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         tint = tuple(c / 255.0 for c in style.primary) if self._state != OrbState.ERROR else (1.0, 0.25, 0.32)
         state_mult = 1.8 if self._state is OrbState.THINKING else 1.0
         scan_age = self._time - self._scan_start
-        self._render_dynamic_bg(tint, state_mult, scan_age)
+        if self._bg_frozen:
+            # `_bg_frozen` (GOBERNADOR DE RENDER, THINKING): se salta el
+            # recálculo del shader dinámico (niebla/reflejo/radar) — el
+            # fondo detrás no cambia frame a frame mientras el LLM
+            # genera, sólo el orbe y los anillos. `_composite_background`
+            # de abajo sigue corriendo (reusa el ÚLTIMO contenido ya
+            # calculado de "dynamic_bg"), así "scene" queda limpio cada
+            # frame para que orb/rings no se acumulen encima por el
+            # blend alfa. SÍ hay que garantizar que la FBO exista —
+            # `_rebuild_fbos` (disparado al entrar a THINKING, para
+            # aplicar `_render_scale`) la borró; sin este `_ensure_*`
+            # suelto, `_composite_background` revienta con KeyError en
+            # el primer frame congelado.
+            self._ensure_dynamic_bg_fbo()
+        else:
+            self._render_dynamic_bg(tint, state_mult, scan_age)
 
         fbo = self._fbos["scene"]
         fbo.bind()
@@ -691,7 +810,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         size = max(8, min(round(diameter_px * 0.5), dh * 2))
         if self._orb_fbo_size != (size, size):
             fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
-            fmt.setInternalTextureFormat(0x881A)
+            fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8
             self._fbos["orb"] = QtOpenGL.QOpenGLFramebufferObject(size, size, fmt)
             self._orb_fbo_size = (size, size)
 
@@ -822,7 +941,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         gw, gh = max(2, pw // 4), max(2, ph // 4)
         if self._glass_fbo_size != (gw, gh) or "glass" not in self._fbos:
             fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
-            fmt.setInternalTextureFormat(0x881A)
+            fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8
             self._fbos["glass"] = QtOpenGL.QOpenGLFramebufferObject(gw, gh, fmt)
             self._glass_fbo_size = (gw, gh)
         return gw, gh
@@ -840,8 +959,15 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         ÚLTIMA versión ya calculada — nunca deja el panel sin vidrio."""
         if self._glass_rect is None:
             return
-        dw, dh = self._device_size()
-        x0, y0, pw, ph = self._glass_pixel_rect(dw, dh)
+        # el rect del panel se calcula sobre el tamaño REAL de "scene" —
+        # nunca el tamaño de dispositivo crudo. Con `_render_scale` < 1.0
+        # (GOBERNADOR DE RENDER, THINKING) "scene" es más chica que el
+        # dispositivo; usar `_device_size()` aquí desincronizaba el
+        # `glViewport` de abajo del tamaño real del framebuffer donde se
+        # aplica — el resultado era un rect mal recortado (visto como una
+        # franja horizontal rota en la captura de FASE D con THINKING).
+        scene_w, scene_h = self._fbos["scene"].width(), self._fbos["scene"].height()
+        x0, y0, pw, ph = self._glass_pixel_rect(scene_w, scene_h)
         if pw < 8 or ph < 8:
             return  # panel casi invisible (colapsando/animando) — no vale la pena
         gw, gh = self._ensure_glass_fbo(pw, ph)
@@ -996,14 +1122,34 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         super().hideEvent(event)
         self._sync_timer()
 
+    # fps objetivo por estado (GOBERNADOR DE RENDER) — diagnóstico con
+    # Ollama real + pidstat: el cuello es CPU de 2 núcleos físicos
+    # compartidos con Ollama, no la calidad de sombreado; a 60fps LOW el
+    # propio proceso + el compositor sumaban ~99% de UN núcleo completo,
+    # a 15fps bajaba a ~51% — el fps SÍ es la palanca que mueve la aguja.
+    _FPS_BY_STATE = {
+        OrbState.THINKING: 24,   # el LLM está generando — máxima prioridad para Ollama
+        OrbState.LISTENING: 60,  # fluidez real mientras el usuario habla
+        OrbState.SPEAKING: 45,   # el LLM ya terminó; el TTS puede seguir pesando en CPU
+        OrbState.IDLE: 30,
+        OrbState.ERROR: 30,
+    }
+
     def _current_fps(self) -> int:
-        if self._state is OrbState.IDLE:
-            return 30
-        return 60
+        if not self._window_focused:
+            return 15
+        return self._FPS_BY_STATE.get(self._state, 30)
 
     def _sync_timer(self) -> None:
         should_run = self.isVisible() and not self._paused
-        if should_run and not self._frame_timer.isActive():
-            self._frame_timer.start(max(1, round(1000 / self._current_fps())))
-        elif not should_run and self._frame_timer.isActive():
-            self._frame_timer.stop()
+        if not should_run:
+            if self._frame_timer.isActive():
+                self._frame_timer.stop()
+            return
+        interval = max(1, round(1000 / self._current_fps()))
+        # `QTimer.start(ms)` en un timer YA activo lo reinicia con el
+        # nuevo intervalo — sin este chequeo, un cambio de estado que
+        # sólo debía CAMBIAR el fps (p.ej. IDLE 30 -> THINKING 24) nunca
+        # se aplicaba porque `isActive()` ya era `True` de antes.
+        if not self._frame_timer.isActive() or self._frame_timer.interval() != interval:
+            self._frame_timer.start(interval)

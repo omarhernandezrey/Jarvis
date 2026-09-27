@@ -532,6 +532,11 @@ class HudWindow(QtWidgets.QMainWindow):
                 self.gpu_stage.set_paused(self.isMinimized())
         elif event.type() == QtCore.QEvent.Type.ActivationChange:
             self.orb.refresh_frame_rate()
+            if self.gpu_stage is not None:
+                # GOBERNADOR DE RENDER: ventana sin foco → 15fps (sigue
+                # pintando por si se ve de reojo, sin competir en serio
+                # por CPU con lo que sea que SÍ tiene el foco).
+                self.gpu_stage.set_focused(self.isActiveWindow())
         super().changeEvent(event)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802

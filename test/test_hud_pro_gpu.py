@@ -572,13 +572,14 @@ def test_holostage_orb_setters_clamp_and_toggle():
 
 
 @pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
-def test_holostage_downgrades_to_medium_while_llm_thinks_then_restores():
-    """Medido con Ollama real: con la GPU en HIGH/ULTRA, generar pierde
-    más del 10% de tokens/s (contención de ancho de banda de RAM con la
-    gráfica integrada). Mientras el estado es THINKING (PROCESANDO, el
-    LLM generando), la calidad debe bajar a MEDIUM sin tocar los fps, y
-    restaurarse exactamente al salir de THINKING. AUTO nunca pasa de
-    MEDIUM, así que no tiene nada que bajar."""
+def test_holostage_thinking_applies_governor_preset_regardless_of_prior_quality():
+    """GOBERNADOR DE RENDER: diagnóstico con Ollama real + pidstat mostró
+    que el cuello es CPU de núcleos compartidos, no la calidad de
+    sombreado — dos intentos previos (bajar a MEDIUM, luego a LOW, sin
+    tocar el fps) midieron 33-42% de pérdida, sin mejora real. Ahora
+    entrar a THINKING SIEMPRE aplica `_THINKING_SETTINGS` (kawase_levels=
+    1, el mandato explícito) más 24fps y fondo congelado, venga de donde
+    venga (AUTO, HIGH fijo...), y restaura exactamente al salir."""
     result = _run_subprocess_script(
         """
         import sys
@@ -591,23 +592,207 @@ def test_holostage_downgrades_to_medium_while_llm_thinks_then_restores():
         w = HoloStage()
         w._quality_fixed = Quality.HIGH
         w._settings = QUALITY_PRESETS[Quality.HIGH]
-        w.set_state(OrbState.LISTENING)  # 60fps, igual que THINKING — aísla fps de calidad
-        fps_before = w._current_fps()
+        w.set_state(OrbState.LISTENING)
 
         w.set_state(OrbState.THINKING)
-        assert w._settings == QUALITY_PRESETS[Quality.MEDIUM], "no bajó a MEDIUM al entrar a THINKING"
-        assert w._current_fps() == fps_before, "no debe bajar los fps, sólo la calidad"
+        assert w._settings == HoloStage._THINKING_SETTINGS
+        assert w._settings.kawase_levels == 1, "el mandato pide exactamente 1 iteración de bloom"
+        assert w._current_fps() == 24
+        assert w._bg_frozen is True
+        assert w._render_scale == HoloStage._THINKING_RENDER_SCALE
 
         w.set_state(OrbState.LISTENING)
         assert w._settings == QUALITY_PRESETS[Quality.HIGH], "no restauró HIGH al salir de THINKING"
+        assert w._current_fps() == 60
+        assert w._bg_frozen is False
+        assert w._render_scale == 1.0
         assert w._settings_before_llm is None
 
-        # AUTO (quality_fixed=None): nunca pasa de MEDIUM, nada que bajar.
+        # AUTO (quality_fixed=None): mismo preset, mismo motivo.
         w2 = HoloStage()
         w2._quality_fixed = None
-        auto_settings = w2._settings
+        w2.set_state(OrbState.LISTENING)
         w2.set_state(OrbState.THINKING)
-        assert w2._settings == auto_settings, "AUTO no debía cambiar (ya está en <= MEDIUM)"
+        assert w2._settings == HoloStage._THINKING_SETTINGS
+        assert w2._llm_override_active is True
+        w2.set_state(OrbState.LISTENING)
+        assert w2._llm_override_active is False
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_llm_downgrade_actually_shrinks_scene_and_bloom_fbos():
+    """Regresión directa: el primer intento del downgrade sólo cambiaba
+    campos leídos por frame SIN redimensionar ningún FBO — medido con
+    Ollama real que eso NO ayudaba (medía incluso peor). Ahora
+    `_apply_settings_change_safely` llama a `_rebuild_fbos` de verdad
+    (con `makeCurrent`/`doneCurrent`): este test verifica que el tamaño
+    REAL de "scene" (escala interna 0.66) y de la FBO de bloom
+    (`kawase0`) cambian al entrar/salir de THINKING, no sólo el
+    `QualitySettings` en papel."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        from hud_pro.gpu.quality import Quality, QUALITY_PRESETS
+        from hud_pro.state import OrbState
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        w.resize(800, 600)
+        w._quality_fixed = Quality.HIGH
+        w.show()
+        for _ in range(15):
+            app.processEvents()
+        assert w._init_ok, "necesita GL real inicializado"
+        w._settings = QUALITY_PRESETS[Quality.HIGH]
+        w._rebuild_fbos(*w._device_size())
+        high_scene_w = w._fbos["scene"].width()
+        high_kawase_w = w._fbos["kawase0"].width()
+
+        w.set_state(OrbState.THINKING)
+        for _ in range(3):
+            app.processEvents()
+        dw, _dh = w._device_size()
+        thinking_scene_w = w._fbos["scene"].width()
+        thinking_kawase_w = w._fbos["kawase0"].width()
+        assert thinking_scene_w == round(dw * HoloStage._THINKING_RENDER_SCALE), (
+            f"'scene' no aplicó la escala interna 0.66: {thinking_scene_w} vs dw={dw}"
+        )
+        assert thinking_kawase_w < high_kawase_w, (
+            f"kawase0 no se achicó de verdad: {high_kawase_w} -> {thinking_kawase_w}"
+        )
+
+        w.set_state(OrbState.IDLE)
+        for _ in range(3):
+            app.processEvents()
+        assert w._fbos["scene"].width() == high_scene_w, "no volvió a la escala 1.0 al salir de THINKING"
+        assert w._fbos["kawase0"].width() == high_kawase_w, "no volvió al tamaño de bloom de HIGH"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_frozen_background_does_not_recompute_dynamic_bg():
+    """GOBERNADOR DE RENDER — fondo CONGELADO durante THINKING: el shader
+    dinámico (niebla/reflejo/radar) no debe recalcularse frame a frame;
+    `_composite_background` sigue componiendo sin crashear (KeyError) ni
+    dejar la textura de "dynamic_bg" en basura de GPU sin inicializar."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        from hud_pro.state import OrbState
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        w.resize(400, 300)
+        w.show()
+        for _ in range(15):
+            app.processEvents()
+        assert w._init_ok
+
+        calls = []
+        orig = HoloStage._render_dynamic_bg
+        def traced(self, *a, **k):
+            calls.append(1)
+            return orig(self, *a, **k)
+        HoloStage._render_dynamic_bg = traced
+
+        import time
+        w.set_state(OrbState.THINKING)
+        calls.clear()
+        for _ in range(10):
+            app.processEvents()
+            time.sleep(0.05)  # 24fps == ~42ms/frame — deja que el timer dispare de verdad
+        assert calls == [], f"_render_dynamic_bg corrió {len(calls)} veces con el fondo congelado"
+        assert "dynamic_bg" in w._fbos, "la FBO debe existir igual (creada por _ensure_dynamic_bg_fbo)"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_fps_table_by_state_and_focus():
+    """GOBERNADOR DE RENDER: tabla de fps por estado (THINKING=24,
+    LISTENING=60, SPEAKING=45, IDLE=30) y el piso de foco (ventana sin
+    foco: 15fps, pisa lo que sea que diga el estado)."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        from hud_pro.state import OrbState
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        table = {
+            OrbState.THINKING: 24,
+            OrbState.LISTENING: 60,
+            OrbState.SPEAKING: 45,
+            OrbState.IDLE: 30,
+        }
+        for state, fps in table.items():
+            w.set_state(state)
+            assert w._current_fps() == fps, f"{state}: esperaba {fps}fps, salió {w._current_fps()}"
+
+        w.set_state(OrbState.LISTENING)
+        assert w._current_fps() == 60
+        w.set_focused(False)
+        assert w._current_fps() == 15, "sin foco debe pisar el fps del estado, aunque sea LISTENING"
+        w.set_focused(True)
+        assert w._current_fps() == 60, "al recuperar el foco vuelve al fps real del estado"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_frame_timer_interval_updates_on_fps_change():
+    """Regresión directa: `_sync_timer` sólo ARRANCABA o PARABA el timer,
+    nunca le cambiaba el intervalo a uno YA activo — un cambio de estado
+    que sólo debía cambiar el fps (p.ej. IDLE 30fps -> THINKING 24fps)
+    nunca se aplicaba porque `isActive()` ya era `True` de antes."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        from hud_pro.state import OrbState
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        w.resize(400, 300)
+        w.show()
+        for _ in range(10):
+            app.processEvents()
+        assert w._init_ok
+
+        w.set_state(OrbState.IDLE)
+        assert w._frame_timer.interval() == round(1000 / 30)
+
+        w.set_state(OrbState.LISTENING)
+        assert w._frame_timer.interval() == round(1000 / 60), "no actualizó el intervalo a 60fps"
+
+        w.set_state(OrbState.THINKING)
+        assert w._frame_timer.interval() == round(1000 / 24), "no actualizó el intervalo a 24fps"
         print("OK")
         """,
         {},
@@ -666,6 +851,54 @@ def test_holostage_glass_pixel_rect_converts_qt_uv_to_gl_bottom_up():
         x0, y0, pw, ph = w._glass_pixel_rect(1000, 1000)
         assert (x0, pw) == (200, 500)
         assert (y0, ph) == (100, 300), f"y0/ph esperados (100,300), salió ({y0},{ph})"
+        print("OK")
+        """,
+        {},
+    )
+    assert result.returncode == 0, f"stderr={result.stderr!r} stdout={result.stdout!r}"
+    assert "OK" in result.stdout
+
+
+@pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
+def test_holostage_render_glass_uses_scene_size_not_raw_device_size():
+    """Regresión directa: con `_render_scale` < 1.0 (GOBERNADOR DE
+    RENDER, THINKING) "scene" es más chica que `_device_size()`.
+    `_render_glass` calculaba el rect del panel con el tamaño de
+    dispositivo CRUDO y luego aplicaba `glViewport` sobre "scene" (más
+    chica) — desincronizado, se veía como una franja horizontal rota en
+    la captura. Debe usar el tamaño REAL de "scene", igual que ya hace
+    `_scissor_rect_around_orb` para el orbe."""
+    result = _run_subprocess_script(
+        """
+        import sys
+        from hud_pro.qt_compat import QtWidgets
+        from hud_pro.gpu.stage import HoloStage
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+
+        w = HoloStage()
+        w.resize(800, 600)
+        w.set_glass_rect(0.2, 0.6, 0.5, 0.3)
+        w.show()
+        for _ in range(15):
+            app.processEvents()
+        assert w._init_ok
+
+        w._render_scale = 0.66
+        w.makeCurrent()
+        try:
+            w._rebuild_fbos(*w._device_size())
+            scene_w, scene_h = w._fbos["scene"].width(), w._fbos["scene"].height()
+            dw, dh = w._device_size()
+            assert scene_w < dw and scene_h < dh, "la prueba necesita que scene sea de verdad más chica"
+
+            x0, y0, pw, ph = w._glass_pixel_rect(scene_w, scene_h)
+            assert x0 + pw <= scene_w and y0 + ph <= scene_h, (
+                f"el rect ({x0},{y0},{pw},{ph}) se sale de scene ({scene_w}x{scene_h})"
+            )
+            w._time = 100.0
+            w._render_glass()  # no debe reventar ni quedar con un viewport fuera de rango
+        finally:
+            w.doneCurrent()
         print("OK")
         """,
         {},
