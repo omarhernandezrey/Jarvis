@@ -8,10 +8,13 @@ from typing import Optional
 
 from . import theme
 from .chat import ChatPanel, MessageBubble
+from .command_palette import Command, CommandPalette
 from .gpu import capabilities as gpu_capabilities
 from .gpu.stage import HoloStage, HoloStageError
 from .orb import OrbWidget
+from .panels import ActivityPanel, SystemPanel, TokenGauge
 from .qt_compat import Qt, QtCore, QtGui, QtWidgets, Signal
+from .startup_checklist import StartupChecklist
 from .state import OrbState, StateLike, parse_state
 from .widgets import BackgroundWidget, ServiceChip, StatusBlock, ToastOverlay, TopBar
 
@@ -53,13 +56,21 @@ class HudWindow(QtWidgets.QMainWindow):
         self._settings = QtCore.QSettings("JarvisLocal", "hud_pro")
         self._console_expanded = bool(self._settings.value("console/expanded", False, type=bool))
         self._muted = False
+        self._focus_mode = False
+        self._startup_checklist_shown = False
         self.setWindowTitle(title)
         self.setMinimumSize(900, 620)
         self.resize(1280, 820)
         self.setStyleSheet(theme.stylesheet())
 
-        root = BackgroundWidget(self)
-        self.setCentralWidget(root)
+        shell = QtWidgets.QWidget(self)
+        self.setCentralWidget(shell)
+        shell_lay = QtWidgets.QHBoxLayout(shell)
+        shell_lay.setContentsMargins(0, 0, 0, 0)
+        shell_lay.setSpacing(0)
+
+        root = BackgroundWidget(shell)
+        shell_lay.addWidget(root, 1)
         self._root = root
 
         # Motor GPU (FASE A de la 3ª iteración): fondo de toda la ventana,
@@ -84,7 +95,8 @@ class HudWindow(QtWidgets.QMainWindow):
 
         # Chips de servicios reales (mic/wake/tts/memoria) — ocultos hasta
         # que llega un dato real vía set_service_active().
-        services_row = QtWidgets.QHBoxLayout()
+        self._services_row_widget = QtWidgets.QWidget(root)
+        services_row = QtWidgets.QHBoxLayout(self._services_row_widget)
         services_row.setContentsMargins(2, 0, 2, 0)
         services_row.setSpacing(8)
         self.chip_mic = ServiceChip("mic", "MIC", root)
@@ -93,6 +105,10 @@ class HudWindow(QtWidgets.QMainWindow):
         self.chip_memory = ServiceChip("memory", "MEM", root)
         for chip in (self.chip_mic, self.chip_wake, self.chip_tts, self.chip_memory):
             services_row.addWidget(chip)
+        # a la IZQUIERDA de la fila (junto a los chips) — a la derecha del
+        # todo choca con el panel SISTEMA/ACTIVIDAD (FASE D, ver más abajo).
+        self.token_gauge = TokenGauge(root)
+        services_row.addWidget(self.token_gauge)
         services_row.addStretch(1)
 
         # Acciones rápidas — plegadas por defecto ("menos es más"): un botón
@@ -118,7 +134,17 @@ class HudWindow(QtWidgets.QMainWindow):
         self.actions_toggle.toggled.connect(self.quick_actions.setVisible)
         services_row.addWidget(self.quick_actions)
         services_row.addWidget(self.actions_toggle)
-        outer.addLayout(services_row)
+        # FASE D — sólo hace algo por debajo de WIDE_LAYOUT_MIN_WIDTH: ahí
+        # el panel lateral es un cajón, no algo siempre visible.
+        self.drawer_toggle = QtWidgets.QToolButton(root)
+        self.drawer_toggle.setObjectName("IconButton")
+        self.drawer_toggle.setText("▤")
+        self.drawer_toggle.setFixedSize(26, 26)
+        self.drawer_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.drawer_toggle.setToolTip("Paneles SISTEMA/ACTIVIDAD")
+        self.drawer_toggle.clicked.connect(lambda: self._toggle_side_drawer())
+        services_row.addWidget(self.drawer_toggle)
+        outer.addWidget(self._services_row_widget)
 
         self.action_new.clicked.connect(self.new_conversation_requested.emit)
         self.action_mute.toggled.connect(self._on_mute_toggled)
@@ -166,6 +192,27 @@ class HudWindow(QtWidgets.QMainWindow):
         self._update_mode_chevron()
 
         self._toasts = ToastOverlay(root)
+
+        # FASE D — paneles SISTEMA/ACTIVIDAD: overlay flotante sobre `root`
+        # (mismo patrón que `ToastOverlay`, no un widget de layout) — así
+        # en ventanas anchas ocupa el margen lateral que ya sobra (el
+        # contenido central sigue centrado, sin reflow) y en ventanas
+        # angostas se puede ocultar/mostrar como cajón sin reorganizar nada.
+        self._side_dock = QtWidgets.QWidget(root)
+        self._side_dock.setObjectName("SideDock")
+        dock_lay = QtWidgets.QVBoxLayout(self._side_dock)
+        dock_lay.setContentsMargins(0, 0, 0, 0)
+        dock_lay.setSpacing(10)
+        self.system_panel = SystemPanel(ollama_ping_fn=self._measure_ollama_ping, parent=self._side_dock)
+        self.activity_panel = ActivityPanel(self._side_dock)
+        dock_lay.addWidget(self.system_panel)
+        dock_lay.addWidget(self.activity_panel)
+        dock_lay.addStretch(1)
+        self._side_dock.hide()
+        self._drawer_open = False
+
+        self._command_palette = CommandPalette(self._build_commands(), root)
+        self._startup_checklist = StartupChecklist(parent=root)
 
         self.chat.submitted.connect(self._on_submitted)
         self.chat.mic_toggled.connect(self.mic_toggled.emit)
@@ -286,6 +333,9 @@ class HudWindow(QtWidgets.QMainWindow):
         if self.gpu_stage is not None:
             self.gpu_stage.set_state(st)
         self._sync_gpu_energy_timer_active(st)
+        # gauge de tokens/s + TTFT: sólo tiene sentido mientras el LLM
+        # genera de verdad — fuera de ahí no hay valores reales que mostrar.
+        self.token_gauge.setVisible(st in (OrbState.THINKING, OrbState.SPEAKING))
         self.status.set_state(st, detail)
         self.top_bar.chip.set_state(st)
         self.chat.input.set_mic_checked(st is OrbState.LISTENING)
@@ -372,6 +422,14 @@ class HudWindow(QtWidgets.QMainWindow):
         memory = data.get("memory")
         if isinstance(memory, dict) and memory.get("count") is not None:
             self.chip_memory.set_state(on=True, tip=f"Memoria · {memory['count']} recuerdos")
+            self.activity_panel.set_memory_count(memory["count"])
+        tps = data.get("tokensPerSecond")
+        ttft = data.get("ttftMs")
+        if tps is not None or ttft is not None:
+            self.token_gauge.update_tokens(tps, ttft)
+        reminders = data.get("reminders")
+        if isinstance(reminders, list):
+            self.activity_panel.update_reminders(reminders)
 
     def set_service_active(self, name: str, active: bool) -> None:
         """El punto del chip late mientras el servicio está trabajando de
@@ -396,6 +454,7 @@ class HudWindow(QtWidgets.QMainWindow):
     def tool_end(self, name: str, ms: float, ok: bool) -> None:
         """Cierra la tarjeta con la duración real y el resultado."""
         self.chat.tool_end(name, ms, ok)
+        self.activity_panel.add_tool_event(name, ok, ms)
 
     # ── Internos ──────────────────────────────────────────────────────────
     def _on_submitted(self, text: str) -> None:
@@ -418,6 +477,8 @@ class HudWindow(QtWidgets.QMainWindow):
         sc("Ctrl+J", self.toggle_console_mode)
         sc("Ctrl+K", self.chat.focus_input)
         sc("F11", self._toggle_fullscreen)
+        sc("F10", self._toggle_focus_mode)
+        sc("Ctrl+Shift+P", self._command_palette.open)
 
     def _position_status_below_rings(
         self, orb_geom: QtCore.QRect, cy: float, radius_px: float,
@@ -528,6 +589,11 @@ class HudWindow(QtWidgets.QMainWindow):
         stretch=1 en el layout; `status` se queda con su alto natural)."""
         self.orb.setMinimumHeight(round(self.height() * self.STAGE_MIN_FRACTION))
 
+    # FASE D — bajo este ancho los paneles SISTEMA/ACTIVIDAD dejan de
+    # estar siempre visibles y pasan a ser un cajón que se abre/cierra
+    # (`_toggle_side_drawer`) en vez de flotar siempre sobre el margen.
+    WIDE_LAYOUT_MIN_WIDTH = 1400
+
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._fit_chat_height()
@@ -535,11 +601,83 @@ class HudWindow(QtWidgets.QMainWindow):
         self._sync_gpu_stage_geometry()
         if hasattr(self, "_toasts"):
             self._toasts.reposition(self._root.rect())
+        if hasattr(self, "_side_dock"):
+            self._apply_side_layout()
+        if hasattr(self, "_command_palette"):
+            self._command_palette.setGeometry(self._root.rect())
+        if hasattr(self, "_startup_checklist"):
+            self._startup_checklist.setGeometry(self._root.rect())
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
         if self.gpu_stage is not None:
             QtCore.QTimer.singleShot(0, self._check_gpu_stage_after_first_paint)
+        if not self._startup_checklist_shown:
+            self._startup_checklist_shown = True
+            self._startup_checklist.setGeometry(self._root.rect())
+            QtCore.QTimer.singleShot(0, self._startup_checklist.start)
+
+    def _is_wide_layout(self) -> bool:
+        return self.width() >= self.WIDE_LAYOUT_MIN_WIDTH
+
+    def _apply_side_layout(self) -> None:
+        """Ancha: paneles siempre visibles, flotando en el margen lateral
+        que ya sobra (el orbe/consola quedan centrados, sin reflow).
+        Angosta: cajón — oculto salvo que el usuario lo haya abierto
+        (`_toggle_side_drawer`, botón de la barra superior)."""
+        wide = self._is_wide_layout()
+        top = self.top_bar.geometry().bottom() + 14  # nunca tapar la barra superior
+        w, h = 300, self._root.height() - top - 10
+        x = self._root.width() - w - 12
+        self._side_dock.setGeometry(x, top, w, max(100, h))
+        if wide:
+            self._side_dock.show()
+        else:
+            self._side_dock.setVisible(self._drawer_open)
+
+    def _toggle_side_drawer(self) -> None:
+        if self._is_wide_layout():
+            return  # ancha: siempre visible, no hay cajón que abrir/cerrar
+        self._drawer_open = not self._drawer_open
+        self._side_dock.setVisible(self._drawer_open)
+
+    def _toggle_focus_mode(self) -> None:
+        """Modo enfoque (F10): esconde toda la cromática — chips, acciones
+        rápidas, paneles — y deja sólo el orbe + estado + consola."""
+        focus = not self._focus_mode
+        self._focus_mode = focus
+        self.top_bar.setVisible(not focus)
+        self._services_row_widget.setVisible(not focus)
+        if focus:
+            self._side_dock.hide()
+        else:
+            self._apply_side_layout()
+
+    def _measure_ollama_ping(self) -> Optional[float]:
+        """Latencia REAL a Ollama (ms) — mismo host/puerto que ya usa el
+        resto del HUD, nunca un valor sintetizado. `None` si no responde."""
+        import time as _time
+        import urllib.request as _req
+
+        t0 = _time.perf_counter()
+        try:
+            with _req.urlopen("http://127.0.0.1:11434/api/tags", timeout=0.8) as resp:
+                if resp.status != 200:
+                    return None
+        except Exception:
+            return None
+        return (_time.perf_counter() - t0) * 1000.0
+
+    def _build_commands(self) -> list[Command]:
+        return [
+            Command("Nueva conversación", "borra la consola y empieza de nuevo", self.clear_chat),
+            Command("Silenciar respuestas habladas", "alterna el TTS", self.action_mute.click),
+            Command("Memoria", "abre el panel de memoria", self.action_memory.click),
+            Command("Alternar consola", "compacta/expande la consola", self.toggle_console_mode),
+            Command("Modo enfoque", "esconde chips y paneles (F10)", self._toggle_focus_mode),
+            Command("Panel SISTEMA/ACTIVIDAD", "abre/cierra el cajón lateral", self._toggle_side_drawer),
+            Command("Pantalla completa", "alterna pantalla completa (F11)", self._toggle_fullscreen),
+        ]
 
     def changeEvent(self, event: QtCore.QEvent) -> None:  # noqa: N802
         if event.type() == QtCore.QEvent.Type.WindowStateChange:
