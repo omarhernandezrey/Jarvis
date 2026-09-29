@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Optional, Sequence
 
@@ -44,4 +45,10 @@ def create_app(argv: Optional[Sequence[str]] = None) -> QtWidgets.QApplication:
     theme.load_fonts()
     app.setFont(theme.font(theme.FONT_UI, 14))
     app.setPalette(_dark_palette())
+    if os.environ.get("JARVIS_HUD_PAINT_STATS", "") == "1":
+        # diagnóstico de CPU (tarea A): contador de QEvent.Paint por widget
+        # — ver hud_pro/paint_stats.py. Sólo existe con el flag a 1.
+        from .paint_stats import install_paint_stats
+
+        install_paint_stats(app)
     return app
