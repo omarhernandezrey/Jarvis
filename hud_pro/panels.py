@@ -107,6 +107,172 @@ def _metric_row(label_text: str, color: str, parent: QtWidgets.QWidget) -> tuple
     return row, value, spark
 
 
+class MiniRing(QtWidgets.QWidget):
+    """Anillo de progreso chiquito (CPU/RAM) — mismo patrón de cache que
+    `Sparkline`: el arco se recalcula sólo en `push`, `paintEvent` sólo
+    hace `drawPixmap`."""
+
+    def __init__(self, color: str = theme.ACCENT, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self._color = QtGui.QColor(color)
+        self._value = 0.0
+        self._pixmap: Optional[QtGui.QPixmap] = None
+        self.setFixedSize(34, 34)
+
+    def push(self, value: float) -> None:
+        self._value = max(0.0, min(100.0, float(value)))
+        self._redraw_cache()
+        self.update()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._redraw_cache()
+
+    def _redraw_cache(self) -> None:
+        w, h = max(1, self.width()), max(1, self.height())
+        dpr = self.devicePixelRatioF()
+        pm = QtGui.QPixmap(max(1, round(w * dpr)), max(1, round(h * dpr)))
+        pm.setDevicePixelRatio(dpr)
+        pm.fill(Qt.GlobalColor.transparent)
+        qp = QtGui.QPainter(pm)
+        qp.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        pen_bg = QtGui.QPen(QtGui.QColor(theme.LINE))
+        pen_bg.setWidthF(3.0)
+        qp.setPen(pen_bg)
+        rect = QtCore.QRectF(3, 3, w - 6, h - 6)
+        qp.drawArc(rect, 0, 360 * 16)
+        pen = QtGui.QPen(self._color)
+        pen.setWidthF(3.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        qp.setPen(pen)
+        span = int(-360 * 16 * (self._value / 100.0))
+        qp.drawArc(rect, 90 * 16, span)
+        qp.setPen(QtGui.QColor(theme.TEXT))
+        qp.setFont(QtGui.QFont(theme.FONT_MONO, 8))
+        qp.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), f"{self._value:.0f}")
+        qp.end()
+        self._pixmap = pm
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        if self._pixmap is None:
+            return
+        qp = QtGui.QPainter(self)
+        qp.drawPixmap(0, 0, self._pixmap)
+
+
+class CornerBadge(QtWidgets.QFrame):
+    """Base compartida de los 4 widgets HUD de esquina: fondo semi-
+    transparente chiquito, nunca tapa el orbe (se posiciona en las
+    esquinas del escenario, no encima del centro) — ver `HudWindow.
+    _position_corner_widgets`."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("CornerBadge")
+
+
+class CompactSystemWidget(CornerBadge):
+    """Esquina arriba-izquierda: CPU/RAM en mini anillos. Mismo dato real
+    de `psutil` que `SystemPanel` (el cajón de detalle) — 1Hz, un solo
+    timer que se para si no es visible."""
+
+    UPDATE_MS = 1000
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(8, 6, 8, 6)
+        lay.setSpacing(6)
+        self._cpu_ring = MiniRing(theme.ACCENT, self)
+        self._ram_ring = MiniRing(theme.ACCENT_2, self)
+        for ring, tip in ((self._cpu_ring, "CPU"), (self._ram_ring, "RAM")):
+            ring.setToolTip(tip)
+            lay.addWidget(ring)
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._sample)
+        if psutil is not None:
+            psutil.cpu_percent(interval=None)
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        if not self._timer.isActive():
+            self._timer.start(self.UPDATE_MS)
+            self._sample()
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:  # noqa: N802
+        super().hideEvent(event)
+        self._timer.stop()
+
+    def _sample(self) -> None:
+        if psutil is None:
+            return
+        self._cpu_ring.push(psutil.cpu_percent(interval=None))
+        self._ram_ring.push(psutil.virtual_memory().percent)
+
+
+class CompactServicesWidget(CornerBadge):
+    """Esquina abajo-izquierda: estado real de los servicios (Ollama +
+    ping, mic, TTS, memoria) — mismos datos que ya llegan por
+    `HudWindow.update_metrics`/`set_service_active`, nunca inventados."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(8, 6, 8, 6)
+        lay.setSpacing(2)
+        self._ollama_label = QtWidgets.QLabel("Ollama —", self)
+        self._ollama_label.setObjectName("PanelMeta")
+        self._mic_label = QtWidgets.QLabel("Mic —", self)
+        self._mic_label.setObjectName("PanelMeta")
+        self._tts_label = QtWidgets.QLabel("TTS —", self)
+        self._tts_label.setObjectName("PanelMeta")
+        self._memory_label = QtWidgets.QLabel("Memoria —", self)
+        self._memory_label.setObjectName("PanelMeta")
+        for lbl in (self._ollama_label, self._mic_label, self._tts_label, self._memory_label):
+            lay.addWidget(lbl)
+
+    def set_ollama(self, online: Optional[bool], ping_ms: Optional[float]) -> None:
+        if online is None:
+            self._ollama_label.setText("Ollama —")
+        elif online:
+            self._ollama_label.setText(f"Ollama ●  {ping_ms:.0f} ms" if ping_ms is not None else "Ollama ●")
+        else:
+            self._ollama_label.setText("Ollama ○")
+
+    def set_mic(self, on: bool) -> None:
+        self._mic_label.setText(f"Mic {'●' if on else '○'}")
+
+    def set_tts(self, on: bool) -> None:
+        self._tts_label.setText(f"TTS {'●' if on else '○'}")
+
+    def set_memory(self, count: Optional[int]) -> None:
+        self._memory_label.setText(f"Memoria {count}" if count is not None else "Memoria —")
+
+
+class CompactToolWidget(CornerBadge):
+    """Esquina arriba-derecha: última herramienta real en curso/terminada
+    — nunca una entrada inventada; vacío hasta el primer `tool_start`."""
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(8, 6, 8, 6)
+        lay.setSpacing(2)
+        title = QtWidgets.QLabel("HERRAMIENTA", self)
+        title.setObjectName("PanelMeta")
+        lay.addWidget(title)
+        self._label = QtWidgets.QLabel("Sin actividad", self)
+        self._label.setObjectName("PanelMeta")
+        lay.addWidget(self._label)
+
+    def set_running(self, name: str) -> None:
+        self._label.setText(f"{name}…")
+
+    def set_done(self, name: str, ok: bool, ms: float) -> None:
+        mark = "✓" if ok else "✗"
+        self._label.setText(f"{mark} {name} ({ms:.0f} ms)")
+
+
 class SystemPanel(QtWidgets.QFrame):
     """Panel SISTEMA: CPU/RAM/ping/red reales (nunca sintetizados) a 1Hz,
     más el uptime del sistema. Sólo corre su timer mientras es visible."""

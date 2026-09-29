@@ -12,7 +12,14 @@ from .command_palette import Command, CommandPalette
 from .gpu import capabilities as gpu_capabilities
 from .gpu.stage import HoloStage, HoloStageError
 from .orb import OrbWidget
-from .panels import ActivityPanel, SystemPanel, TokenGauge
+from .panels import (
+    ActivityPanel,
+    CompactServicesWidget,
+    CompactSystemWidget,
+    CompactToolWidget,
+    SystemPanel,
+    TokenGauge,
+)
 from .qt_compat import Qt, QtCore, QtGui, QtWidgets, Signal
 from .startup_checklist import StartupChecklist
 from .state import OrbState, StateLike, parse_state
@@ -105,10 +112,6 @@ class HudWindow(QtWidgets.QMainWindow):
         self.chip_memory = ServiceChip("memory", "MEM", root)
         for chip in (self.chip_mic, self.chip_wake, self.chip_tts, self.chip_memory):
             services_row.addWidget(chip)
-        # a la IZQUIERDA de la fila (junto a los chips) — a la derecha del
-        # todo choca con el panel SISTEMA/ACTIVIDAD (FASE D, ver más abajo).
-        self.token_gauge = TokenGauge(root)
-        services_row.addWidget(self.token_gauge)
         services_row.addStretch(1)
 
         # Acciones rápidas — plegadas por defecto ("menos es más"): un botón
@@ -210,6 +213,19 @@ class HudWindow(QtWidgets.QMainWindow):
         dock_lay.addStretch(1)
         self._side_dock.hide()
         self._drawer_open = False
+
+        # FASE D (rediseño para pantallas reales, sin monitor de 1920):
+        # bajo 1400px lo esencial ya no se escondía en un cajón — vive
+        # SIEMPRE visible como 4 widgets HUD compactos en las esquinas del
+        # escenario, alrededor del orbe (nunca encima). El cajón de arriba
+        # (`_side_dock`, con sparklines/historial) queda para el detalle
+        # completo bajo demanda, no para lo esencial del día a día.
+        self.corner_system = CompactSystemWidget(root)
+        self.corner_services = CompactServicesWidget(root)
+        self.corner_tool = CompactToolWidget(root)
+        self.token_gauge = TokenGauge(root)
+        for corner in (self.corner_system, self.corner_services, self.corner_tool, self.token_gauge):
+            corner.show()
 
         self._command_palette = CommandPalette(self._build_commands(), root)
         self._startup_checklist = StartupChecklist(parent=root)
@@ -404,6 +420,8 @@ class HudWindow(QtWidgets.QMainWindow):
         (`voice: {mic, tts}`, `memory: {auto_recall, count}`): se reutiliza
         el muestreo real del HUD legado, no se inventa uno nuevo."""
         self.top_bar.update_metrics(data)
+        if "online" in data:
+            self.corner_services.set_ollama(data["online"], data.get("pingMs"))
         voice = data.get("voice")
         if isinstance(voice, dict):
             mic_on = voice.get("mic") == "available"
@@ -419,8 +437,11 @@ class HudWindow(QtWidgets.QMainWindow):
             self.chip_tts.set_state(
                 on=bool(voice.get("tts")), active=self.chip_tts.is_active(), tip="Síntesis de voz (TTS)"
             )
+            self.corner_services.set_mic(mic_on)
+            self.corner_services.set_tts(bool(voice.get("tts")))
         memory = data.get("memory")
         if isinstance(memory, dict) and memory.get("count") is not None:
+            self.corner_services.set_memory(memory["count"])
             self.chip_memory.set_state(on=True, tip=f"Memoria · {memory['count']} recuerdos")
             self.activity_panel.set_memory_count(memory["count"])
         tps = data.get("tokensPerSecond")
@@ -430,6 +451,10 @@ class HudWindow(QtWidgets.QMainWindow):
         reminders = data.get("reminders")
         if isinstance(reminders, list):
             self.activity_panel.update_reminders(reminders)
+        # el texto de los widgets de esquina cambió de ancho — sin esto,
+        # los anclados a la derecha (herramienta, tokens/s) se posicionan
+        # con su ancho VIEJO y quedan cortados fuera de pantalla.
+        self._position_corner_widgets()
 
     def set_service_active(self, name: str, active: bool) -> None:
         """El punto del chip late mientras el servicio está trabajando de
@@ -450,11 +475,15 @@ class HudWindow(QtWidgets.QMainWindow):
     def tool_start(self, name: str) -> None:
         """Tarjeta viva: JARVIS empezó a usar una herramienta real."""
         self.chat.tool_start(name)
+        self.corner_tool.set_running(name)
+        self._position_corner_widgets()
 
     def tool_end(self, name: str, ms: float, ok: bool) -> None:
         """Cierra la tarjeta con la duración real y el resultado."""
         self.chat.tool_end(name, ms, ok)
         self.activity_panel.add_tool_event(name, ok, ms)
+        self.corner_tool.set_done(name, ok, ms)
+        self._position_corner_widgets()
 
     # ── Internos ──────────────────────────────────────────────────────────
     def _on_submitted(self, text: str) -> None:
@@ -577,6 +606,7 @@ class HudWindow(QtWidgets.QMainWindow):
         anim.setStartValue(self.chat.height())
         anim.setEndValue(target)
         anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        anim.finished.connect(self._position_corner_widgets)
         anim.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
         self._console_anim = anim  # referencia fuerte: si no, el GC la corta a medias
 
@@ -603,6 +633,8 @@ class HudWindow(QtWidgets.QMainWindow):
             self._toasts.reposition(self._root.rect())
         if hasattr(self, "_side_dock"):
             self._apply_side_layout()
+        if hasattr(self, "corner_system"):
+            self._position_corner_widgets()
         if hasattr(self, "_command_palette"):
             self._command_palette.setGeometry(self._root.rect())
         if hasattr(self, "_startup_checklist"):
@@ -610,6 +642,7 @@ class HudWindow(QtWidgets.QMainWindow):
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
+        self._position_corner_widgets()
         if self.gpu_stage is not None:
             QtCore.QTimer.singleShot(0, self._check_gpu_stage_after_first_paint)
         if not self._startup_checklist_shown:
@@ -619,6 +652,29 @@ class HudWindow(QtWidgets.QMainWindow):
 
     def _is_wide_layout(self) -> bool:
         return self.width() >= self.WIDE_LAYOUT_MIN_WIDTH
+
+    def _position_corner_widgets(self) -> None:
+        """4 widgets HUD compactos en las esquinas del ESCENARIO (la zona
+        entre la barra superior y la consola donde vive el orbe) — nunca
+        en las esquinas de toda la ventana, para no acercarse a la barra
+        superior ni a la consola, y nunca superpuestos al orbe (que queda
+        centrado, con margen de sobra a los lados en esta pantalla real
+        de 1366px). Reemplaza el cajón oculto por defecto de antes: en
+        pantallas sin sitio para un panel lateral permanente, esto es lo
+        que queda SIEMPRE visible."""
+        # bajo el borde de la fila de chips (mic/wake/tts/mem), no de la
+        # barra superior — si no, se superponen (esa fila sigue viva para
+        # el pulso de "trabajando de verdad" que estos widgets no replican).
+        top = self._services_row_widget.geometry().bottom() + 10
+        bottom = (self.chat.geometry().top() if self.chat.isVisible() else self._root.height()) - 12
+        for w in (self.corner_system, self.corner_services, self.corner_tool, self.token_gauge):
+            w.adjustSize()
+        self.corner_system.move(14, top)
+        self.corner_services.move(14, bottom - self.corner_services.height())
+        self.corner_tool.move(self._root.width() - self.corner_tool.width() - 14, top)
+        self.token_gauge.move(
+            self._root.width() - self.token_gauge.width() - 14, bottom - self.token_gauge.height(),
+        )
 
     def _apply_side_layout(self) -> None:
         """Ancha: paneles siempre visibles, flotando en el margen lateral

@@ -246,3 +246,70 @@ def test_hud_window_command_palette_shortcut_and_real_actions(qapp):
     assert w._command_palette.isVisible()
     titles = [w._command_palette._list.item(i).text() for i in range(w._command_palette._list.count())]
     assert any("enfoque" in t.lower() for t in titles)
+
+
+# ── Widgets HUD compactos de esquina (rediseño para pantallas reales,
+# sin monitor de 1920px — reemplaza el cajón oculto por defecto) ────────
+def test_hud_window_corner_widgets_always_visible_regardless_of_width(qapp):
+    """A diferencia del cajón lateral (oculto bajo WIDE_LAYOUT_MIN_WIDTH),
+    lo esencial (CPU/RAM, servicios, herramienta, tokens/s) debe verse
+    SIEMPRE, sea angosta o ancha la ventana."""
+    w = HudWindow()
+    w.resize(900, 700)  # bien angosta
+    w.show()
+    qapp.processEvents()
+    assert not w._is_wide_layout()
+    for corner in (w.corner_system, w.corner_services, w.corner_tool):
+        assert corner.isVisible()
+
+
+def test_hud_window_corner_widgets_stay_within_window_bounds_after_content_grows(qapp):
+    """Regresión directa: `corner_tool`/`token_gauge` (anclados a la
+    derecha) se posicionaban con un ancho VIEJO antes de que el texto
+    creciera (p. ej. al cerrar una herramienta con un nombre largo) y
+    terminaban con el borde derecho fuera de la ventana. `tool_start`/
+    `tool_end`/`update_metrics` deben reposicionar tras cada cambio."""
+    w = HudWindow()
+    w.resize(1366, 768)
+    w.show()
+    qapp.processEvents()
+
+    w.tool_start("una_herramienta_con_un_nombre_bastante_largo_de_verdad")
+    qapp.processEvents()
+    assert w.corner_tool.geometry().right() <= w._root.width(), (
+        "el widget de herramienta se sale de la ventana al crecer el texto"
+    )
+
+    w.tool_end("una_herramienta_con_un_nombre_bastante_largo_de_verdad", 12345.0, True)
+    qapp.processEvents()
+    assert w.corner_tool.geometry().right() <= w._root.width()
+
+    w.update_metrics({"tokensPerSecond": 123.4, "ttftMs": 9876.0})
+    qapp.processEvents()
+    assert w.token_gauge.geometry().right() <= w._root.width()
+
+
+def test_hud_window_corner_widgets_do_not_overlap_services_row(qapp):
+    """Regresión directa: `corner_system` (arriba-izq, mini anillos CPU/
+    RAM) se posicionaba a la misma altura que la fila de chips MIC/WAKE/
+    TTS/MEM y quedaba tapado por ella."""
+    w = HudWindow()
+    w.resize(1366, 768)
+    w.show()
+    qapp.processEvents()
+    assert w.corner_system.geometry().top() >= w._services_row_widget.geometry().bottom(), (
+        "el widget de CPU/RAM se superpone con la fila de chips de servicio"
+    )
+
+
+def test_hud_window_corner_services_reflects_real_metrics(qapp):
+    w = HudWindow()
+    w.update_metrics({
+        "online": True, "pingMs": 8.5,
+        "voice": {"mic": "available", "tts": True},
+        "memory": {"count": 3},
+    })
+    assert "8" in w.corner_services._ollama_label.text()
+    assert "●" in w.corner_services._mic_label.text()
+    assert "●" in w.corner_services._tts_label.text()
+    assert "3" in w.corner_services._memory_label.text()

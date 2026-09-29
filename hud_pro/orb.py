@@ -1043,7 +1043,15 @@ class OrbWidget(QtWidgets.QWidget):
             self._timer.setInterval(max(1, round(1000 / self._current_fps())))
 
     def _sync_timer(self) -> None:
-        should_run = self.isVisible() and not self._paused
+        # CPU EN REPOSO: `set_render_visible(False)` (FASE C: HoloStage
+        # pinta el orbe GPU real en el mismo lugar) sólo saltaba el DIBUJO
+        # en `paintEvent` — este timer seguía vivo a 30fps de todos modos,
+        # avanzando el estado del renderer raster y pidiendo `update()`
+        # sin que NADA de eso se viera nunca. Confirmado con un contador
+        # de paintEvent real: éste era el origen del ~30Hz que forzaba
+        # repintar toda la ventana incluso con `gpu_stage` pausado (un
+        # `set_paused` separado, que nunca tocaba a ÉSTE timer).
+        should_run = self.isVisible() and not self._paused and self._render_visible
         if should_run and not self._timer.isActive():
             self._clock.restart()
             self._timer.start(max(1, round(1000 / self._current_fps())))
@@ -1078,6 +1086,7 @@ class OrbWidget(QtWidgets.QWidget):
         if self._render_visible == visible:
             return
         self._render_visible = visible
+        self._sync_timer()
         self.update()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802

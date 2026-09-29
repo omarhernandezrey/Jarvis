@@ -213,6 +213,9 @@ def stylesheet() -> str:
     QLabel#PanelTitle {{ color: {TEXT_DIM}; }}
     QLabel#PanelMeta {{ color: {TEXT_MUTED}; font-family: "{FONT_MONO}"; font-size: 11px; }}
     QFrame#PanelSeparator {{ background: {LINE}; max-height: 1px; min-height: 1px; border: none; }}
+    QFrame#CornerBadge {{
+        background: {BG_PANEL}; border: 1px solid {LINE}; border-radius: 10px;
+    }}
     QListWidget#ActivityList {{
         background: transparent; border: 1px solid {LINE}; border-radius: 8px;
         color: {TEXT_DIM}; font-family: "{FONT_MONO}"; font-size: 11px;

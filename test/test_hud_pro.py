@@ -195,6 +195,28 @@ def test_orb_widget_state_signal_and_timer(qapp):
     w.deleteLater()
 
 
+def test_orb_widget_render_invisible_stops_its_own_timer(qapp):
+    """CPU EN REPOSO: `set_render_visible(False)` (FASE C, GPU activa
+    dibuja el orbe real) sólo saltaba el DIBUJO en `paintEvent` — el
+    timer de este widget seguía vivo a IDLE_FPS de todos modos, avanzando
+    el renderer raster y pidiendo `update()` sin que nada de eso se
+    viera nunca. Contador de paintEvent real: esto forzaba repintar TODA
+    la ventana a ~30Hz incluso con `HoloStage` pausado por separado (un
+    `set_paused` que nunca tocaba a este timer)."""
+    w = OrbWidget()
+    w.resize(400, 400)
+    w.show()
+    pump(qapp, 30)
+    assert w.is_animating()
+
+    w.set_render_visible(False)
+    assert not w.is_animating(), "sin nada que dibujar, el timer no debe seguir vivo"
+
+    w.set_render_visible(True)
+    assert w.is_animating(), "al volver a ser visible, el timer debe retomar"
+    w.deleteLater()
+
+
 # ── Ventana / layout ──────────────────────────────────────────────────────
 @pytest.mark.parametrize("size", [(1920, 1080), (1366, 768), (1280, 820), (2560, 1440)])
 def test_layout_orb_and_chat_centered(qapp, win, size):
