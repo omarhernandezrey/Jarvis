@@ -3,12 +3,40 @@ arranque) — offscreen, sin necesitar GPU real: son QWidget normales."""
 
 from __future__ import annotations
 
+import pytest
+
 from hud_pro.command_palette import Command, CommandPalette
 from hud_pro.panels import ActivityPanel, Sparkline, SystemPanel, TokenGauge
 from hud_pro.qt_compat import QtCore
 from hud_pro.startup_checklist import CheckItem, StartupChecklist
 from hud_pro.state import OrbState
 from hud_pro.window import HudWindow
+
+
+@pytest.fixture
+def hud_window(qapp):
+    """Crea HudWindow y la CIERRA al terminar el test (mismo patrón que la
+    fixture `win` de test_hud_pro.py): una ventana viva deja el orbe
+    raster animando a 30fps en offscreen, y suficientes de ellas saturan
+    el event loop del proceso — eso retrasaba la animación QML de
+    test_ui_hud.py (560ms no terminaban en su settle de 1s) cuando corría
+    la suite completa. Fallo real observado, no hipótesis."""
+    created = []
+
+    def _make(width: int = 1366, height: int = 768, show: bool = True) -> HudWindow:
+        w = HudWindow()
+        w.resize(width, height)
+        if show:
+            w.show()
+        qapp.processEvents()
+        created.append(w)
+        return w
+
+    yield _make
+    for w in created:
+        w.close()
+        w.deleteLater()
+    qapp.processEvents()
 
 
 # ── Sparkline ────────────────────────────────────────────────────────────
@@ -177,11 +205,8 @@ def test_startup_checklist_runs_real_checks_and_closes(qapp):
 
 
 # ── HudWindow: integración de FASE D ─────────────────────────────────────
-def test_hud_window_side_dock_respects_wide_threshold(qapp):
-    w = HudWindow()
-    w.resize(w.WIDE_LAYOUT_MIN_WIDTH - 100, 900)
-    w.show()
-    qapp.processEvents()
+def test_hud_window_side_dock_respects_wide_threshold(qapp, hud_window):
+    w = hud_window(HudWindow.WIDE_LAYOUT_MIN_WIDTH - 100, 900)
     assert not w._is_wide_layout()
     assert not w._side_dock.isVisible(), "angosta y cajón cerrado: paneles ocultos"
 
@@ -190,10 +215,8 @@ def test_hud_window_side_dock_respects_wide_threshold(qapp):
     assert w._side_dock.isVisible(), "el botón del cajón debe poder abrirlo en modo angosto"
 
 
-def test_hud_window_focus_mode_hides_chrome_and_restores(qapp):
-    w = HudWindow()
-    w.show()
-    qapp.processEvents()
+def test_hud_window_focus_mode_hides_chrome_and_restores(qapp, hud_window):
+    w = hud_window()
     assert w.top_bar.isVisible()
     assert w._services_row_widget.isVisible()
 
@@ -208,10 +231,8 @@ def test_hud_window_focus_mode_hides_chrome_and_restores(qapp):
     assert w._services_row_widget.isVisible()
 
 
-def test_hud_window_token_gauge_visible_only_while_generating(qapp):
-    w = HudWindow()
-    w.show()
-    qapp.processEvents()
+def test_hud_window_token_gauge_visible_only_while_generating(qapp, hud_window):
+    w = hud_window()
     w.set_state(OrbState.IDLE)
     assert not w.token_gauge.isVisible()
     w.set_state(OrbState.THINKING)
@@ -222,25 +243,23 @@ def test_hud_window_token_gauge_visible_only_while_generating(qapp):
     assert not w.token_gauge.isVisible()
 
 
-def test_hud_window_tool_end_reaches_activity_panel(qapp):
-    w = HudWindow()
+def test_hud_window_tool_end_reaches_activity_panel(qapp, hud_window):
+    w = hud_window(show=False)
     w.tool_start("buscar_memoria")
     w.tool_end("buscar_memoria", 120.0, True)
     assert w.activity_panel._tools_list.count() == 1
     assert "buscar_memoria" in w.activity_panel._tools_list.item(0).text()
 
 
-def test_hud_window_update_metrics_reaches_token_gauge_and_memory(qapp):
-    w = HudWindow()
+def test_hud_window_update_metrics_reaches_token_gauge_and_memory(qapp, hud_window):
+    w = hud_window(show=False)
     w.update_metrics({"tokensPerSecond": 12.0, "ttftMs": 300.0, "memory": {"count": 7}})
     assert "12 tok/s" in w.token_gauge._tps_label.text()
     assert w.activity_panel._memory_label.text() == "Memoria: 7 recuerdos"
 
 
-def test_hud_window_command_palette_shortcut_and_real_actions(qapp):
-    w = HudWindow()
-    w.show()
-    qapp.processEvents()
+def test_hud_window_command_palette_shortcut_and_real_actions(qapp, hud_window):
+    w = hud_window()
     assert not w._command_palette.isVisible()
     w._command_palette.open()
     assert w._command_palette.isVisible()
@@ -250,29 +269,151 @@ def test_hud_window_command_palette_shortcut_and_real_actions(qapp):
 
 # ── Widgets HUD compactos de esquina (rediseño para pantallas reales,
 # sin monitor de 1920px — reemplaza el cajón oculto por defecto) ────────
-def test_hud_window_corner_widgets_always_visible_regardless_of_width(qapp):
-    """A diferencia del cajón lateral (oculto bajo WIDE_LAYOUT_MIN_WIDTH),
-    lo esencial (CPU/RAM, servicios, herramienta, tokens/s) debe verse
-    SIEMPRE, sea angosta o ancha la ventana."""
-    w = HudWindow()
-    w.resize(900, 700)  # bien angosta
-    w.show()
-    qapp.processEvents()
+def test_hud_window_corner_widgets_visible_below_1400px(qapp, hud_window):
+    """Bajo 1400px (la pantalla real de esta máquina: 1366x768) lo
+    esencial (CPU/RAM, servicios, herramienta) vive SIEMPRE visible en
+    las esquinas del escenario — a diferencia del cajón lateral, que en
+    este ancho nace cerrado."""
+    w = hud_window(1366, 768)
     assert not w._is_wide_layout()
+    for corner in (w.corner_system, w.corner_services, w.corner_tool):
+        assert corner.isVisible(), f"{corner.objectName() or corner.metaObject().className()} oculto bajo 1400px"
+
+
+def test_hud_window_corner_widgets_hidden_above_1400px(qapp, hud_window):
+    """Por encima de 1400px esa MISMA info ya está en el panel lateral
+    permanente: mostrar las esquinas sería duplicarla. El gauge de
+    tokens/s NO se apaga por ancho (no vive en ningún panel)."""
+    w = hud_window(HudWindow.WIDE_LAYOUT_MIN_WIDTH + 60, 900)
+    assert w._is_wide_layout()
+    assert w._side_dock.isVisible(), "ancha: el panel lateral es el permanente"
+    for corner in (w.corner_system, w.corner_services, w.corner_tool):
+        assert not corner.isVisible(), f"{corner.metaObject().className()} duplica al panel lateral"
+
+    w.set_state(OrbState.THINKING)
+    qapp.processEvents()
+    assert w.token_gauge.isVisible(), "tokens/s+TTFT no viven en ningún panel: se ven también en ancha"
+
+    # y al volver a angosta, las esquinas reaparecen solas
+    w.resize(1366, 768)
+    qapp.processEvents()
     for corner in (w.corner_system, w.corner_services, w.corner_tool):
         assert corner.isVisible()
 
 
-def test_hud_window_corner_widgets_stay_within_window_bounds_after_content_grows(qapp):
+def test_hud_window_corner_widgets_hidden_in_focus_mode(qapp, hud_window):
+    """Modo enfoque (F10): esconde TODA la cromática, esquinas incluidas."""
+    w = hud_window(1366, 768)
+    assert w.corner_system.isVisible()
+    w._toggle_focus_mode()
+    qapp.processEvents()
+    for corner in (w.corner_system, w.corner_services, w.corner_tool):
+        assert not corner.isVisible()
+    w._toggle_focus_mode()
+    qapp.processEvents()
+    assert w.corner_system.isVisible()
+
+
+def test_hud_window_corner_widgets_never_overlap_the_orb(qapp, hud_window):
+    """Ningún widget de esquina puede pisar el orbe: se comprueba contra
+    el círculo VISUAL (no la caja de layout, que es mucho más ancha) —
+    centro de luz + radio del shader con el sangrado del bloom (1.8x,
+    mismo factor que usa `_position_status_below_rings`)."""
+    w = hud_window(1366, 768)
+    w.set_state(OrbState.THINKING)  # muestra también el token_gauge
+    w.tool_start("leer_archivo")
+    qapp.processEvents()
+
+    g = w.orb.geometry()
+    cx, cy = g.center().x(), g.top() + g.height() * 0.42
+    r = 0.30 * min(g.width(), g.height()) * 1.8  # radio shader + bloom
+    orb_visual = QtCore.QRectF(cx - r, cy - r, 2 * r, 2 * r)
+    for corner in (w.corner_system, w.corner_services, w.corner_tool, w.token_gauge):
+        if not corner.isVisible():
+            continue
+        rect = QtCore.QRectF(corner.geometry())
+        assert not rect.intersects(orb_visual), (
+            f"{corner.metaObject().className()} {rect} pisa el orbe {orb_visual}"
+        )
+
+
+def test_hud_window_corner_widgets_update_only_when_data_changes(qapp, hud_window):
+    """CPU EN REPOSO (tarea A): con un QOpenGLWidget debajo, cada repaint
+    de un widget obliga a recomponer TODA la ventana — «actualizar» con
+    el mismo dato no puede repintar. Se mide con el contador real de
+    QEvent.Paint (hud_pro.paint_stats)."""
+    from hud_pro.paint_stats import PaintStatsFilter
+
+    filtro = PaintStatsFilter(qapp, interval_s=0)
+    qapp.installEventFilter(filtro)
+    try:
+        w = hud_window(1366, 768)
+        w._startup_checklist_shown = True  # que no arranque el checklist (ruido de paints)
+        qapp.processEvents()
+
+        svc = w.corner_services
+        svc.set_mic(True)
+        qapp.processEvents()
+        filtro.reset()
+        svc.set_mic(True)  # MISMO dato: no puede repintar nada
+        svc.set_mic(True)
+        qapp.processEvents()
+        assert filtro.rate_for(svc._mic_label) == 0.0, (
+            f"set_mic con el mismo dato repintó: {filtro.rates()}"
+        )
+
+        ring = w.corner_system._cpu_ring
+        ring.push(41.2)
+        qapp.processEvents()
+        filtro.reset()
+        ring.push(41.4)  # mismo entero visible (41): no redibuja
+        ring.push(40.9)  # mismo entero visible (41): no redibuja
+        qapp.processEvents()
+        assert filtro.rate_for(ring) == 0.0, (
+            f"push sin cambio visible redibujó el anillo: {filtro.rates()}"
+        )
+        ring.push(72.0)  # cambio real: sí redibuja
+        qapp.processEvents()
+        assert filtro.rate_for(ring) > 0.0
+    finally:
+        qapp.removeEventFilter(filtro)
+        filtro.deleteLater()
+
+
+def test_hud_window_corner_tool_spinner_lifecycle_and_colors(qapp, hud_window):
+    """La tool en curso muestra un spinner real (timer vivo) y al terminar
+    se para: ✓ sin rojo si ok, ✗ en rojo (único rojo del HUD) si error."""
+    from hud_pro import theme
+
+    w = hud_window(1366, 768)
+    tool = w.corner_tool
+    assert not tool._spinner.is_spinning()
+
+    w.tool_start("buscar_en_la_web")
+    qapp.processEvents()
+    assert tool._spinner.is_spinning(), "tool en curso: el spinner debe girar"
+    assert "buscar_en_la_web" in tool._label.text()
+
+    w.tool_end("buscar_en_la_web", 230.0, True)
+    qapp.processEvents()
+    assert not tool._spinner.is_spinning(), "tool terminada: el spinner se para (CPU)"
+    assert "✓" in tool._label.text() and "230" in tool._label.text()
+    assert theme.DANGER not in tool._label.styleSheet()
+
+    w.tool_start("borrar_archivo")
+    w.tool_end("borrar_archivo", 50.0, False)
+    qapp.processEvents()
+    assert "✗" in tool._label.text()
+    assert theme.DANGER in tool._label.styleSheet(), "el error es lo único rojo del HUD"
+
+
+def test_hud_window_corner_widgets_stay_within_window_bounds_after_content_grows(qapp, hud_window):
     """Regresión directa: `corner_tool`/`token_gauge` (anclados a la
     derecha) se posicionaban con un ancho VIEJO antes de que el texto
     creciera (p. ej. al cerrar una herramienta con un nombre largo) y
     terminaban con el borde derecho fuera de la ventana. `tool_start`/
     `tool_end`/`update_metrics` deben reposicionar tras cada cambio."""
-    w = HudWindow()
-    w.resize(1366, 768)
-    w.show()
-    qapp.processEvents()
+    w = hud_window(1366, 768)
 
     w.tool_start("una_herramienta_con_un_nombre_bastante_largo_de_verdad")
     qapp.processEvents()
@@ -289,21 +430,18 @@ def test_hud_window_corner_widgets_stay_within_window_bounds_after_content_grows
     assert w.token_gauge.geometry().right() <= w._root.width()
 
 
-def test_hud_window_corner_widgets_do_not_overlap_services_row(qapp):
+def test_hud_window_corner_widgets_do_not_overlap_services_row(qapp, hud_window):
     """Regresión directa: `corner_system` (arriba-izq, mini anillos CPU/
     RAM) se posicionaba a la misma altura que la fila de chips MIC/WAKE/
     TTS/MEM y quedaba tapado por ella."""
-    w = HudWindow()
-    w.resize(1366, 768)
-    w.show()
-    qapp.processEvents()
+    w = hud_window(1366, 768)
     assert w.corner_system.geometry().top() >= w._services_row_widget.geometry().bottom(), (
         "el widget de CPU/RAM se superpone con la fila de chips de servicio"
     )
 
 
-def test_hud_window_corner_services_reflects_real_metrics(qapp):
-    w = HudWindow()
+def test_hud_window_corner_services_reflects_real_metrics(qapp, hud_window):
+    w = hud_window(show=False)
     w.update_metrics({
         "online": True, "pingMs": 8.5,
         "voice": {"mic": "available", "tts": True},

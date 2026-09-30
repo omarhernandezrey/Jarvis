@@ -74,9 +74,10 @@ def test_paint_filter_top_respects_min_rate(qapp, stats):
     assert rates  # algo se contó
     # determinista (offscreen bombea en <1ms y el rate real depende del
     # clamp de dt): un umbral por ENCIMA del máximo observado → vacío;
-    # umbral 0 → todo lo contado entra.
+    # umbral 0 → entran todos los contados (se comparan claves: rates()
+    # recalcula con un dt distinto en cada llamada y los floats difieren).
     assert stats.top(min_rate=max(rates.values()) + 1.0) == {}
-    assert stats.top(min_rate=0.0) == rates
+    assert set(stats.top(min_rate=0.0)) == set(rates)
     w.close()
     w.deleteLater()
 

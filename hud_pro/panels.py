@@ -110,17 +110,24 @@ def _metric_row(label_text: str, color: str, parent: QtWidgets.QWidget) -> tuple
 class MiniRing(QtWidgets.QWidget):
     """Anillo de progreso chiquito (CPU/RAM) — mismo patrón de cache que
     `Sparkline`: el arco se recalcula sólo en `push`, `paintEvent` sólo
-    hace `drawPixmap`."""
+    hace `drawPixmap`. Y `push` con el mismo valor visible (entero) no
+    redibuja NADA: un repaint aquí obliga a recomponer toda la ventana
+    (hay un QOpenGLWidget debajo)."""
 
     def __init__(self, color: str = theme.ACCENT, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self._color = QtGui.QColor(color)
         self._value = 0.0
+        self._shown: Optional[int] = None  # último entero dibujado (None = nunca)
         self._pixmap: Optional[QtGui.QPixmap] = None
         self.setFixedSize(34, 34)
 
     def push(self, value: float) -> None:
         self._value = max(0.0, min(100.0, float(value)))
+        shown = round(self._value)
+        if shown == self._shown:
+            return  # el dato no cambió de verdad: cero trabajo de pintado
+        self._shown = shown
         self._redraw_cache()
         self.update()
 
@@ -161,14 +168,37 @@ class MiniRing(QtWidgets.QWidget):
 
 
 class CornerBadge(QtWidgets.QFrame):
-    """Base compartida de los 4 widgets HUD de esquina: fondo semi-
-    transparente chiquito, nunca tapa el orbe (se posiciona en las
-    esquinas del escenario, no encima del centro) — ver `HudWindow.
-    _position_corner_widgets`."""
+    """Base compartida de los 4 widgets HUD de esquina: vidrio semi-
+    transparente (QSS) + esquinas tipo corchete pintadas a mano — el
+    mismo lenguaje que los corchetes HUD del fondo (`BackgroundWidget`),
+    no un rectángulo redondeado genérico. Nunca tapa el orbe (se
+    posiciona en las esquinas del escenario — ver
+    `HudWindow._position_corner_widgets`)."""
+
+    BRACKET_LEN = 7  # px de cada brazo del corchete
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("CornerBadge")
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        # el fondo/borde lo pinta el QSS (#CornerBadge) vía el estilo —
+        # sin este drawPrimitive un paintEvent propio se lo saltaría.
+        opt = QtWidgets.QStyleOption()
+        opt.initFrom(self)
+        qp = QtGui.QPainter(self)
+        qp.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        self.style().drawPrimitive(QtWidgets.QStyle.PrimitiveElement.PE_Widget, opt, qp, self)
+        # corchetes en las 4 esquinas (encima del borde QSS, en acento)
+        pen = QtGui.QPen(QtGui.QColor(theme.LINE_STRONG))
+        pen.setWidthF(1.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        qp.setPen(pen)
+        w, h, ln, m = self.width(), self.height(), float(self.BRACKET_LEN), 2.5
+        for x, y, dx, dy in ((m, m, 1, 1), (w - m, m, -1, 1), (m, h - m, 1, -1), (w - m, h - m, -1, -1)):
+            qp.drawLine(QtCore.QPointF(x, y), QtCore.QPointF(x + dx * ln, y))
+            qp.drawLine(QtCore.QPointF(x, y), QtCore.QPointF(x, y + dy * ln))
+        qp.end()
 
 
 class CompactSystemWidget(CornerBadge):
@@ -210,10 +240,19 @@ class CompactSystemWidget(CornerBadge):
         self._ram_ring.push(psutil.virtual_memory().percent)
 
 
+def _set_label_text(label: QtWidgets.QLabel, text: str) -> None:
+    """`setText` sólo si el texto cambió de verdad — con un QOpenGLWidget
+    en la ventana, cada repaint de un widget obliga a recomponerla TODA,
+    así que «actualizar» con el mismo dato es CPU tirada (tarea A)."""
+    if label.text() != text:
+        label.setText(text)
+
+
 class CompactServicesWidget(CornerBadge):
     """Esquina abajo-izquierda: estado real de los servicios (Ollama +
     ping, mic, TTS, memoria) — mismos datos que ya llegan por
-    `HudWindow.update_metrics`/`set_service_active`, nunca inventados."""
+    `HudWindow.update_metrics`/`set_service_active`, nunca inventados.
+    Punto lleno = disponible, hueco = no disponible, «—» = sin dato."""
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -233,44 +272,104 @@ class CompactServicesWidget(CornerBadge):
 
     def set_ollama(self, online: Optional[bool], ping_ms: Optional[float]) -> None:
         if online is None:
-            self._ollama_label.setText("Ollama —")
+            _set_label_text(self._ollama_label, "Ollama —")
         elif online:
-            self._ollama_label.setText(f"Ollama ●  {ping_ms:.0f} ms" if ping_ms is not None else "Ollama ●")
+            _set_label_text(
+                self._ollama_label,
+                f"Ollama ●  {ping_ms:.0f} ms" if ping_ms is not None else "Ollama ●",
+            )
         else:
-            self._ollama_label.setText("Ollama ○")
+            _set_label_text(self._ollama_label, "Ollama ○")
 
     def set_mic(self, on: bool) -> None:
-        self._mic_label.setText(f"Mic {'●' if on else '○'}")
+        _set_label_text(self._mic_label, f"Mic {'●' if on else '○'}")
 
     def set_tts(self, on: bool) -> None:
-        self._tts_label.setText(f"TTS {'●' if on else '○'}")
+        _set_label_text(self._tts_label, f"TTS {'●' if on else '○'}")
 
     def set_memory(self, count: Optional[int]) -> None:
-        self._memory_label.setText(f"Memoria {count}" if count is not None else "Memoria —")
+        _set_label_text(self._memory_label, f"Memoria {count}" if count is not None else "Memoria —")
+
+
+class _Spinner(QtWidgets.QWidget):
+    """Arco que rota mientras una herramienta corre DE VERDAD — el timer
+    sólo vive durante la tool (se para al terminar), nunca es decorativo:
+    cada tick repinta este cuadrito de 14px y obliga a recomponer la
+    ventana, así que fuera de una tool real no existe."""
+
+    def __init__(self, color: str = theme.ACCENT, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self._color = QtGui.QColor(color)
+        self._angle = 0
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self.setFixedSize(14, 14)
+
+    def start(self) -> None:
+        if not self._timer.isActive():
+            self._timer.start(50)
+
+    def stop(self) -> None:
+        if self._timer.isActive():
+            self._timer.stop()
+            self.update()  # deja el arco quieto (lo tapa la marca ✓/✗)
+
+    def is_spinning(self) -> bool:
+        return self._timer.isActive()
+
+    def _tick(self) -> None:
+        self._angle = (self._angle + 30) % 360
+        self.update()
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        qp = QtGui.QPainter(self)
+        qp.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        pen = QtGui.QPen(self._color)
+        pen.setWidthF(1.8)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        qp.setPen(pen)
+        rect = QtCore.QRectF(2, 2, self.width() - 4, self.height() - 4)
+        qp.drawArc(rect, self._angle * 16, 100 * 16)  # arco de 100°
+        qp.end()
 
 
 class CompactToolWidget(CornerBadge):
-    """Esquina arriba-derecha: última herramienta real en curso/terminada
-    — nunca una entrada inventada; vacío hasta el primer `tool_start`."""
+    """Esquina arriba-derecha: última herramienta real — en curso con
+    spinner, o terminada con ✓ (cian) / ✗ (rojo, único uso del rojo fuera
+    de errores en el HUD) y su duración real. Vacío hasta el primer
+    `tool_start`: nunca una entrada inventada."""
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
-        lay = QtWidgets.QVBoxLayout(self)
+        lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(8, 6, 8, 6)
-        lay.setSpacing(2)
+        lay.setSpacing(6)
+        self._spinner = _Spinner(theme.ACCENT, self)
+        self._spinner.setVisible(False)
+        lay.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignTop)
+        col = QtWidgets.QVBoxLayout()
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(2)
         title = QtWidgets.QLabel("HERRAMIENTA", self)
         title.setObjectName("PanelMeta")
-        lay.addWidget(title)
+        col.addWidget(title)
         self._label = QtWidgets.QLabel("Sin actividad", self)
         self._label.setObjectName("PanelMeta")
-        lay.addWidget(self._label)
+        col.addWidget(self._label)
+        lay.addLayout(col, 1)
 
     def set_running(self, name: str) -> None:
-        self._label.setText(f"{name}…")
+        self._spinner.setVisible(True)
+        self._spinner.start()
+        self._label.setStyleSheet("")  # vuelve al PanelMeta normal
+        _set_label_text(self._label, f"{name}…")
 
     def set_done(self, name: str, ok: bool, ms: float) -> None:
+        self._spinner.stop()
+        self._spinner.setVisible(False)
         mark = "✓" if ok else "✗"
-        self._label.setText(f"{mark} {name} ({ms:.0f} ms)")
+        self._label.setStyleSheet("" if ok else f"color: {theme.DANGER};")
+        _set_label_text(self._label, f"{mark} {name} ({ms:.0f} ms)")
 
 
 class SystemPanel(QtWidgets.QFrame):
@@ -453,7 +552,7 @@ class TokenGauge(QtWidgets.QFrame):
 
     def update_tokens(self, tokens_per_second: Optional[float], ttft_ms: Optional[float]) -> None:
         if tokens_per_second is not None:
-            self._tps_label.setText(f"{tokens_per_second:.0f} tok/s")
+            _set_label_text(self._tps_label, f"{tokens_per_second:.0f} tok/s")
             self._bar.push(tokens_per_second, vmax=max(20.0, tokens_per_second * 1.2))
         if ttft_ms is not None:
-            self._ttft_label.setText(f"TTFT {ttft_ms:.0f} ms")
+            _set_label_text(self._ttft_label, f"TTFT {ttft_ms:.0f} ms")

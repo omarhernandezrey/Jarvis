@@ -217,15 +217,15 @@ class HudWindow(QtWidgets.QMainWindow):
         # FASE D (rediseño para pantallas reales, sin monitor de 1920):
         # bajo 1400px lo esencial ya no se escondía en un cajón — vive
         # SIEMPRE visible como 4 widgets HUD compactos en las esquinas del
-        # escenario, alrededor del orbe (nunca encima). El cajón de arriba
-        # (`_side_dock`, con sparklines/historial) queda para el detalle
-        # completo bajo demanda, no para lo esencial del día a día.
+        # escenario, alrededor del orbe (nunca encima). Por encima de
+        # 1400px esa MISMA info ya está en el panel lateral permanente:
+        # mostrar las esquinas ahí sería duplicarla (ruido), así que se
+        # apagan (`_sync_corner_visibility`). El cajón queda sólo para el
+        # detalle completo (sparklines/historial) bajo demanda.
         self.corner_system = CompactSystemWidget(root)
         self.corner_services = CompactServicesWidget(root)
         self.corner_tool = CompactToolWidget(root)
         self.token_gauge = TokenGauge(root)
-        for corner in (self.corner_system, self.corner_services, self.corner_tool, self.token_gauge):
-            corner.show()
 
         self._command_palette = CommandPalette(self._build_commands(), root)
         self._startup_checklist = StartupChecklist(parent=root)
@@ -256,6 +256,7 @@ class HudWindow(QtWidgets.QMainWindow):
 
         self._install_shortcuts()
         self.set_state(OrbState.IDLE)
+        self._sync_corner_visibility()
 
     def _sync_gpu_energy_timer_active(self, state: OrbState) -> None:
         if not hasattr(self, "_gpu_energy_timer"):
@@ -350,8 +351,9 @@ class HudWindow(QtWidgets.QMainWindow):
             self.gpu_stage.set_state(st)
         self._sync_gpu_energy_timer_active(st)
         # gauge de tokens/s + TTFT: sólo tiene sentido mientras el LLM
-        # genera de verdad — fuera de ahí no hay valores reales que mostrar.
-        self.token_gauge.setVisible(st in (OrbState.THINKING, OrbState.SPEAKING))
+        # genera de verdad — fuera de ahí no hay valores reales que mostrar
+        # (la regla exacta vive en `_sync_corner_visibility`).
+        self._sync_corner_visibility()
         self.status.set_state(st, detail)
         self.top_bar.chip.set_state(st)
         self.chat.input.set_mic_checked(st is OrbState.LISTENING)
@@ -634,6 +636,7 @@ class HudWindow(QtWidgets.QMainWindow):
         if hasattr(self, "_side_dock"):
             self._apply_side_layout()
         if hasattr(self, "corner_system"):
+            self._sync_corner_visibility()
             self._position_corner_widgets()
         if hasattr(self, "_command_palette"):
             self._command_palette.setGeometry(self._root.rect())
@@ -642,6 +645,7 @@ class HudWindow(QtWidgets.QMainWindow):
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
+        self._sync_corner_visibility()
         self._position_corner_widgets()
         if self.gpu_stage is not None:
             QtCore.QTimer.singleShot(0, self._check_gpu_stage_after_first_paint)
@@ -652,6 +656,26 @@ class HudWindow(QtWidgets.QMainWindow):
 
     def _is_wide_layout(self) -> bool:
         return self.width() >= self.WIDE_LAYOUT_MIN_WIDTH
+
+    def _sync_corner_visibility(self) -> None:
+        """Quién se ve de los 4 widgets de esquina:
+
+        - system/services/tool: SÓLO bajo 1400px (en ancha esa misma info
+          ya está en el panel lateral permanente — duplicarla es ruido) y
+          nunca en modo enfoque (que esconde toda la cromática).
+        - token_gauge: sólo mientras el LLM genera/habla de verdad, a
+          cualquier ancho (no duplica nada del panel lateral: tokens/s y
+          TTFT no viven en ningún otro sitio), y tampoco en modo enfoque.
+
+        Ocultar para también los timers internos (hideEvent de cada
+        widget): cero coste de CPU mientras no se ven."""
+        if not hasattr(self, "corner_system"):
+            return  # aún no existen (principio de __init__)
+        compact = not self._is_wide_layout() and not self._focus_mode
+        for w in (self.corner_system, self.corner_services, self.corner_tool):
+            w.setVisible(compact)
+        generating = self.orb.state in (OrbState.THINKING, OrbState.SPEAKING)
+        self.token_gauge.setVisible(generating and not self._focus_mode)
 
     def _position_corner_widgets(self) -> None:
         """4 widgets HUD compactos en las esquinas del ESCENARIO (la zona
@@ -699,11 +723,13 @@ class HudWindow(QtWidgets.QMainWindow):
 
     def _toggle_focus_mode(self) -> None:
         """Modo enfoque (F10): esconde toda la cromática — chips, acciones
-        rápidas, paneles — y deja sólo el orbe + estado + consola."""
+        rápidas, paneles, widgets de esquina — y deja sólo el orbe +
+        estado + consola."""
         focus = not self._focus_mode
         self._focus_mode = focus
         self.top_bar.setVisible(not focus)
         self._services_row_widget.setVisible(not focus)
+        self._sync_corner_visibility()
         if focus:
             self._side_dock.hide()
         else:

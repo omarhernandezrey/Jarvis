@@ -66,6 +66,12 @@ class PaintStatsFilter(QtCore.QObject):
         rows = {self._names.get(k, str(k)): c / dt for k, c in self._counts.items()}
         return dict(sorted(rows.items(), key=lambda kv: kv[1], reverse=True))
 
+    def rate_for(self, widget: QtWidgets.QWidget) -> float:
+        """Paints/segundo de UN widget concreto (por identidad, no por
+        etiqueta — dos QLabel#PanelMeta distintos comparten etiqueta)."""
+        dt = max(1e-3, time.monotonic() - self._t0)
+        return self._counts.get(id(widget), 0) / dt
+
     def top(self, min_rate: Optional[float] = None) -> dict[str, float]:
         """Sólo los widgets por encima del ritmo mínimo (``min_rate`` o el
         configurado)."""
