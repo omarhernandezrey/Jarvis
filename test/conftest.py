@@ -27,6 +27,24 @@ from pathlib import Path
 _RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_RAIZ))
 
+# ── Qt: UNA sola QApplication para todo el proceso (fusionado desde
+# jarvis_hud_pro/tests/conftest.py) ─────────────────────────────────────
+# test_ui_hud.py crea una QGuiApplication al importarse (nivel de módulo,
+# antes de cualquier fixture); los tests del HUD pro (test_hud_pro.py,
+# test_adapter.py) usan QtWidgets y necesitan una QApplication real. Si el
+# singleton ya existe como QGuiApplication "a secas" cuando se intenta crear
+# el primer QWidget, Qt aborta el PROCESO ENTERO (SIGABRT, no una excepción
+# Python) — verificado en esta máquina, no es una hipótesis. Crear la
+# QApplication aquí, en el conftest (que pytest siempre importa antes que
+# cualquier módulo de test del directorio), garantiza que sea siempre la
+# primera: QApplication YA ES una QGuiApplication, así que el
+# `QGuiApplication.instance() or QGuiApplication([])` de test_ui_hud.py
+# simplemente la reutiliza sin problema en el sentido contrario.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+_QAPP = QApplication.instance() or QApplication([])
+
 # ── SANDBOX ──────────────────────────────────────────────────────────────
 # Se crea en cuanto se importa el conftest (antes que cualquier test) y NO se
 # borra al terminar: así, si algo se sigue escapando, queda visible en /tmp.
@@ -79,6 +97,12 @@ def sandbox() -> Path:
 def home_dir() -> Path:
     """Sustituto de la carpeta personal (Documentos/Escritorio incluidos)."""
     return _HOME_FALSA
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """La QApplication única del proceso (ver el bloque Qt arriba)."""
+    return _QAPP
 
 
 @pytest.fixture

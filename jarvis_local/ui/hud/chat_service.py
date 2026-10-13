@@ -57,6 +57,8 @@ class ChatService(QObject):
     errorTurn = Signal(str)
     wantState = Signal(str)
     metrics = Signal(dict)
+    # HUD pro — actividad de herramienta real: nombre, duración (ms), ok/error.
+    toolUsed = Signal(str, float, bool)
 
     busyChanged = Signal(bool)
     lastCommandChanged = Signal()
@@ -134,17 +136,20 @@ class ChatService(QObject):
 
     def _run(self, text: str) -> None:
         seen = {"n": 0, "t0": None}
+        t_start = time.monotonic()
 
         def on_token(tok: str) -> None:
             if seen["t0"] is None:
                 seen["t0"] = time.monotonic()
+                # tiempo al primer token: dato real, un solo timestamp menos
+                # que el de arranque del turno — no una estimación.
+                self.metrics.emit({"ttftMs": round((seen["t0"] - t_start) * 1000)})
             seen["n"] += 1
             self.assistantToken.emit(tok)
             dt = time.monotonic() - seen["t0"]
             if dt > 0.3:
                 self.metrics.emit({"tokensPerSecond": round(seen["n"] / dt, 1)})
 
-        t_start = time.monotonic()
         try:
             self._ensure_jarvis()
             if self._jarvis is None:
@@ -167,7 +172,11 @@ class ChatService(QObject):
             # muestra "executing" un instante para que se perciba, en vez de
             # pasar de "thinking" a "idle" sin que el usuario vea qué pasó.
             if getattr(self._jarvis, "last_reply_kind", "llm") == "tool":
+                tool_name = getattr(self._jarvis, "last_tool_name", "") or "herramienta"
+                tool_ok = getattr(self._jarvis, "last_tool_ok", True)
+                tool_ms = round((time.monotonic() - t_start) * 1000)
                 self.wantState.emit("executing")
+                self.toolUsed.emit(tool_name, float(tool_ms), bool(tool_ok))
                 time.sleep(0.28)
 
             latency = round((time.monotonic() - t_start) * 1000)

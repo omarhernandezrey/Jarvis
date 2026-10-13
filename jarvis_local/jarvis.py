@@ -116,29 +116,38 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
         return None
 
     if intent.kind == "tool_read":
+        jarvis_instance.last_tool_name = intent.tool
+        jarvis_instance.last_tool_ok = True
         try:
             result = _execute_tool_read(intent.tool, intent.arguments)
             _record_exchange(jarvis_instance, message, result, intent.tool)
             return result
         except Exception as e:
+            jarvis_instance.last_tool_ok = False
             logger.log_error("intent_tool_read", str(e))
             return f"No pude ejecutar '{intent.tool}': {e}"
 
     if intent.kind == "tool_execute":
+        jarvis_instance.last_tool_name = intent.tool
+        jarvis_instance.last_tool_ok = True
         try:
             result = _execute_tool_write(intent.tool, intent.arguments)
             _record_exchange(jarvis_instance, message, result, intent.tool)
             return result
         except Exception as e:
+            jarvis_instance.last_tool_ok = False
             logger.log_error("intent_tool_execute", str(e))
             return f"No pude ejecutar '{intent.tool}': {e}"
 
     if intent.kind == "tool_plan":
+        jarvis_instance.last_tool_name = intent.tool
+        jarvis_instance.last_tool_ok = True
         try:
             plan_msg = _create_tool_plan(intent.tool, intent.arguments, intent.reason)
             _record_exchange(jarvis_instance, message, plan_msg, intent.tool)
             return plan_msg
         except Exception as e:
+            jarvis_instance.last_tool_ok = False
             logger.log_error("intent_tool_plan", str(e))
             return f"No pude planificar '{intent.tool}': {e}"
 
@@ -241,6 +250,17 @@ class Jarvis:
         # (HUD) para mostrar el estado "executing" cuando de verdad se ejecuto
         # una herramienta, en vez de inventar una animacion sin dato real.
         self.last_reply_kind: str = "llm"
+        # Nombre real de la herramienta que resolvió el último turno (o de
+        # las varias que usó el agente, unidas por coma). "" si el turno no
+        # pasó por ninguna herramienta — lo lee el HUD para la tarjeta viva
+        # de actividad; nunca se inventa un nombre.
+        self.last_tool_name: str = ""
+        # True salvo que la herramienta del último turno haya lanzado una
+        # excepción real (se captura en _parse_and_execute) — el HUD lo usa
+        # para el color de la tarjeta de actividad. No cubre un fallo
+        # "lógico" que la herramienta reporta como texto (p. ej. "no
+        # encontrado") sin lanzar excepción: eso queda fuera de este dato.
+        self.last_tool_ok: bool = True
         self._ensure_model()
         self._restore_history()
 
@@ -349,6 +369,7 @@ class Jarvis:
             exact = _exact_response(safe_input)
             if exact is not None:
                 self.last_reply_kind = "exact"
+                self.last_tool_name = ""
                 _capa_resuelta, _resultado_txt = "exacta", exact
                 self.history.add_user(safe_input)
                 self.history.add_assistant(exact)
@@ -361,6 +382,7 @@ class Jarvis:
             fast = fast_respond(safe_input)
             if fast is not None:
                 self.last_reply_kind = "fast"
+                self.last_tool_name = ""
                 _capa_resuelta, _resultado_txt = "rapida", fast
                 self.history.add_user(safe_input)
                 self.history.add_assistant(fast)
@@ -405,6 +427,7 @@ class Jarvis:
                 return agent_reply
 
             self.last_reply_kind = "llm"
+            self.last_tool_name = ""
             _capa_resuelta = "llm_directo"
             self.history.add_user(safe_input)
             self._persist_message("user", safe_input)
@@ -555,6 +578,8 @@ class Jarvis:
         if not result.tools_used or not result.text:
             return None
 
+        self.last_tool_name = ", ".join(result.tools_used)
+        self.last_tool_ok = True
         texto = _con_aviso(result.text)
         self.history.add_user(safe_input)
         self.history.add_assistant(texto)

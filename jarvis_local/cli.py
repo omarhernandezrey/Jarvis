@@ -639,6 +639,14 @@ def handle_voz(parts: list[str], jarvis, tts_enabled: bool, cfg: dict) -> bool:
     return tts_enabled
 
 
+def _run_desktop_hud() -> None:
+    """Abre el HUD de escritorio. La elección pro/legado y el fallback viven
+    en jarvis_local.ui.hud_select (un único punto de verdad: también lo usa
+    el lanzador de escritorio real, jarvis_local/ui/hud/launch_check.py)."""
+    from jarvis_local.ui.hud_select import open_desktop_hud
+    open_desktop_hud()
+
+
 def main():
     import sys
 
@@ -769,8 +777,7 @@ def main():
                 elif sub in ("desktop", "hud"):
                     print("Iniciando JARVIS Desktop...")
                     try:
-                        from jarvis_local.ui.hud import main as desktop_main
-                        desktop_main()
+                        _run_desktop_hud()
                     except KeyboardInterrupt:
                         print("\nInterfaz desktop cerrada.")
                     except Exception as e:
