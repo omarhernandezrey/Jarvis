@@ -450,7 +450,7 @@ def handle_memoria(parts: list[str], jarvis):
             results = []
             if jarvis.auto_recall is not None:
                 hits = jarvis.auto_recall.index.search(
-                    query, items, top_k=5, min_score=0.4)
+                    query, items, top_k=5, min_score=0.4, sync=True)
                 results = [(m, s) for m, s in hits]
             if not results:  # respaldo: coincidencia literal
                 results = [(it, 0.0) for it in items
