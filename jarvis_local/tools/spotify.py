@@ -579,6 +579,29 @@ def _arranco_de_verdad(sp, device_id: str) -> bool:
     return False
 
 
+def _confirmar_estado(sp, predicado) -> bool:
+    """Sondea `sp.current_playback()` unas pocas veces y confirma que
+    `predicado(estado)` se cumple -- la misma idea de `_arranco_de_verdad`,
+    generalizada. La Web API de Spotify contesta 204 (exito) aunque el
+    dispositivo remoto nunca reaccione de verdad: antes, pausa/reanudar/
+    siguiente/anterior/volumen/aleatorio/repetir/transferir afirmaban
+    "listo, senor" sin comprobar nada, a diferencia de `play_song` y
+    compania (que sí usan `_arranco_de_verdad`) -- inconsistente dentro del
+    propio archivo, y en contra de lo que `catalog.py` ya declara como
+    `verify=` para estas mismas herramientas. Si no se puede consultar el
+    estado, se da por bueno: que falle la comprobación no debe inventar un
+    error sobre algo que quizás sí funcionó."""
+    for _ in range(_VERIFICAR_INTENTOS):
+        time.sleep(_VERIFICAR_ESPERA)
+        try:
+            actual = sp.current_playback() or {}
+        except Exception:  # noqa: BLE001
+            return True
+        if predicado(actual):
+            return True
+    return False
+
+
 def _reproducir(sp, device_id: str, **kwargs) -> bool:
     """Manda reproducir y COMPRUEBA que empieza a sonar.
 
@@ -668,8 +691,13 @@ def pause_playback() -> ActionPlan:
         if device_id is None:
             return plan
         sp.pause_playback(device_id=device_id)
-        plan.result = "Pausado, senor."
-        plan.status = ActionStatus.EXECUTED
+        if _confirmar_estado(sp, lambda s: s.get("is_playing") is False):
+            plan.result = "Pausado, senor."
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = ("Spotify acepto la orden pero la musica sigue sonando, "
+                           "senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(
             e, plan,
@@ -690,8 +718,12 @@ def resume_playback() -> ActionPlan:
         if device_id is None:
             return plan
         sp.start_playback(device_id=device_id)
-        plan.result = "Reanudado, senor."
-        plan.status = ActionStatus.EXECUTED
+        if _confirmar_estado(sp, lambda s: s.get("is_playing") is True):
+            plan.result = "Reanudado, senor."
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = MSG_NO_SONO
     except Exception as e:
         _manejar_error_spotify(
             e, plan,
@@ -712,9 +744,16 @@ def next_track() -> ActionPlan:
         device_id = _dispositivo_control_o_error(sp, plan)
         if device_id is None:
             return plan
+        antes = (sp.current_playback() or {}).get("item") or {}
+        id_antes = antes.get("id")
         sp.next_track(device_id=device_id)
-        plan.result = "Siguiente cancion, senor."
-        plan.status = ActionStatus.EXECUTED
+        if _confirmar_estado(sp, lambda s: ((s.get("item") or {}).get("id")) != id_antes):
+            plan.result = "Siguiente cancion, senor."
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = ("Spotify acepto la orden pero sigue sonando la misma "
+                           "cancion, senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(e, plan, msg_generic="No pude saltar la cancion en Spotify")
     return plan
@@ -731,9 +770,16 @@ def previous_track() -> ActionPlan:
         device_id = _dispositivo_control_o_error(sp, plan)
         if device_id is None:
             return plan
+        antes = (sp.current_playback() or {}).get("item") or {}
+        id_antes = antes.get("id")
         sp.previous_track(device_id=device_id)
-        plan.result = "Cancion anterior, senor."
-        plan.status = ActionStatus.EXECUTED
+        if _confirmar_estado(sp, lambda s: ((s.get("item") or {}).get("id")) != id_antes):
+            plan.result = "Cancion anterior, senor."
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = ("Spotify acepto la orden pero sigue sonando la misma "
+                           "cancion, senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(
             e, plan,
@@ -759,8 +805,16 @@ def set_volume(nivel: int) -> ActionPlan:
         if device_id is None:
             return plan
         sp.volume(nivel, device_id=device_id)
-        plan.result = f"Volumen de Spotify al {nivel}%, senor."
-        plan.status = ActionStatus.EXECUTED
+        # +/-2 de tolerancia: Spotify a veces redondea el volumen recibido.
+        if _confirmar_estado(
+            sp, lambda s: abs((s.get("device") or {}).get("volume_percent", -999) - nivel) <= 2
+        ):
+            plan.result = f"Volumen de Spotify al {nivel}%, senor."
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = ("Spotify acepto la orden pero el volumen no cambio, "
+                           "senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(e, plan, msg_generic="No pude ajustar el volumen de Spotify")
     return plan
@@ -780,9 +834,14 @@ def set_shuffle(activar: bool) -> ActionPlan:
         if device_id is None:
             return plan
         sp.shuffle(activar, device_id=device_id)
-        plan.result = ("Modo aleatorio activado, senor." if activar
-                       else "Modo aleatorio desactivado, senor.")
-        plan.status = ActionStatus.EXECUTED
+        if _confirmar_estado(sp, lambda s: s.get("shuffle_state") == activar):
+            plan.result = ("Modo aleatorio activado, senor." if activar
+                           else "Modo aleatorio desactivado, senor.")
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = ("Spotify acepto la orden pero el modo aleatorio no "
+                           "cambio, senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(e, plan, msg_generic="No pude cambiar el modo aleatorio de Spotify")
     return plan
@@ -809,11 +868,17 @@ def set_repeat(modo: str) -> ActionPlan:
         if device_id is None:
             return plan
         sp.repeat(_REPEAT_MODOS[modo], device_id=device_id)
-        mensajes = {"cancion": "Repitiendo esta cancion, senor.",
-                    "lista": "Repitiendo la lista, senor.",
-                    "no": "Repeticion desactivada, senor."}
-        plan.result = mensajes[modo]
-        plan.status = ActionStatus.EXECUTED
+        objetivo = _REPEAT_MODOS[modo]
+        if _confirmar_estado(sp, lambda s: s.get("repeat_state") == objetivo):
+            mensajes = {"cancion": "Repitiendo esta cancion, senor.",
+                        "lista": "Repitiendo la lista, senor.",
+                        "no": "Repeticion desactivada, senor."}
+            plan.result = mensajes[modo]
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = ("Spotify acepto la orden pero la repeticion no "
+                           "cambio, senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(e, plan, msg_generic="No pude cambiar la repeticion en Spotify")
     return plan
@@ -1123,8 +1188,14 @@ def transfer_playback(device: str) -> ActionPlan:
                 + ", ".join(d.get("name", "?") for d in r) + ". Dime el nombre exacto.")
             return plan
         sp.transfer_playback(device_id=r["id"], force_play=True)
-        plan.result = f"Musica en {r.get('name', device)}, senor."
-        plan.status = ActionStatus.EXECUTED
+        destino = r["id"]
+        if _confirmar_estado(sp, lambda s: (s.get("device") or {}).get("id") == destino):
+            plan.result = f"Musica en {r.get('name', device)}, senor."
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = (f"Spotify acepto la orden pero la musica no se movio a "
+                           f"{r.get('name', device)}, senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(e, plan, msg_generic="No pude cambiar el dispositivo de Spotify")
     return plan
@@ -1151,9 +1222,27 @@ def like_current_track() -> ActionPlan:
         sp.current_user_saved_tracks_add([item["id"]])
         artistas = ", ".join(a["name"] for a in item.get("artists", []))
         nombre = item.get("name", "?")
-        plan.result = (f"Guarde '{nombre}' de {artistas} en Me Gusta, senor."
-                       if artistas else f"Guarde '{nombre}' en Me Gusta, senor.")
-        plan.status = ActionStatus.EXECUTED
+        # No usa current_playback (es otra API: biblioteca, no reproduccion),
+        # asi que no reusa _confirmar_estado -- mismo principio: no basta
+        # con que la llamada no explote, hay que releer el dato real.
+        guardada = True
+        for _ in range(_VERIFICAR_INTENTOS):
+            time.sleep(_VERIFICAR_ESPERA)
+            try:
+                guardada = bool(sp.current_user_saved_tracks_contains([item["id"]])[0])
+            except Exception:  # noqa: BLE001
+                guardada = True
+                break
+            if guardada:
+                break
+        if guardada:
+            plan.result = (f"Guarde '{nombre}' de {artistas} en Me Gusta, senor."
+                           if artistas else f"Guarde '{nombre}' en Me Gusta, senor.")
+            plan.status = ActionStatus.EXECUTED
+        else:
+            plan.status = ActionStatus.ERROR
+            plan.result = (f"Spotify acepto la orden pero '{nombre}' no quedo "
+                           "guardada en Me Gusta, senor. Intentelo de nuevo.")
     except Exception as e:
         _manejar_error_spotify(e, plan, msg_generic="No pude guardar la cancion en Me Gusta")
     return plan
