@@ -176,6 +176,16 @@ class VoiceService(QObject):
                     if mp3:
                         break
             if not mp3:
+                # edge-tts requiere internet SIEMPRE (sin voz de respaldo,
+                # por diseño — ver jarvis_local/voice/tts.py); una caída
+                # transitoria aquí antes dejaba a JARVIS mudo sin ningún
+                # aviso -- en CLI al menos había un print(), en el HUD nada
+                # en absoluto. notice ya está cableado a un toast visible
+                # (hud_pro_runtime.py / hud/app.py), así que un fallo real
+                # ahora se ve en vez de pasar desapercibido.
+                self.notice.emit("voz no disponible: sin conexión con el "
+                                  "servicio de voz (edge-tts) — esta respuesta "
+                                  "no se habló")
                 return
             samples, sr = tts._mp3_bytes_to_numpy(mp3)
             if samples is None or sr <= 0:

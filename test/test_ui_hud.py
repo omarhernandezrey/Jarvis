@@ -500,6 +500,40 @@ def test_tts_playback_terminates_and_clears_speaking(monkeypatch):
     assert changes[:1] == [True] and changes[-1] is False, changes
 
 
+def test_tts_network_failure_emits_visible_notice(monkeypatch):
+    """El bug reportado ("a veces JARVIS no habla, sin patrón"): edge-tts
+    requiere internet SIEMPRE (sin voz de respaldo, por diseño) y una caída
+    transitoria dejaba `_speak` en un `return` silencioso -- nada se oía y
+    nada se veía (a diferencia de la CLI, que al menos imprime). `notice` ya
+    estaba cableado a un toast visible en hud_pro_runtime.py/hud/app.py:
+    ahora `_speak` lo usa cuando la generación de audio falla de verdad."""
+    import time
+
+    from jarvis_local.ui.hud.voice_service import VoiceService
+    from jarvis_local.voice import tts
+
+    def _sin_internet(coro):
+        coro.close()  # evita "coroutine was never awaited"
+        return b""
+
+    monkeypatch.setattr(tts, "_cache_get", lambda text: b"")
+    monkeypatch.setattr(tts, "_run_async", _sin_internet)  # simula sin internet
+
+    v = VoiceService(ViewModel())
+    avisos = []
+    v.notice.connect(avisos.append)
+
+    v.speak("esto no debería sonar")
+    t0 = time.monotonic()
+    while not avisos and time.monotonic() - t0 < 5:
+        _app.processEvents()
+        time.sleep(0.02)
+
+    assert avisos, "edge-tts falló sin avisar -- el bug original: silencio total, sin toast"
+    assert "no" in avisos[0].lower()
+    assert v.speaking is False  # nunca llegó a "hablar": nada que reproducir
+
+
 def test_voice_path_end_to_end_stt_to_chat_send():
     """Fase 9 P0 (voz): audio real → STT → señal `transcribed` → `chat.send`.
 
