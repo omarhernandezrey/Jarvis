@@ -492,16 +492,23 @@ def _console_default_settings():
 
 # ── Consola: compacta / expandida ────────────────────────────────────────────
 def test_console_compact_by_default_and_ctrl_j_toggles(qapp, win):
+    """Flaky bajo carga de CI: la animación de panelHeight dura ~250ms
+    (QPropertyAnimation, OutCubic), y un `pump(qapp, 400)` de tiempo FIJO
+    de reloj real no deja margen si la máquina va lenta (CI compartido,
+    varias corridas en paralelo) — la aserción llegaba con la animación
+    a medio camino (ej. 152/181 en vez de 150). `wait_until` (ya definido
+    en este archivo) sondea la condición real en vez de apostar a que el
+    tiempo alcance: no hay carrera que perder."""
     assert not win._console_expanded
     assert win.chat.height() == HudWindow.CHAT_COMPACT_HEIGHT
     win.toggle_console_mode()
-    pump(qapp, 400)  # deja correr la animación de 250ms
+    assert wait_until(qapp, lambda: win.chat.height() > HudWindow.CHAT_COMPACT_HEIGHT, timeout=3.0), \
+        f"la animación no terminó: height={win.chat.height()}"
     assert win._console_expanded
-    assert win.chat.height() > HudWindow.CHAT_COMPACT_HEIGHT
     win.toggle_console_mode()
-    pump(qapp, 400)
+    assert wait_until(qapp, lambda: win.chat.height() == HudWindow.CHAT_COMPACT_HEIGHT, timeout=3.0), \
+        f"la animación no volvió al compacto: height={win.chat.height()}"
     assert not win._console_expanded
-    assert win.chat.height() == HudWindow.CHAT_COMPACT_HEIGHT
 
 
 def test_console_header_click_toggles_mode(qapp, win):
