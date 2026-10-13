@@ -13,4 +13,10 @@ pillow>=10.0
 selenium>=4.20
 filelock>=3.0
 spotipy>=2.24
-PySide6>=6.10
+# PySide6 6.12.0 aborta el proceso (SIGABRT: "Fatal Python error: none_dealloc:
+# deallocating None: bug likely caused by a refcount error in a C extension",
+# en orb.py::_paint_particles) bajo Python 3.11 en concreto — 3.12/3.13 con la
+# MISMA versión 6.12.0 no fallan. Reproducido de forma aislada y determinista
+# en docker python:3.11-slim; desaparece por completo al bajar a 6.11.2. Bug
+# de shiboken6/PySide6 para esa combinación, no del código de este repo.
+PySide6>=6.10,<6.12
