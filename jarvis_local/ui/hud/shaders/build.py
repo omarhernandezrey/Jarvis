@@ -30,7 +30,11 @@ def build() -> int:
         out = src.with_suffix(src.suffix + ".qsb")
         cmd = [qsb, "--qt6", "-o", str(out), str(src)]
         print(" ".join(cmd))
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            sys.stderr.write(f"pyside6-qsb no respondio en 30s compilando {src.name}\n")
+            return 1
         if r.returncode != 0:
             sys.stderr.write(r.stdout + r.stderr)
             return r.returncode
