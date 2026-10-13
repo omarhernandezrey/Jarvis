@@ -177,18 +177,26 @@ class VoiceService(QObject):
                         break
             if not mp3:
                 # edge-tts requiere internet SIEMPRE (sin voz de respaldo,
-                # por diseño — ver jarvis_local/voice/tts.py); una caída
-                # transitoria aquí antes dejaba a JARVIS mudo sin ningún
-                # aviso -- en CLI al menos había un print(), en el HUD nada
-                # en absoluto. notice ya está cableado a un toast visible
-                # (hud_pro_runtime.py / hud/app.py), así que un fallo real
-                # ahora se ve en vez de pasar desapercibido.
-                self.notice.emit("voz no disponible: sin conexión con el "
-                                  "servicio de voz (edge-tts) — esta respuesta "
-                                  "no se habló")
+                # por diseño — ver jarvis_local/voice/tts.py); un fallo aquí
+                # antes dejaba a JARVIS mudo sin ningún aviso -- en CLI al
+                # menos había un print(), en el HUD nada en absoluto. notice
+                # ya está cableado a un toast visible (hud_pro_runtime.py /
+                # hud/app.py), así que un fallo real ahora se ve en vez de
+                # pasar desapercibido. `_edge_generate_async` se traga
+                # CUALQUIER excepción (no solo de red: paquete roto, config
+                # de voz inválida, rechazo del servicio) -- el mensaje no
+                # afirma una causa que no se puede confirmar desde aquí.
+                self.notice.emit("voz no disponible: no se pudo generar el "
+                                  "audio (edge-tts) — esta respuesta no se habló")
                 return
             samples, sr = tts._mp3_bytes_to_numpy(mp3)
             if samples is None or sr <= 0:
+                # mismo caso: bytes de sobra pero el MP3 vino corrupto/
+                # incompleto (conexión cortada a media descarga) -- sin este
+                # aviso es el mismo silencio inexplicable que el `if not mp3`
+                # de arriba, solo que un paso más adelante.
+                self.notice.emit("voz no disponible: el audio recibido no se "
+                                  "pudo decodificar — esta respuesta no se habló")
                 return
             if not from_cache:
                 tts._cache_put(text, mp3)
