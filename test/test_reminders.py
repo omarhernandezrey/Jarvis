@@ -1,7 +1,6 @@
 """Tests de recordatorios con alarma"""
 import os
 import sys
-import time
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -163,14 +162,33 @@ def test_cancelar_por_texto():
     _con_store_limpio(caso)
 
 
-def test_rearme_tras_reinicio():
+def test_rearme_tras_reinicio(monkeypatch):
+    """PLAN_EJECUCION FASE J · J6 (deuda nombrada): mismo patron que
+    `test_alarma_suena` -- antes dependia de ganarle la carrera a los 2.0s
+    fijos que `_arm(atrasado=True)` programa para un recordatorio vencido
+    (`time.sleep(3)`, solo 1s de margen, flaky bajo carga de CI). Se inyecta
+    `rem._schedule` para capturar el disparo en vez de esperarlo con un
+    reloj real."""
+    programado = {}
+
+    def _schedule_falso(seconds, fn, args):
+        programado["fn"], programado["args"] = fn, args
+
+        class _TimerFalso:
+            def cancel(self):
+                pass
+        return _TimerFalso()
+
+    monkeypatch.setattr(rem, "_schedule", _schedule_falso)
+
     def caso(avisos):
         # simular que JARVIS se cerro con un recordatorio pendiente
         rem._save_store([{"id": 7, "text": "pendiente viejo",
                           "when": (datetime.now() - timedelta(minutes=5)).isoformat()}])
         rem._loaded = False
         rem.ensure_loaded()
-        time.sleep(3)
+        assert "fn" in programado, "no se armo ningun temporizador al reiniciar"
+        programado["fn"](*programado["args"])  # simula que paso el tiempo
         assert avisos, "el recordatorio vencido no se aviso al reiniciar"
         assert "pendiente viejo" in avisos[0]
     _con_store_limpio(caso)
