@@ -438,6 +438,220 @@ def test_play_song_search_raises_generic_error():
         assert "no pude reproducir" in plan.result.lower()
 
 
+# ==========================================================================
+# Verificación real (bug encontrado en revisión): pausa/reanudar/siguiente/
+# anterior/volumen/aleatorio/repetir/transferir/me-gusta aceptaban el 204 de
+# la Web API como éxito sin comprobar que el dispositivo remoto de verdad
+# reaccionó -- inconsistente con play_song (_arranco_de_verdad) en el mismo
+# archivo, y en contra de lo que catalog.py ya declaraba en su propio
+# `verify=`. Cada par aquí prueba: (a) éxito real se reporta EXECUTED, (b)
+# la API "acepta" la orden pero el estado releído no cambia -> ERROR, no un
+# "listo, senor" falso.
+# ==========================================================================
+from jarvis_local.tools.spotify import (  # noqa: E402
+    like_current_track,
+    next_track,
+    pause_playback,
+    previous_track,
+    resume_playback,
+    set_repeat,
+    set_shuffle,
+    set_volume,
+    transfer_playback,
+)
+
+
+def _mock_un_dispositivo(device_id="dev1"):
+    mock_sp = MagicMock()
+    mock_sp.devices.return_value = {"devices": [
+        {"id": device_id, "is_active": True, "type": "Computer"},
+    ]}
+    return mock_sp
+
+
+def test_pause_playback_confirma_pausa_real():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"is_playing": False, "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = pause_playback()
+        assert plan.status == ActionStatus.EXECUTED
+        mock_sp.pause_playback.assert_called_once_with(device_id="dev1")
+
+
+def test_pause_playback_error_si_sigue_sonando():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = pause_playback()
+        assert plan.status == ActionStatus.ERROR
+        assert "sigue sonando" in plan.result.lower()
+
+
+def test_resume_playback_confirma_reanudacion_real():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"is_playing": True, "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = resume_playback()
+        assert plan.status == ActionStatus.EXECUTED
+
+
+def test_resume_playback_error_si_sigue_pausado():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"is_playing": False, "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = resume_playback()
+        assert plan.status == ActionStatus.ERROR
+
+
+def test_next_track_confirma_cambio_de_pista():
+    mock_sp = _mock_un_dispositivo()
+    # 1ra lectura ("antes" de saltar), despues ya cambio de pista
+    mock_sp.current_playback.side_effect = [
+        {"item": {"id": "track_viejo"}, "device": {"id": "dev1"}},
+        {"item": {"id": "track_nuevo"}, "device": {"id": "dev1"}},
+    ]
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = next_track()
+        assert plan.status == ActionStatus.EXECUTED
+        mock_sp.next_track.assert_called_once_with(device_id="dev1")
+
+
+def test_next_track_error_si_sigue_la_misma_pista():
+    mock_sp = _mock_un_dispositivo()
+    # misma pista antes y despues en TODAS las lecturas: nunca cambia
+    mock_sp.current_playback.return_value = {"item": {"id": "track_igual"},
+                                              "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = next_track()
+        assert plan.status == ActionStatus.ERROR
+        assert "misma" in plan.result.lower()
+
+
+def test_previous_track_confirma_cambio_de_pista():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.side_effect = [
+        {"item": {"id": "track_actual"}, "device": {"id": "dev1"}},
+        {"item": {"id": "track_anterior"}, "device": {"id": "dev1"}},
+    ]
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = previous_track()
+        assert plan.status == ActionStatus.EXECUTED
+
+
+def test_set_volume_confirma_volumen_real():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"device": {"id": "dev1", "volume_percent": 42}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = set_volume(42)
+        assert plan.status == ActionStatus.EXECUTED
+
+
+def test_set_volume_error_si_no_cambio():
+    mock_sp = _mock_un_dispositivo()
+    # se pidio 80 pero el dispositivo sigue en 20 -- fuera de la tolerancia de +/-2
+    mock_sp.current_playback.return_value = {"device": {"id": "dev1", "volume_percent": 20}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = set_volume(80)
+        assert plan.status == ActionStatus.ERROR
+        assert "volumen no cambio" in plan.result.lower()
+
+
+def test_set_shuffle_confirma_estado_real():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"shuffle_state": True, "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = set_shuffle(True)
+        assert plan.status == ActionStatus.EXECUTED
+
+
+def test_set_shuffle_error_si_no_cambio():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"shuffle_state": False, "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = set_shuffle(True)
+        assert plan.status == ActionStatus.ERROR
+
+
+def test_set_repeat_confirma_estado_real():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"repeat_state": "track", "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = set_repeat("cancion")
+        assert plan.status == ActionStatus.EXECUTED
+
+
+def test_set_repeat_error_si_no_cambio():
+    mock_sp = _mock_un_dispositivo()
+    mock_sp.current_playback.return_value = {"repeat_state": "off", "device": {"id": "dev1"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = set_repeat("cancion")
+        assert plan.status == ActionStatus.ERROR
+
+
+def test_transfer_playback_confirma_dispositivo_real():
+    mock_sp = MagicMock()
+    mock_sp.devices.return_value = {"devices": [
+        {"id": "telefono", "name": "Mi telefono", "is_active": False},
+    ]}
+    mock_sp.current_playback.return_value = {"device": {"id": "telefono"}}
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = transfer_playback("telefono")
+        assert plan.status == ActionStatus.EXECUTED
+
+
+def test_transfer_playback_error_si_no_se_movio():
+    mock_sp = MagicMock()
+    mock_sp.devices.return_value = {"devices": [
+        {"id": "telefono", "name": "Mi telefono", "is_active": False},
+    ]}
+    mock_sp.current_playback.return_value = {"device": {"id": "esta_pc"}}  # no se movio
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = transfer_playback("telefono")
+        assert plan.status == ActionStatus.ERROR
+        assert "no se movio" in plan.result.lower()
+
+
+def test_like_current_track_confirma_que_quedo_guardada():
+    mock_sp = MagicMock()
+    mock_sp.current_playback.return_value = {
+        "item": {"id": "track1", "name": "Song", "artists": [{"name": "Artist"}]}}
+    mock_sp.current_user_saved_tracks_contains.return_value = [True]
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = like_current_track()
+        assert plan.status == ActionStatus.EXECUTED
+        mock_sp.current_user_saved_tracks_add.assert_called_once_with(["track1"])
+
+
+def test_like_current_track_error_si_no_quedo_guardada():
+    """Bug real: `current_user_saved_tracks_add` no explota pero la pista
+    nunca aparece guardada al releer -- antes JARVIS decia "Guarde..." igual."""
+    mock_sp = MagicMock()
+    mock_sp.current_playback.return_value = {
+        "item": {"id": "track1", "name": "Song", "artists": [{"name": "Artist"}]}}
+    mock_sp.current_user_saved_tracks_contains.return_value = [False]
+    with patch("jarvis_local.tools.spotify.has_credentials", return_value=True), \
+         patch("jarvis_local.tools.spotify._client", return_value=mock_sp):
+        plan = like_current_track()
+        assert plan.status == ActionStatus.ERROR
+        assert "no quedo guardada" in plan.result.lower()
+
+
 if __name__ == "__main__":
     test_has_credentials_no_config()
     test_has_credentials_with_placeholder()

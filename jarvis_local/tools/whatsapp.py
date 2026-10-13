@@ -13,7 +13,7 @@ import re
 import urllib.parse
 import webbrowser
 
-from jarvis_local.config import BASE_DIR
+from jarvis_local.config import BASE_DIR, IS_WINDOWS
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
 from jarvis_local.tools._utils import normalize_text as _norm
 
@@ -68,14 +68,23 @@ def _resolve_recipient(to: str) -> tuple[str | None, str]:
 
 def _open_whatsapp(phone: str, message: str) -> str:
     """Abre la app de escritorio si existe; si no, WhatsApp Web. Devuelve
-    'app' o 'web' segun el canal usado."""
+    'app' o 'web' segun el canal usado.
+
+    `os.startfile` es exclusivo de Windows -- en Linux/Mac ni siquiera
+    existe como atributo de `os`, asi que acceder a el lanza AttributeError,
+    no OSError. Sin el guard de IS_WINDOWS, el `except OSError` de abajo
+    nunca atrapaba eso y `send_whatsapp` fallaba SIEMPRE en Linux (la
+    plataforma principal de este proyecto) con un error de atributo en vez
+    de caer al fallback de WhatsApp Web que el propio docstring promete."""
     text = urllib.parse.quote(message)
-    try:
-        os.startfile(f"whatsapp://send?phone={phone}&text={text}")
-        return "app"
-    except OSError:
-        webbrowser.open(f"https://wa.me/{phone}?text={text}")
-        return "web"
+    if IS_WINDOWS:
+        try:
+            os.startfile(f"whatsapp://send?phone={phone}&text={text}")
+            return "app"
+        except OSError:
+            pass
+    webbrowser.open(f"https://wa.me/{phone}?text={text}")
+    return "web"
 
 
 def send_whatsapp(to: str, message: str) -> ActionPlan:

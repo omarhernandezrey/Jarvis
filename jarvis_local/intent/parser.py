@@ -2047,7 +2047,19 @@ def parse_intent(message: str) -> IntentResult:
         r'(?:borra|borrar|elimina|eliminar|suprime|suprimir|quita|quitar)\s+(?:el\s+)?(?:archivo|fichero|carpeta|directorio)?\s*(.*)',
         m, re.IGNORECASE)
     if m_del:
-        path = _resolve_path(m_del.group(1).strip())
+        objeto = m_del.group(1).strip()
+        if not objeto:
+            # Grupo (.*) acepta cadena vacia: "borra el archivo" sin decir
+            # cual resolvia _resolve_path("") -> "." -> la raiz de la
+            # carpeta permitida entera (is_within_allowed(".") == True,
+            # "." == esa raiz). Un /confirmar despues de eso borraba TODO
+            # Documentos con shutil.rmtree. A diferencia de LISTAR (de
+            # solo lectura, donde "." por defecto es seguro), BORRAR nunca
+            # puede adivinar el objetivo.
+            return IntentResult(kind="ambiguous",
+                                clarification="No entendi que archivo o carpeta borrar.",
+                                reason="BORRAR sin objeto -- nunca se asume un objetivo")
+        path = _resolve_path(objeto)
         allowed, _ = is_within_allowed(path)
         if allowed:
             return IntentResult(kind="tool_plan", tool="delete_file",

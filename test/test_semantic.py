@@ -144,6 +144,33 @@ def test_recall_excluye_secretos(tmp_dir):
         assert "sk-abc123" not in m["text"]
 
 
+def test_recall_sincroniza_el_indice_antes_de_buscar(tmp_dir, monkeypatch):
+    """Bug real encontrado en revisión: NINGÚN caller de producción pasaba
+    `sync=True` a `index.search()` -- `SemanticIndex.sync()` solo se llama
+    desde dentro de `search(sync=True)`, así que el índice jamás se
+    sincronizaba con datos reales. La búsqueda caía SIEMPRE al respaldo de
+    solapamiento de palabras, en silencio, desde siempre: la razón de ser
+    de este módulo (recordar por SIGNIFICADO, no por texto) nunca se
+    ejercitaba. `AutoRecall.recall()` debe pedir `sync=True` de verdad."""
+    store = MemoryStore(tmp_dir)
+    store.add("dato del usuario")
+    idx = SemanticIndex(tmp_dir)
+    llamadas_sync = []
+    original_search = idx.search
+
+    def _search_espia(q, items, **kw):
+        llamadas_sync.append(kw.get("sync"))
+        return original_search(q, items, **kw)
+
+    monkeypatch.setattr(idx, "search", _search_espia)
+    r = AutoRecall(store, idx)
+    r.recall("algo")
+
+    assert llamadas_sync == [True], (
+        f"recall() debe llamar a index.search(..., sync=True), llamó con sync={llamadas_sync}"
+    )
+
+
 def test_recall_marca_contexto_no_instrucciones(tmp_dir, monkeypatch):
     """Defensa contra inyeccion: las memorias entran como CONTEXTO."""
     store = MemoryStore(tmp_dir)

@@ -197,6 +197,45 @@ def test_chat_service_tool_reply_shows_executing_state(monkeypatch):
     assert vm.state == "idle"
 
 
+def test_chat_service_error_state_not_immediately_overwritten_by_idle():
+    """Bug real encontrado en revisión: el `finally` de `_run` leía
+    `self._vm.state` directamente desde el hilo de fondo para decidir si
+    volver a "idle" -- pero la transición a "alert" que el `except` acababa
+    de emitir todavía no se había aplicado en el hilo de la GUI (solo
+    encolada), así que esa lectura seguía viendo el valor viejo
+    ("thinking") y el propio `finally` encolaba "idle" justo detrás,
+    ganándole la carrera al aviso de error. El orbe rojo de "alert" casi
+    nunca llegaba a verse tras un fallo real del núcleo."""
+    from jarvis_local.ui.hud.chat_service import ChatService
+    from jarvis_local.ui.hud.conversation_model import ConversationModel
+
+    class _FakeBrokenJarvis:
+        def __init__(self):
+            self.client = _FakeInner()
+
+        def chat(self, text):
+            raise RuntimeError("Ollama no responde")
+
+    vm = ViewModel()
+    cm = ConversationModel()
+    svc = ChatService(vm, cm)
+    svc._ensure_jarvis = lambda: setattr(svc, "_jarvis", _FakeBrokenJarvis())
+    seen = []
+    svc.wantState.connect(seen.append)
+
+    svc.send("qué hora es")
+    import time
+    t0 = time.monotonic()
+    while svc.busy and time.monotonic() - t0 < 5:
+        _app.processEvents()
+        time.sleep(0.02)
+    _app.processEvents()
+
+    assert "alert" in seen, f"nunca se emitió 'alert': {seen}"
+    assert seen[-1] == "alert", f"'idle' le ganó la carrera a 'alert': {seen}"
+    assert vm.state == "alert", f"el estado final no quedó en alert: {vm.state}"
+
+
 def test_core_qml_has_distinct_executing_state():
     """El QML de Core.qml define de verdad el estado 'executing' (no un
     `if` teórico): sus parámetros deben distinguirse tanto de 'thinking'
@@ -532,6 +571,42 @@ def test_tts_network_failure_emits_visible_notice(monkeypatch):
     assert avisos, "edge-tts falló sin avisar -- el bug original: silencio total, sin toast"
     assert "no" in avisos[0].lower()
     assert v.speaking is False  # nunca llegó a "hablar": nada que reproducir
+
+
+def test_tts_corrupt_audio_emits_visible_notice(monkeypatch):
+    """Mismo bug, un paso más adelante: `_edge_generate_async` sí devolvió
+    bytes (no `b""`), pero el MP3 llegó corrupto/incompleto (conexión
+    cortada a media descarga) y `_mp3_bytes_to_numpy` no pudo decodificarlo
+    -- sin este aviso era el mismo silencio inexplicable que el camino de
+    "sin bytes", solo que no lo cubría el primer fix (hallazgo de
+    code-review sobre el propio commit que arregló el caso anterior)."""
+    import time
+
+    from jarvis_local.ui.hud.voice_service import VoiceService
+    from jarvis_local.voice import tts
+
+    monkeypatch.setattr(tts, "_cache_get", lambda text: b"")
+
+    def _bytes_corruptos(coro):
+        coro.close()
+        return b"MP3_A_MEDIAS_E_INVALIDO"
+
+    monkeypatch.setattr(tts, "_run_async", _bytes_corruptos)
+    monkeypatch.setattr(tts, "_mp3_bytes_to_numpy", lambda data: (None, 0))
+
+    v = VoiceService(ViewModel())
+    avisos = []
+    v.notice.connect(avisos.append)
+
+    v.speak("esto tampoco debería sonar")
+    t0 = time.monotonic()
+    while not avisos and time.monotonic() - t0 < 5:
+        _app.processEvents()
+        time.sleep(0.02)
+
+    assert avisos, "el MP3 corrupto falló sin avisar -- mismo bug, otro camino"
+    assert "no" in avisos[0].lower()
+    assert v.speaking is False
 
 
 def test_voice_path_end_to_end_stt_to_chat_send():

@@ -88,6 +88,24 @@ def test_execute_delete_archivo_inexistente(tmp_path, monkeypatch):
     assert "no existe" in plan.result
 
 
+def test_execute_delete_se_protege_a_si_misma_sin_pasar_por_plan_delete(tmp_path):
+    """Bug real encontrado en revisión: `execute_delete_file` -- la función
+    más destructiva del repo (shutil.rmtree/.unlink) -- no revalidaba la
+    whitelist por sí misma, dependía enteramente de que el caller ya
+    hubiera pasado por `plan_delete`. Llamada DIRECTA (sin plan_delete de
+    por medio, sin tocar ALLOWED_FOLDERS) con una ruta fuera de las
+    carpetas permitidas debe bloquearse, nunca intentar el borrado."""
+    from jarvis_local.tools.files import execute_delete_file
+
+    fuera = tmp_path / "fuera_de_whitelist.txt"
+    fuera.write_text("no deberia borrarse")
+
+    plan = execute_delete_file(str(fuera))
+
+    assert plan.status == ActionStatus.BLOCKED, plan.result
+    assert fuera.exists(), "se borró un archivo fuera de las carpetas permitidas"
+
+
 def test_ocultar_archivos_crea_plan_pendiente(tmp_path, monkeypatch):
     """ocultar_archivos devuelve PLANNED y lo pone en pending_plan."""
     _permitir_tmp(monkeypatch, tmp_path)

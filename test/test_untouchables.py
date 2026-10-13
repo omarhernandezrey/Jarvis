@@ -107,6 +107,20 @@ def test_unidad_no_critica_no_es_intocable(unit):
     assert is_untouchable_unit(unit)[0] is False
 
 
+@pytest.mark.parametrize("unit", [
+    "networkmanager.service", "networkmanager", "modemmanager.service",
+    "modemmanager", "NETWORKMANAGER.SERVICE", "ModemManager",
+])
+def test_unidad_critica_intocable_sin_importar_mayusculas(unit):
+    """Bug real encontrado en revisión: UNIT_REASONS tiene
+    "NetworkManager.service"/"ModemManager.service" con mayúsculas, pero
+    `_parse_servicios` (intent/parser.py) SIEMPRE pasa la frase por
+    `.lower()` antes de llegar aquí -- el guardia "jamás se toca, ni con
+    sudo puesto" nunca protegía de verdad a estos dos servicios."""
+    ok, motivo = is_untouchable_unit(unit)
+    assert ok is True and motivo
+
+
 def test_explicar_lista_las_familias_y_dice_que_no_hay_forzar():
     from jarvis_local.safety.untouchables import explicar
     t = explicar()

@@ -61,6 +61,63 @@ def test_close_app_sin_nombre():
     assert plan.status == ActionStatus.BLOCKED
 
 
+def test_terminate_procs_reports_survivors_not_just_attempts(monkeypatch):
+    """Bug real encontrado en revisión: `_terminate_procs` devolvía solo
+    `len(unicos)` -- procesos TOCADOS, no procesos que de verdad murieron
+    -- y `p.kill()` está envuelto en `contextlib.suppress(psutil.Error)`:
+    si salta AccessDenied (proceso de otro usuario/root), se traga en
+    silencio y `close_app` reportaba "cerrado correctamente" con el
+    proceso vivo todavía. Prueba `_terminate_procs` en aislado, sin pasar
+    por psutil real."""
+    import psutil
+
+    from jarvis_local.tools.apps import _terminate_procs
+
+    class _FakeProc:
+        def __init__(self, pid):
+            self.pid = pid
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            raise psutil.AccessDenied(pid=self.pid)
+
+        def children(self, recursive=True):
+            return []
+
+    proc = _FakeProc(999999)
+
+    def fake_wait_procs(procs, timeout=None):
+        # nadie muere solo, en ninguna de las dos rondas (terminate, kill)
+        return [], list(procs)
+
+    monkeypatch.setattr(psutil, "wait_procs", fake_wait_procs)
+
+    intentados, siguen_vivos = _terminate_procs([proc])
+    assert intentados == 1
+    assert siguen_vivos == 1, "el proceso 'murió' en el conteo aunque kill() falló"
+
+
+def test_close_app_no_reclama_exito_si_el_proceso_sigue_vivo(monkeypatch):
+    """Mismo bug, de punta a punta: `close_app` no debe decir "cerrado
+    correctamente" cuando `_terminate_procs` reporta un superviviente."""
+    import jarvis_local.tools.apps as apps_mod
+
+    class _FakeProc:
+        pid = 999999
+        info = {"name": "app_fantasma"}
+
+    monkeypatch.setattr(apps_mod, "_find_target_procs",
+                        lambda candidates, procnames, pids: ([_FakeProc()], []))
+    monkeypatch.setattr(apps_mod, "_terminate_procs", lambda procs: (1, 1))
+
+    plan = close_app("app_que_no_muere")
+
+    assert plan.status == ActionStatus.ERROR
+    assert "cerrado correctamente" not in plan.result.lower()
+
+
 def test_close_all_apps_sin_nada_abierto():
     guardado = dict(_OPENED)
     _OPENED.clear()

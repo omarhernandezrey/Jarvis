@@ -484,8 +484,18 @@ def _find_target_procs(candidates: set[str], procnames: list[str],
     return confiables, ambiguos
 
 
-def _terminate_procs(procs: list) -> int:
-    """Cierre educado (terminate) y, si un proceso se resiste, kill."""
+def _terminate_procs(procs: list) -> tuple[int, int]:
+    """Cierre educado (terminate) y, si un proceso se resiste, kill.
+
+    Devuelve (intentados, siguen_vivos). Antes devolvia solo `len(unicos)`
+    -- el conteo de procesos TOCADOS, no de procesos que de verdad
+    murieron -- y `close_app` lo tomaba como senal de exito incondicional.
+    `p.kill()` esta envuelto en `contextlib.suppress(psutil.Error)`: si
+    psutil.AccessDenied salta (el proceso es de otro usuario, o root), el
+    error se traga en silencio y el proceso sigue corriendo mientras JARVIS
+    reporta "cerrado correctamente" -- exactamente el patron de "reclama
+    exito sin comprobar el efecto real" que `verify.py` existe para evitar
+    en el resto del repo."""
     import psutil
 
     todos = []
@@ -501,7 +511,8 @@ def _terminate_procs(procs: list) -> int:
     for p in vivos:
         with contextlib.suppress(psutil.Error):
             p.kill()
-    return len(unicos)
+    _, siguen_vivos = psutil.wait_procs(vivos, timeout=1)
+    return len(unicos), len(siguen_vivos)
 
 
 def close_app(name: str) -> ActionPlan:
@@ -577,12 +588,22 @@ def close_app(name: str) -> ActionPlan:
                 "si acaso: diga el nombre completo si quiere cerrarlos."
             )
             return plan
-        cerrados = _terminate_procs(procs)
+        intentados, siguen_vivos = _terminate_procs(procs)
         _OPENED.pop(query, None)
+        cerrados = intentados - siguen_vivos
         plan.params["closed_count"] = cerrados
-        detalle = f" ({cerrados} procesos)" if cerrados > 1 else ""
-        plan.result = f"{display} cerrado correctamente{detalle}."
-        plan.status = ActionStatus.EXECUTED
+        if siguen_vivos:
+            plan.status = ActionStatus.ERROR
+            plan.error = f"{siguen_vivos} proceso(s) sigue(n) vivo(s) tras terminate+kill"
+            plan.result = (
+                f"No pude cerrar {display} del todo: "
+                f"{siguen_vivos} proceso(s) siguen corriendo (sin permiso para "
+                "matarlos, probablemente), senor."
+            )
+        else:
+            detalle = f" ({cerrados} procesos)" if cerrados > 1 else ""
+            plan.result = f"{display} cerrado correctamente{detalle}."
+            plan.status = ActionStatus.EXECUTED
     except Exception as e:
         plan.status = ActionStatus.ERROR
         plan.error = str(e)

@@ -125,6 +125,40 @@ def test_delete_plan():
     assert r.tool == "delete_file"
 
 
+def test_delete_without_object_never_resolves_to_a_path():
+    """Bug crítico encontrado en revisión: el grupo (.*) de BORRAR acepta
+    cadena vacía -- "borra el archivo" sin decir cuál resolvía
+    _resolve_path("") -> "." -> la raíz de la carpeta permitida ENTERA
+    (is_within_allowed(".") == True). Un /confirmar después de eso
+    borraba toda la carpeta Documentos con shutil.rmtree. Nunca debe
+    convertirse en un tool_plan de delete_file sin un objeto real."""
+    for frase in ("borra el archivo", "elimina el archivo", "quita el archivo",
+                  "elimina el fichero", "borra el directorio"):
+        r = parse_intent(frase)
+        assert r.tool != "delete_file", f"{frase!r} no debe resolver a delete_file sin objeto"
+        if r.kind == "tool_plan":
+            assert r.arguments.get("path") not in (".", "", None)
+
+
+def test_parser_turn_persisted_only_once():
+    """Bug encontrado en revisión: `jarvis.chat()` persistía cada turno
+    resuelto por el parser DOS VECES -- `_parse_and_execute` ya lo hacía
+    por dentro vía `_record_exchange`, y `chat()` lo volvía a hacer al
+    volver. Confirmado reproducido: una sola llamada a chat() dejaba 4
+    mensajes en el store de disco en vez de 2, inflando el historial real
+    al doble de velocidad de lo pensado y duplicando contexto enviado al
+    LLM tras un reinicio."""
+    from jarvis_local.jarvis import _mc_test
+    j, _mc = _mc_test()
+    j.history.clear()
+    antes = len(j.store.to_list(1000))
+    j.chat("cual es mi ip")
+    despues = len(j.store.to_list(1000))
+    assert despues - antes == 2, (
+        f"se esperaban 2 mensajes nuevos (user+assistant), se guardaron {despues - antes}"
+    )
+
+
 def test_run_command_plan():
     r = parse_intent("ejecuta dir")
     assert r.kind == "tool_execute"

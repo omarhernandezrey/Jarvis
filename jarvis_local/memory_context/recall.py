@@ -37,8 +37,19 @@ class AutoRecall:
         if not items:
             return []
         try:
-            hits = self.index.search(message, items,
-                                     top_k=MAX_RECALLED, min_score=MIN_SCORE)
+            # sync=True: bug real encontrado en revisión -- ningún caller de
+            # producción lo pasaba nunca, así que `SemanticIndex.sync()`
+            # jamás corría con datos reales y la búsqueda caía SIEMPRE al
+            # respaldo de solapamiento de palabras, en silencio, desde
+            # siempre (la razón de ser de este módulo -- recordar por
+            # SIGNIFICADO -- nunca se ejercitaba). El costo está acotado:
+            # `sync()` devuelve de inmediato sin llamar a Ollama si no hay
+            # memorias nuevas/borradas desde la última vez (ver su propio
+            # short-circuit), así que la mayoría de los turnos no pagan
+            # nada extra -- solo el turno justo después de guardar un
+            # recuerdo nuevo embebe ese texto.
+            hits = self.index.search(message, items, top_k=MAX_RECALLED,
+                                     min_score=MIN_SCORE, sync=True)
         except Exception:
             return []  # la memoria nunca debe tumbar una conversacion
         self.last_recalled = [m for m, _s in hits]

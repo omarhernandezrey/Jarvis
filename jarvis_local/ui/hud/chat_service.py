@@ -150,6 +150,7 @@ class ChatService(QObject):
             if dt > 0.3:
                 self.metrics.emit({"tokensPerSecond": round(seen["n"] / dt, 1)})
 
+        hubo_error = False
         try:
             self._ensure_jarvis()
             if self._jarvis is None:
@@ -194,9 +195,18 @@ class ChatService(QObject):
         except Exception as e:
             self.errorTurn.emit(str(e))
             self.wantState.emit("alert")
+            hubo_error = True
         finally:
             self._busy = False
             self.busyChanged.emit(False)
-            # sólo volver a idle si nadie cambió el estado entretanto
-            if self._vm.state in ("thinking", "executing"):
+            # sólo volver a idle si nadie cambió el estado entretanto -- y
+            # NUNCA justo después de "alert". `self._vm.state` se lee aquí
+            # desde este hilo de fondo, pero la transición a "alert" recién
+            # se encoló para el hilo de la GUI (todavía no se aplicó): la
+            # lectura seguía mostrando el valor viejo ("thinking"/
+            # "executing"), así que este bloque encolaba "idle" justo
+            # detrás — que ganaba la carrera y el orbe rojo de error casi
+            # nunca llegaba a verse. `hubo_error` no depende de releer
+            # estado compartido entre hilos, así que no tiene esa carrera.
+            if not hubo_error and self._vm.state in ("thinking", "executing"):
                 self.wantState.emit("idle")
