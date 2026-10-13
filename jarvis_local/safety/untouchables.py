@@ -151,6 +151,16 @@ UNIT_REASONS: dict[str, str] = {
 _UNIT_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^user@\d+\.service$"), "es tu sesión de usuario de systemd; pararla te cierra la sesión"),
 ]
+# UNIT_REASONS tiene un par de claves con mayúsculas (NetworkManager.service,
+# ModemManager.service, los nombres reales de esos units en systemd) mientras
+# que `is_untouchable_unit` recibe SIEMPRE texto en minúsculas (el parser
+# pasa la frase entera por `.lower()` antes de extraer el nombre del
+# servicio — ver `_parse_servicios` en intent/parser.py). Sin esta tabla en
+# minúsculas, la comparación exacta nunca encontraba esas dos entradas: el
+# guardia "jamás se toca, ni con sudo puesto" no protegía de verdad a
+# NetworkManager/ModemManager, aunque is_untouchable_process() sí normaliza
+# con _norm() para el caso de procesos.
+_UNIT_REASONS_LOWER: dict[str, str] = {k.lower(): v for k, v in UNIT_REASONS.items()}
 
 
 # =============================================================================
@@ -226,12 +236,13 @@ def explicar() -> str:
 def is_untouchable_unit(unit: str | None = None) -> tuple[bool, str]:
     """(True, motivo) si la unidad de systemd NO se puede parar/reiniciar."""
     u = (unit or "").strip()
-    if not u.endswith((".service", ".socket", ".target", ".slice")):
+    if not u.lower().endswith((".service", ".socket", ".target", ".slice")):
         u_svc = u + ".service"
     else:
         u_svc = u
-    if u_svc in UNIT_REASONS:
-        return True, UNIT_REASONS[u_svc]
+    u_svc_norm = u_svc.lower()
+    if u_svc_norm in _UNIT_REASONS_LOWER:
+        return True, _UNIT_REASONS_LOWER[u_svc_norm]
     for patron, motivo in _UNIT_PATTERNS:
         if patron.search(u) or patron.search(u_svc):
             return True, motivo
