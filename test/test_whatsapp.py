@@ -117,6 +117,23 @@ def test_listar_contactos_tool():
     _con_entorno_de_prueba(caso)
 
 
+def test_open_whatsapp_falls_back_to_web_on_non_windows(monkeypatch):
+    """Bug real encontrado en revisión: `os.startfile` no existe fuera de
+    Windows -- acceder a el lanza AttributeError, no OSError, así que el
+    `except OSError` nunca lo atrapaba y `send_whatsapp` fallaba SIEMPRE en
+    Linux en vez de caer a WhatsApp Web como dice el docstring. Prueba la
+    función REAL (`wa._open_whatsapp`), no el doble que usan los demás
+    tests de este archivo."""
+    monkeypatch.setattr(wa, "IS_WINDOWS", False)
+    abiertas = []
+    monkeypatch.setattr(wa.webbrowser, "open", lambda url: abiertas.append(url) or True)
+
+    canal = wa._open_whatsapp("573001234567", "hola")
+
+    assert canal == "web"
+    assert abiertas and "wa.me/573001234567" in abiertas[0]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
