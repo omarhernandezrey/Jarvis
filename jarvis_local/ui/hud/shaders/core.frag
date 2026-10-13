@@ -161,6 +161,21 @@ void main() {
     float rimShiftB = smoothstep(rw, 0.0, abs((rad - caOff) - limbR)) - rim;
     col.r += rimCol.r * rimShiftR * rimK * 0.4;
     col.b += rimCol.b * rimShiftB * rimK * 0.4;
+    // `rimShiftR`/`rimShiftB` son una derivada (positiva a un lado del
+    // anillo, negativa al otro); `col.g` NUNCA se toca aquí, así que en el
+    // lado donde el desplazamiento resta, R y/o B pueden quedar por DEBAJO
+    // de G aunque ninguno de los dos se vuelva negativo -- rompe el "nunca
+    // un canal aislado" que dice el comentario de arriba, y justo con
+    // `rimK` alto (transPhase=1 al entrar a un estado, cualquier emission/
+    // energy moderados) el margen es grande: verificado con la fórmula
+    // exacta en Python, RGB tonemapeado sale (0.65, 1.00, 0.67) -- verde
+    // puro, no cian. Éste era el "residuo verde del satélite" (I6·1/I2,
+    // nunca localizado con certeza): no es el satélite, es ESTE bloque.
+    // Piso: ni R ni B pueden quedar por debajo de G por culpa de la
+    // dispersión -- conserva el fulgor cromático (el lado que SUMA sigue
+    // intacto) sin que el lado que resta rompa la rampa cian.
+    col.r = max(col.r, col.g);
+    col.b = max(col.b, col.g);
 
     // ── BARRIDO ESPECULAR — cada 7 s, un fulgor recorre el limbo una vez ──
     float cyc = fract(tm / 7.0);
