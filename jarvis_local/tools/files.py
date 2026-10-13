@@ -411,11 +411,22 @@ def plan_delete(path_str: str) -> ActionPlan:
 
 
 def execute_delete_file(path_str: str) -> ActionPlan:
-    """Ejecuta el borrado CONFIRMADO de un archivo o carpeta."""
-    norm = Path(path_str).expanduser().resolve()
+    """Ejecuta el borrado CONFIRMADO de un archivo o carpeta.
+
+    Revalida contra la whitelist aquí mismo con `_validate_path` (lo mismo
+    que usa `plan_delete`) en vez de solo resolver la ruta y mirar si
+    existe: antes, la función que de verdad ejecuta `shutil.rmtree`/
+    `.unlink()` -- la más destructiva del repo -- no se protegía a sí
+    misma, dependía enteramente de que quien la llamara ya hubiera pasado
+    por `plan_delete`. Hoy el único caller lo hace, pero un nuevo camino
+    (botón de confirmar del HUD, un refactor futuro) que invocara esta
+    función directamente se habría saltado la whitelist por completo."""
+    allowed, norm = is_within_allowed(path_str)
+    if not allowed:
+        return policy.block(f"Ruta fuera de carpetas permitidas: {path_str}")
     plan = ActionPlan(
         action="borrar",
-        params={"path": str(norm), "is_directory": norm.is_dir()},
+        params={"path": str(norm), "is_directory": norm.is_dir() if norm.exists() else False},
         paths_affected=[str(norm)],
         risk=RiskLevel.DELETE,
     )
