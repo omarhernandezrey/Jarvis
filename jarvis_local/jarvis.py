@@ -125,7 +125,9 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
         except Exception as e:
             jarvis_instance.last_tool_ok = False
             logger.log_error("intent_tool_read", str(e))
-            return f"No pude ejecutar '{intent.tool}': {e}"
+            error_msg = f"No pude ejecutar '{intent.tool}': {e}"
+            _record_exchange(jarvis_instance, message, error_msg, intent.tool)
+            return error_msg
 
     if intent.kind == "tool_execute":
         jarvis_instance.last_tool_name = intent.tool
@@ -137,7 +139,9 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
         except Exception as e:
             jarvis_instance.last_tool_ok = False
             logger.log_error("intent_tool_execute", str(e))
-            return f"No pude ejecutar '{intent.tool}': {e}"
+            error_msg = f"No pude ejecutar '{intent.tool}': {e}"
+            _record_exchange(jarvis_instance, message, error_msg, intent.tool)
+            return error_msg
 
     if intent.kind == "tool_plan":
         jarvis_instance.last_tool_name = intent.tool
@@ -149,7 +153,9 @@ def _parse_and_execute(message: str, jarvis_instance) -> str | None:
         except Exception as e:
             jarvis_instance.last_tool_ok = False
             logger.log_error("intent_tool_plan", str(e))
-            return f"No pude planificar '{intent.tool}': {e}"
+            error_msg = f"No pude planificar '{intent.tool}': {e}"
+            _record_exchange(jarvis_instance, message, error_msg, intent.tool)
+            return error_msg
 
     if intent.kind == "ambiguous":
         clarification = intent.clarification or "No entendi bien. Puedes ser mas especifico?"
@@ -412,8 +418,14 @@ class Jarvis:
             if intent is not None:
                 self.last_reply_kind = "tool"
                 _capa_resuelta, _resultado_txt = "parser", intent
-                self._persist_message("user", safe_input)
-                self._persist_message("assistant", intent)
+                # _parse_and_execute ya persistió este intercambio por dentro
+                # (_record_exchange, en TODAS sus ramas incluida la de error
+                # -- antes solo las de éxito lo hacían, y esto de aquí era lo
+                # único que guardaba las de error). Persistir otra vez aquí
+                # duplicaba cada turno resuelto por el parser en el historial
+                # de disco (confirmado: 1 chat() -> 4 mensajes guardados en
+                # vez de 2), inflando el contexto enviado al LLM y recortando
+                # el historial real al doble de velocidad de lo pensado.
                 return intent
 
             # Camino agentico: el LLM decide que herramientas usar.
