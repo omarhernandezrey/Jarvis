@@ -23,6 +23,8 @@ try:  # métricas opcionales, igual convención que widgets.py
 except Exception:  # pragma: no cover - dependencia opcional
     psutil = None
 
+from .widgets import _set_label_text  # noqa: E402 — setText sólo si cambia (tarea A)
+
 
 class Sparkline(QtWidgets.QWidget):
     """Serie temporal chiquita dibujada con `QPainter`, cacheada en un
@@ -238,14 +240,6 @@ class CompactSystemWidget(CornerBadge):
             return
         self._cpu_ring.push(psutil.cpu_percent(interval=None))
         self._ram_ring.push(psutil.virtual_memory().percent)
-
-
-def _set_label_text(label: QtWidgets.QLabel, text: str) -> None:
-    """`setText` sólo si el texto cambió de verdad — con un QOpenGLWidget
-    en la ventana, cada repaint de un widget obliga a recomponerla TODA,
-    así que «actualizar» con el mismo dato es CPU tirada (tarea A)."""
-    if label.text() != text:
-        label.setText(text)
 
 
 class CompactServicesWidget(CornerBadge):

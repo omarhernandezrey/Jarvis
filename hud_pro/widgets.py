@@ -238,6 +238,14 @@ class BackgroundWidget(QtWidgets.QWidget):
 
 
 # ── Indicadores ───────────────────────────────────────────────────────────
+def _set_label_text(label: QtWidgets.QLabel, text: str) -> None:
+    """`setText` sólo si el texto cambió de verdad — con un QOpenGLWidget
+    en la ventana, cada repaint de un widget obliga a recomponerla TODA,
+    así que «actualizar» con el mismo dato es CPU tirada (tarea A)."""
+    if label.text() != text:
+        label.setText(text)
+
+
 class _Dot(QtWidgets.QWidget):
     def __init__(self, color: str, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -245,7 +253,10 @@ class _Dot(QtWidgets.QWidget):
         self.setFixedSize(14, 14)
 
     def set_color(self, color: str) -> None:
-        self._color = QtGui.QColor(color)
+        new = QtGui.QColor(color)
+        if new == self._color:
+            return  # mismo color: un update() aquí recompone TODA la ventana
+        self._color = new
         self.update()
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
@@ -351,11 +362,19 @@ class ServiceChip(QtWidgets.QFrame):
         lay.addWidget(self._icon)
         lay.addWidget(self._label)
         lay.addWidget(self._dot)
+        self._last_state: Optional[tuple] = None
         self.setVisible(False)
 
     def set_state(self, *, on: Optional[bool] = None, active: bool = False, tip: str = "") -> None:
         """`on=None` → dato desconocido (chip oculto: no se inventa). `on`
-        real → color según disponibilidad; `active` → el punto late."""
+        real → color según disponibilidad; `active` → el punto late.
+        Llega en cada muestreo de métricas (~2s) casi siempre con el MISMO
+        estado: si nada cambió, no se toca nada (cada repaint recompone
+        TODA la ventana, hay un QOpenGLWidget debajo)."""
+        state = (on, bool(active), tip)
+        if state == self._last_state:
+            return
+        self._last_state = state
         if on is None:
             self.setVisible(False)
             return
@@ -553,7 +572,9 @@ class TopBar(QtWidgets.QWidget):
     def update_metrics(self, data: dict) -> None:
         """Datos reales del backend (Ollama, tokens/s, ttft, VRAM). Una
         clave ausente no toca lo que ya se mostraba; `None` explícito oculta
-        ese campo — nunca se rellena con un valor inventado."""
+        ese campo — nunca se rellena con un valor inventado. Llega cada ~2s
+        casi siempre con el MISMO dato: textos y stylesheet sólo se aplican
+        si cambian (cada repaint recompone TODA la ventana, tarea A)."""
         if "online" in data:
             online = data["online"]
             if online is None:
@@ -563,11 +584,10 @@ class TopBar(QtWidgets.QWidget):
                 self.ollama_dot.set_color("#22C55E" if online else theme.DANGER)
                 self.ollama_dot.setVisible(True)
                 ping = data.get("pingMs")
-                text = "OLLAMA" + (f"  {ping} ms" if online and ping is not None else "")
-                self.ollama_label.setText(text)
-                self.ollama_label.setStyleSheet(
-                    f"color: {'#22C55E' if online else theme.DANGER};"
-                )
+                _set_label_text(self.ollama_label, "OLLAMA" + (f"  {ping} ms" if online and ping is not None else ""))
+                color = f"color: {'#22C55E' if online else theme.DANGER};"
+                if self.ollama_label.styleSheet() != color:
+                    self.ollama_label.setStyleSheet(color)
                 self.ollama_label.setVisible(True)
         if "tokensPerSecond" in data or "ttftMs" in data:
             tps = data.get("tokensPerSecond")
@@ -577,7 +597,7 @@ class TopBar(QtWidgets.QWidget):
                 bits.append(f"{tps:.0f} tok/s")
             if ttft:
                 bits.append(f"{ttft:.0f} ms al primer token")
-            self.speed_label.setText("  ·  ".join(bits))
+            _set_label_text(self.speed_label, "  ·  ".join(bits))
             self.speed_label.setVisible(bool(bits))
         if "vramUsedMb" in data:
             vram = data.get("vramUsedMb")
@@ -590,16 +610,18 @@ class TopBar(QtWidgets.QWidget):
                     text += f"/{total:.0f} MB"
                 else:
                     text += " MB"
-                self.vram_label.setText(text)
+                _set_label_text(self.vram_label, text)
                 self.vram_label.setVisible(True)
 
     def _refresh(self) -> None:
-        self.clock.setText(time.strftime("%H:%M"))
+        # el reloj muestra HH:MM: fuera de un cambio de minuto, setText con
+        # la misma hora es un repaint de la ventana entera tirado a la basura
+        _set_label_text(self.clock, time.strftime("%H:%M"))
         if psutil is not None:
             try:
                 cpu = psutil.cpu_percent(interval=None)
                 ram = psutil.virtual_memory().percent
-                self.metrics_label.setText(f"CPU {cpu:.0f}%  ·  RAM {ram:.0f}%")
+                _set_label_text(self.metrics_label, f"CPU {cpu:.0f}%  ·  RAM {ram:.0f}%")
             except Exception:  # pragma: no cover
                 self.metrics_label.setVisible(False)
 

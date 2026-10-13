@@ -451,3 +451,98 @@ def test_hud_window_corner_services_reflects_real_metrics(qapp, hud_window):
     assert "●" in w.corner_services._mic_label.text()
     assert "●" in w.corner_services._tts_label.text()
     assert "3" in w.corner_services._memory_label.text()
+
+
+# ── Repintado sólo al cambiar el dato (tarea A: cualquier update() con
+# un QOpenGLWidget debajo obliga a recomponer TODA la ventana) ─────────
+@pytest.fixture
+def paint_clock(qapp):
+    from hud_pro.paint_stats import PaintStatsFilter
+
+    filtro = PaintStatsFilter(qapp, interval_s=0)
+    qapp.installEventFilter(filtro)
+    yield filtro
+    qapp.removeEventFilter(filtro)
+    filtro.deleteLater()
+
+
+def test_dot_set_color_same_color_does_not_repaint(qapp, paint_clock):
+    from hud_pro.widgets import _Dot
+
+    dot = _Dot("#38BDF8")
+    dot.show()
+    qapp.processEvents()
+    paint_clock.reset()
+    dot.set_color("#38BDF8")  # MISMO color: prohibido repintar
+    dot.set_color("#38BDF8")
+    qapp.processEvents()
+    assert paint_clock.rate_for(dot) == 0.0
+    dot.set_color("#22D3EE")  # cambio real: sí repinta
+    qapp.processEvents()
+    assert paint_clock.rate_for(dot) > 0.0
+    dot.close()
+    dot.deleteLater()
+
+
+def test_service_chip_set_state_repeat_does_not_repaint(qapp, paint_clock):
+    from hud_pro.widgets import ServiceChip
+
+    chip = ServiceChip("mic", "MIC")
+    chip.show()
+    chip.set_state(on=True, active=False, tip="Micrófono")
+    qapp.processEvents()
+    paint_clock.reset()
+    for _ in range(3):  # el muestreo de métricas repite el MISMO estado cada ~2s
+        chip.set_state(on=True, active=False, tip="Micrófono")
+    qapp.processEvents()
+    assert paint_clock.rate_for(chip) == 0.0
+    assert paint_clock.rate_for(chip._dot) == 0.0
+    chip.set_state(on=False, active=False, tip="Micrófono")  # cambio real
+    qapp.processEvents()
+    assert paint_clock.rate_for(chip._dot) > 0.0
+    chip.close()
+    chip.deleteLater()
+
+
+def test_topbar_refresh_same_minute_does_not_repaint_clock(qapp, paint_clock, monkeypatch):
+    from hud_pro import widgets
+    from hud_pro.widgets import TopBar
+
+    bar = TopBar()
+    bar.show()
+    monkeypatch.setattr(widgets.time, "strftime", lambda fmt: "14:32")
+    bar._refresh()
+    qapp.processEvents()
+    paint_clock.reset()
+    bar._refresh()  # mismo minuto: ni reloj ni (probablemente) métricas cambian
+    bar._refresh()
+    qapp.processEvents()
+    assert paint_clock.rate_for(bar.clock) == 0.0, (
+        f"el reloj repintó sin cambiar el minuto: {paint_clock.rates()}"
+    )
+    monkeypatch.setattr(widgets.time, "strftime", lambda fmt: "14:33")
+    bar._refresh()  # cambio de minuto real: sí repinta
+    qapp.processEvents()
+    assert paint_clock.rate_for(bar.clock) > 0.0
+    bar.close()
+    bar.deleteLater()
+
+
+def test_topbar_update_metrics_repeat_does_not_repaint(qapp, paint_clock):
+    from hud_pro.widgets import TopBar
+
+    bar = TopBar()
+    bar.show()
+    data = {"online": True, "pingMs": 9, "tokensPerSecond": 12.0}
+    bar.update_metrics(data)
+    qapp.processEvents()
+    paint_clock.reset()
+    for _ in range(3):  # el muestreo repite el MISMO dict cada ~2s
+        bar.update_metrics(data)
+    qapp.processEvents()
+    assert paint_clock.rate_for(bar.ollama_label) == 0.0, (
+        f"update_metrics con el mismo dato repintó: {paint_clock.rates()}"
+    )
+    assert paint_clock.rate_for(bar.ollama_dot) == 0.0
+    bar.close()
+    bar.deleteLater()
