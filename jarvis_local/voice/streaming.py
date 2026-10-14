@@ -9,7 +9,6 @@ mientras el modelo sigue escribiendo las siguientes.
 La latencia hasta la primera palabra baja de ~40 s a ~5 s. El modelo no es mas
 rapido; simplemente deja de hacer esperar al usuario.
 """
-import contextlib
 import queue
 import re
 import threading
@@ -76,8 +75,17 @@ def speak_stream(token_iter: Iterator[str],
             frase = cola.get()
             if frase is None:  # centinela de fin
                 break
-            with contextlib.suppress(Exception):
+            try:
                 speak_fn(frase)
+            except Exception as e:  # noqa: BLE001
+                # El único speak_fn real hoy (jarvis_local.voice.tts.speak)
+                # nunca lanza -- captura sus propios errores y devuelve
+                # bool. Si algún día cambia (otro backend de voz, un mock
+                # en pruebas), que falle en silencio aquí haría
+                # indiagnosticable un fallo de verdad en un hilo de fondo
+                # sin nadie mirando. No se re-lanza (una frase que no se
+                # pudo hablar no debe tumbar el streaming de las demás).
+                print(f"[voz] speak_fn lanzo una excepcion para {frase[:40]!r}: {e}")
 
     hilo = threading.Thread(target=_hablador, daemon=True)
     hilo.start()
