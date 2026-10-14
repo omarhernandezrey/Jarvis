@@ -18,6 +18,7 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 > [`PLAN_MAESTRO.md`](PLAN_MAESTRO.md) (26/26, eficacia funcional) y
 > [`docs/PLAN_EJECUCION.md`](docs/PLAN_EJECUCION.md) (A→J, VERIFY/auditoría,
 > control de máquina, HUD, endurecimiento). Ninguno tiene tareas pendientes.
+> Plan activo ahora: [`PLAN_MEJORAS.md`](PLAN_MEJORAS.md) (Fase 1 — documentación al día en curso).
 > La sección **J6 — Cierre** de `PLAN_EJECUCION.md` es la evaluación honesta
 > más reciente del proyecto: qué sigue frágil, qué deuda queda abierta y qué
 > seguiría a continuación.
