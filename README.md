@@ -166,6 +166,8 @@ Un agente que puede ejecutar acciones en tu PC necesita límites reales, no buen
 
 ## 📦 Instalación
 
+Ver [docs/INSTALADOR_OPCIONES.md](docs/INSTALADOR_OPCIONES.md) para la comparación de opciones de empaquetado y por qué se eligió el script guiado.
+
 **Requisitos**: Windows 10/11 o Linux (probado en Ubuntu/GNOME) · Python 3.11+ · [Ollama](https://ollama.com/download) · micrófono (opcional)
 
 ### Windows
