@@ -258,6 +258,7 @@ y su coste de memoria, en [`docs/LANZADOR_ESCRITORIO.md`](docs/LANZADOR_ESCRITOR
 
 ```
 Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, data/, logs/)
+├── hud_pro/                HUD de escritorio por defecto (PySide6/QtWidgets); si "hud_pro" falla al importarse o al crear su ventana, se usa jarvis_local/ui/hud/ (HUD legado, QML) como respaldo automáticamente (ver jarvis_local/ui/hud_select.py)
 ├── jarvis_local/            El paquete Python
 │   ├── cli.py               Punto de entrada
 │   ├── jarvis.py            Orquestador: la cascada de 4 capas
@@ -272,7 +273,7 @@ Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, dat
 │   ├── voice/               STT · TTS · wake word · streaming
 │   ├── storage/             Historial, memorias y 🆕 índice semántico
 │   ├── memory_context/      Memorias activas y 🆕 recuerdo automático
-│   └── ui/                  Interfaz web y de escritorio
+│   └── ui/                  Interfaz web + HUD legado (QML), usado como respaldo si hud_pro falla al importarse
 └── test/                    1813 tests
 ```
 
