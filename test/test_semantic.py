@@ -119,6 +119,37 @@ def test_respaldo_por_palabras_sin_ollama(tmp_dir, monkeypatch):
     assert hits and "cafe" in hits[0][0]["text"]
 
 
+def test_sync_fallo_parcial_no_deja_memoria_y_disco_inconsistentes(tmp_dir, monkeypatch):
+    """Bug real encontrado en revisión: sync() aplicaba los BORRADOS en
+    memoria primero y recién después intentaba embeber los nuevos -- si
+    embed_documents() fallaba a mitad de camino (Ollama cae), la función
+    salía con `return False` sin guardar, pero self.ids/self.matrix YA
+    reflejaban el borrado mientras el .npz en disco seguía con el estado
+    viejo: inconsistentes entre sí. Si el proceso reiniciaba antes de un
+    sync exitoso posterior, el vector de algo ya borrado podía resurgir."""
+    idx = SemanticIndex(tmp_dir)
+    # estado previo: un item "viejo" ya indexado (vector sintético, sin red)
+    idx.ids = ["viejo"]
+    idx.matrix = np.ones((1, EMBED_DIM), dtype=np.float32)
+    idx._save()
+
+    # ahora "viejo" se borró del store y aparece "nuevo" -- sync() debería
+    # intentar borrar "viejo" Y embeber "nuevo" en la misma pasada
+    monkeypatch.setattr("jarvis_local.storage.semantic.embed_documents",
+                        lambda texts: None)  # Ollama "cae" a mitad de sync
+
+    ok = idx.sync([{"id": "nuevo", "text": "algo nuevo"}])
+
+    assert ok is False
+    assert idx.ids == ["viejo"], "el borrado se aplicó en memoria pese al fallo"
+    assert idx.matrix.shape[0] == 1, "la matriz cambió pese al fallo"
+
+    # releer desde disco: debe seguir reflejando exactamente lo mismo
+    idx2 = SemanticIndex(tmp_dir)
+    assert idx2.ids == ["viejo"]
+    assert idx2.matrix.shape[0] == 1
+
+
 # ---------- Recuerdo automatico (sin red) ----------
 
 def test_recall_sin_memorias(tmp_dir):

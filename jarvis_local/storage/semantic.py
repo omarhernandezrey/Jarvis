@@ -150,19 +150,32 @@ class SemanticIndex:
         if not nuevos and not borrados:
             return self.matrix.shape[0] == len(actuales)
 
+        # Embeber los nuevos ANTES de tocar self.matrix/self.ids: antes esta
+        # función aplicaba los BORRADOS en memoria primero y recién después
+        # intentaba embeber -- si embed_documents() fallaba a mitad de camino
+        # (Ollama cae), salía con `return False` sin guardar, pero
+        # self.ids/self.matrix YA reflejaban el borrado en memoria mientras
+        # el .npz en disco seguía con el estado viejo: inconsistentes entre
+        # sí. Si el proceso reiniciaba antes de un sync exitoso posterior, el
+        # .npz viejo recargaba el vector de algo ya borrado/olvidado. Ahora
+        # el paso que puede fallar (la llamada de red) se hace primero y sin
+        # efectos secundarios: si falla, no se toca nada.
+        nueva_matriz = None
+        if nuevos:
+            vectores = embed_documents([actuales[i] for i in nuevos])
+            if vectores is None:
+                return False  # sin embeddings: el caller usara palabras clave
+            nueva_matriz = np.array(vectores, dtype=np.float32)
+
         if borrados:
             keep = [k for k, i in enumerate(self.ids) if i not in borrados]
             self.matrix = self.matrix[keep] if keep else \
                 np.zeros((0, EMBED_DIM), np.float32)
             self.ids = [self.ids[k] for k in keep]
 
-        if nuevos:
-            vectores = embed_documents([actuales[i] for i in nuevos])
-            if vectores is None:
-                return False  # sin embeddings: el caller usara palabras clave
-            nueva = np.array(vectores, dtype=np.float32)
-            self.matrix = (nueva if self.matrix.size == 0
-                           else np.vstack([self.matrix, nueva]))
+        if nueva_matriz is not None:
+            self.matrix = (nueva_matriz if self.matrix.size == 0
+                           else np.vstack([self.matrix, nueva_matriz]))
             self.ids.extend(nuevos)
 
         self._save()
