@@ -5,7 +5,7 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 [![Tests](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml/badge.svg)](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-1362%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1813%20passing-brightgreen)
 ![Offline](https://img.shields.io/badge/LLM-100%25%20local-orange)
 ![OS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux-informational)
 
@@ -273,13 +273,13 @@ Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, dat
 │   ├── storage/             Historial, memorias y 🆕 índice semántico
 │   ├── memory_context/      Memorias activas y 🆕 recuerdo automático
 │   └── ui/                  Interfaz web y de escritorio
-└── test/                    772 tests
+└── test/                    1813 tests
 ```
 
 ## 🧪 Tests y calidad
 
 ```bash
-python -m pytest test -q            # 772 tests (Windows y Linux)
+python -m pytest test -q            # 1813 tests (Windows y Linux)
 python -m pytest -m live            # 9 tests que pegan a APIs reales (nocturno en CI)
 ruff check .                        # lint
 python -m jarvis_local.cli doctor   # diagnóstico del entorno (Ollama, red, credenciales, micro)
