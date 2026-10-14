@@ -177,8 +177,14 @@ def test_reiniciar_programa_con_1min():
 @solo_linux
 def test_apagar_segundos_redondea_a_minutos():
     def caso(llamadas):
-        power.shutdown_pc(seconds=90)  # 90s -> 2 min (ceil)
+        plan = power.shutdown_pc(seconds=90)  # 90s -> 2 min (ceil) -> 120s reales
         assert llamadas == [["-h", "+2"]]
+        # Bug real encontrado en revisión: el mensaje afirmaba los 90s
+        # PEDIDOS aunque Linux redondea a minutos y el comando programado
+        # (shutdown -h +2) de verdad dispara en 120s -- la cuenta regresiva
+        # ES la ventana para cancelar, así que el número importa de verdad.
+        assert "120 segundos" in plan.result, plan.result
+        assert "90 segundos" not in plan.result
     _con_shutdown_falso_linux(caso)
 
 
