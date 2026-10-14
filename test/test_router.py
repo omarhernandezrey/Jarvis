@@ -329,3 +329,37 @@ def test_c6_cache_de_decisiones_evita_segunda_llamada_al_llm():
     assert r2.text                                  # la herramienta si se ejecuto
 
     decision_cache.clear()
+
+
+@skip_sin_ollama
+def test_c6_cache_recuerda_las_varias_herramientas_de_un_turno():
+    """Bug real encontrado en revisión: decision_cache.put() sobrescribía
+    con la ÚLTIMA llamada de cada turno -- un turno que encadena varias
+    herramientas en una sola respuesta del modelo ("tool_calls" con más de
+    una entrada, el caso que el propio bucle itera con `for call in
+    calls:`) sólo quedaba recordada por la última. Un repeat exacto de la
+    frase dentro del TTL reejecutaba solo esa, perdiendo las anteriores en
+    silencio."""
+    from jarvis_local.agent import decision_cache
+
+    decision_cache.clear()
+    dos_llamadas = {
+        "role": "assistant", "content": "",
+        "tool_calls": [
+            {"function": {"name": "contar_chiste", "arguments": {}}},
+            {"function": {"name": "contar_chiste", "arguments": {}}},
+        ],
+    }
+    client = _cliente(dos_llamadas)  # solo para la 1a; la 2a es cache hit
+
+    r1 = run_agent(client, "cuentame dos chistes")
+    assert r1.tools_used == ["contar_chiste", "contar_chiste"]
+    assert client.chat_with_tools.call_count == 1
+
+    r2 = run_agent(client, "cuentame dos chistes")
+    assert r2.tools_used == ["contar_chiste", "contar_chiste"], (
+        f"el cache hit perdió alguna de las dos llamadas: {r2.tools_used}"
+    )
+    assert client.chat_with_tools.call_count == 1  # NO hubo segunda llamada al LLM
+
+    decision_cache.clear()
