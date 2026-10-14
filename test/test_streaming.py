@@ -109,6 +109,24 @@ def test_fallo_de_audio_no_rompe_la_respuesta():
     assert "Primera frase" in completo and "Segunda parte" in completo
 
 
+def test_fallo_de_audio_se_imprime_no_se_traga_en_silencio(capsys):
+    """Bug real (baja severidad) encontrado en revisión: una excepción de
+    speak_fn se tragaba con `contextlib.suppress(Exception)` sin dejar
+    ningún rastro -- el único speak_fn real hoy nunca lanza, así que no es
+    alcanzable en la práctica, pero si algún día cambia (otro backend de
+    voz, un mock en pruebas), fallar en total silencio en un hilo de
+    fondo sería indiagnosticable. No debe re-lanzarse (una frase que no
+    se pudo hablar no debe tumbar el streaming de las demás), pero sí
+    debe quedar un rastro."""
+    def _speak_roto(_texto):
+        raise RuntimeError("tarjeta de sonido ocupada")
+
+    speak_stream(iter(["Una frase cualquiera. "]), _speak_roto)
+
+    salida = capsys.readouterr().out
+    assert "tarjeta de sonido ocupada" in salida
+
+
 def test_stream_vacio():
     dichas = []
     assert speak_stream(iter([]), dichas.append) == ""

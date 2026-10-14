@@ -81,8 +81,29 @@ class SafetyPolicy:
         cfg = get_config()
         safety_cfg = cfg.get("safety", {})
         self.simulation_mode = safety_cfg.get("simulation_mode", False)
-        self.pending_plan: ActionPlan | None = None
+        self._pending: ActionPlan | None = None
         self._lock = threading.Lock()
+
+    @property
+    def pending_plan(self) -> ActionPlan | None:
+        """El plan de escritura en espera de /confirmar (o None).
+
+        Bug real encontrado en revisión: ~12 módulos de tools escriben
+        `policy.pending_plan = plan` directamente al crear un plan, sin
+        el lock que confirm()/auto_confirm()/reject() sí usan -- una
+        escritura concurrente con una de esas lecturas-y-limpia podía
+        perder la actualización. La propiedad adquiere el lock de forma
+        transparente en cada lectura/escritura externa, así que ningún
+        caller necesita cambiar (siguen haciendo `policy.pending_plan =
+        plan` exactamente igual) pero queda protegido de verdad.
+        """
+        with self._lock:
+            return self._pending
+
+    @pending_plan.setter
+    def pending_plan(self, plan: ActionPlan | None) -> None:
+        with self._lock:
+            self._pending = plan
 
     def is_simulation_mode(self) -> bool:
         return self.simulation_mode
@@ -101,49 +122,49 @@ class SafetyPolicy:
         """Confirma el plan pendiente. Cualquier riesgo se ejecuta tras /confirmar
         del usuario (ya pasó por el flujo de confirmación del bucle agéntico)."""
         with self._lock:
-            if not self.pending_plan:
+            if not self._pending:
                 return None
-            self.pending_plan.status = ActionStatus.CONFIRMED
-            self._log_plan(self.pending_plan, "CONFIRMADO")
-            plan = self.pending_plan
-            self.pending_plan = None
+            self._pending.status = ActionStatus.CONFIRMED
+            self._log_plan(self._pending, "CONFIRMADO")
+            plan = self._pending
+            self._pending = None
             return plan
 
     def auto_confirm(self) -> ActionPlan | None:
         """Auto-confirma para modo voz: confirma operaciones de riesgo bajo
         sin intervencion del usuario. DELETE y CRITICAL siguen bloqueados."""
         with self._lock:
-            if not self.pending_plan:
+            if not self._pending:
                 return None
-            if self.pending_plan.risk.value >= RiskLevel.DELETE.value:
-                self.pending_plan.status = ActionStatus.BLOCKED
-                self.pending_plan.result = (
+            if self._pending.risk.value >= RiskLevel.DELETE.value:
+                self._pending.status = ActionStatus.BLOCKED
+                self._pending.result = (
                     "OPERACION BLOQUEADA: Borrado requiere confirmacion manual. "
                     "Usa /confirmar en la consola."
                 )
                 logger.log_action(
-                    instruction=self.pending_plan.action,
-                    result=self.pending_plan.result,
+                    instruction=self._pending.action,
+                    result=self._pending.result,
                     error="Auto-confirm bloqueada para DELETE",
                 )
-                plan = self.pending_plan
-                self.pending_plan = None
+                plan = self._pending
+                self._pending = None
                 return plan
-            self.pending_plan.status = ActionStatus.CONFIRMED
-            self._log_plan(self.pending_plan, "AUTO-CONFIRMADO")
-            plan = self.pending_plan
-            self.pending_plan = None
+            self._pending.status = ActionStatus.CONFIRMED
+            self._log_plan(self._pending, "AUTO-CONFIRMADO")
+            plan = self._pending
+            self._pending = None
             return plan
 
     def reject(self) -> ActionPlan | None:
         """Rechaza el plan pendiente."""
         with self._lock:
-            if not self.pending_plan:
+            if not self._pending:
                 return None
-            self.pending_plan.status = ActionStatus.REJECTED
-            self._log_plan(self.pending_plan, "RECHAZADO")
-            plan = self.pending_plan
-            self.pending_plan = None
+            self._pending.status = ActionStatus.REJECTED
+            self._log_plan(self._pending, "RECHAZADO")
+            plan = self._pending
+            self._pending = None
             return plan
 
     def execute_plan(self, plan: ActionPlan, executor_fn) -> ActionPlan:

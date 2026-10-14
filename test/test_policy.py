@@ -143,6 +143,53 @@ def test_concurrent_confirm():
     assert len(results) == 1, f"Expected 1 confirm, got {len(results)}"
 
 
+def test_pending_plan_set_es_thread_safe():
+    """Bug real (baja severidad) encontrado en revisión: ~12 módulos de
+    tools escriben `policy.pending_plan = plan` directamente al crear un
+    plan, sin el lock que confirm()/auto_confirm()/reject() sí usan -- una
+    escritura concurrente con una de esas lecturas-y-limpia podía perder
+    la actualización o (en otro runtime sin el GIL) corromper el estado.
+    `pending_plan` ahora es una property que adquiere el lock en cada
+    lectura/escritura: este test dispara muchas escrituras Y confirms en
+    paralelo y verifica que nunca explota ni deja el estado a medias."""
+    import threading
+
+    sp = SafetyPolicy()
+    errores = []
+    confirmados = []
+
+    def escritor(n: int):
+        try:
+            for i in range(50):
+                sp.pending_plan = ActionPlan(action=f"plan-{n}-{i}", risk=RiskLevel.EXECUTE)
+        except Exception as e:
+            errores.append(e)
+
+    def confirmador():
+        try:
+            for _ in range(50):
+                r = sp.confirm()
+                if r is not None:
+                    confirmados.append(r)
+        except Exception as e:
+            errores.append(e)
+
+    hilos = [threading.Thread(target=escritor, args=(n,)) for n in range(4)]
+    hilos += [threading.Thread(target=confirmador) for _ in range(4)]
+    for t in hilos:
+        t.start()
+    for t in hilos:
+        t.join()
+
+    assert not errores, f"Errores de concurrencia: {errores}"
+    # cada plan confirmado debe ser un ActionPlan completo y consistente,
+    # nunca un objeto a medio escribir
+    for plan in confirmados:
+        assert isinstance(plan, ActionPlan)
+        assert plan.status == ActionStatus.CONFIRMED
+        assert plan.action.startswith("plan-")
+
+
 if __name__ == "__main__":
     test_simulation_mode_default()
     test_set_simulation_mode()
