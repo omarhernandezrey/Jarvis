@@ -90,6 +90,70 @@ def test_history_corrupt_json():
         shutil.rmtree(d)
 
 
+def test_history_save_lock_timeout_no_crashea_el_turno(monkeypatch):
+    """Bug real encontrado en revisión: un filelock.Timeout (CLI y HUD
+    apuntando al mismo data/ a la vez, o un lock stale) no se capturaba en
+    _save() -- se propagaba sin capturar y tiraba abajo el turno entero de
+    chat(). El mensaje ya está en memoria (append lo agrega antes de
+    guardar): no debe perderse la conversación en curso por un lock
+    contendido, solo el disco se queda sin ese turno hasta el próximo
+    _save() exitoso."""
+    import jarvis_local.storage.history as history_mod
+
+    d = _tmp_dir()
+    try:
+        h = HistoryStore(d)
+
+        class _LockSiempreOcupado:
+            def __init__(self, *a, **kw):
+                pass
+
+            def __enter__(self):
+                raise history_mod.FileLockTimeout("lock contendido (simulado)")
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(history_mod, "FileLock", _LockSiempreOcupado)
+        h.append("user", "esto no debe crashear")  # no debe lanzar
+
+        assert h.load()[-1]["content"] == "esto no debe crashear"  # sigue en memoria
+    finally:
+        shutil.rmtree(d)
+
+
+def test_history_load_lock_timeout_arranca_vacio_no_corrupto(monkeypatch):
+    """Mismo bug en _load(): un lock contendido justo al arrancar no debe
+    tratarse como archivo corrupto (no hay que mover/renombrar nada bueno)
+    ni crashear -- solo degradar a historial vacío esta vez."""
+    import jarvis_local.storage.history as history_mod
+
+    d = _tmp_dir()
+    try:
+        h0 = HistoryStore(d)
+        h0.append("user", "dato real")  # queda un history.json válido en disco
+
+        class _LockSiempreOcupado:
+            def __init__(self, *a, **kw):
+                pass
+
+            def __enter__(self):
+                raise history_mod.FileLockTimeout("lock contendido (simulado)")
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(history_mod, "FileLock", _LockSiempreOcupado)
+        h1 = HistoryStore(d)  # _load() se llama en __init__
+
+        assert h1.load() == []  # degradado, no crasheó
+        assert not list(d.glob("history.corrupt-*.json")), (
+            "un lock contendido no debe tratarse como corrupción de archivo"
+        )
+    finally:
+        shutil.rmtree(d)
+
+
 def test_history_atomic_write():
     d = _tmp_dir()
     try:
@@ -183,6 +247,35 @@ def test_memory_corrupt_json():
         assert m.list() == []
         corrupt = list(d.glob("memory.corrupt-*.json"))
         assert len(corrupt) == 1
+    finally:
+        shutil.rmtree(d)
+
+
+def test_memory_save_lock_timeout_no_crashea(monkeypatch):
+    """Mismo bug que en HistoryStore: filelock.Timeout en _save() no debe
+    propagarse -- el item ya está en memoria (add() lo agrega antes de
+    guardar)."""
+    import jarvis_local.storage.memory as memory_mod
+
+    d = _tmp_dir()
+    try:
+        m = MemoryStore(d)
+
+        class _LockSiempreOcupado:
+            def __init__(self, *a, **kw):
+                pass
+
+            def __enter__(self):
+                raise memory_mod.FileLockTimeout("lock contendido (simulado)")
+
+            def __exit__(self, *a):
+                return False
+
+        monkeypatch.setattr(memory_mod, "FileLock", _LockSiempreOcupado)
+        item = m.add("esto no debe crashear")  # no debe lanzar
+
+        assert item is not None
+        assert m.list()[-1]["text"] == "esto no debe crashear"
     finally:
         shutil.rmtree(d)
 

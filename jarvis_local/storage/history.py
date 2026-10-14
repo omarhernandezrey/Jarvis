@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from filelock import FileLock
+from filelock import Timeout as FileLockTimeout
 
 from jarvis_local.logging_config import get_logger
 from jarvis_local.safety.secrets import redact_secrets
@@ -62,6 +63,13 @@ class HistoryStore:
                 data = json.load(f)
             data = _migrate(data, "history")
             self._messages = data.get("messages", [])
+        except FileLockTimeout:
+            # Lock contendido (CLI y HUD apuntando al mismo data/ a la vez):
+            # degradar a "sin historial de disco esta vez", NO tratarlo como
+            # corrupción -- el archivo está sano, solo no se pudo leer ahora.
+            logger.warning("No se pudo adquirir el lock de history.json (contención); "
+                           "arrancando con historial vacío esta vez.")
+            self._messages = []
         except (json.JSONDecodeError, KeyError, ValueError):
             corrupted = self.data_dir / f"history.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
             with FileLock(str(self._lock_path), timeout=5):
@@ -76,16 +84,26 @@ class HistoryStore:
             "updated_at": datetime.now(UTC).isoformat(),
             "messages": self._messages,
         }
-        with FileLock(str(self._lock_path), timeout=5):
-            fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, str(self._path))
-            except Exception:
-                with contextlib.suppress(Exception):
-                    os.remove(tmp_path)
-                raise
+        try:
+            with FileLock(str(self._lock_path), timeout=5):
+                fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+                    os.replace(tmp_path, str(self._path))
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        os.remove(tmp_path)
+                    raise
+        except FileLockTimeout:
+            # El mensaje YA está en self._messages (append() lo agregó antes
+            # de llamar aquí): la conversación en curso no pierde nada, solo
+            # el turno no quedó en disco esta vez -- el próximo _save() que
+            # sí consiga el lock vuelve a escribir el estado completo. Antes
+            # esto propagaba sin capturar y tiraba abajo el turno entero de
+            # chat() (CLI y HUD contendiendo el mismo data/ al mismo tiempo).
+            logger.warning("No se pudo adquirir el lock de history.json (contención); "
+                           "este turno no se persistió a disco.")
 
     @staticmethod
     def sanitize(role: str, content: str) -> str:
