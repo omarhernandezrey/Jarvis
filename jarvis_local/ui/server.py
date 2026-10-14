@@ -709,9 +709,23 @@ async function processMessage(text) {
   $('inputField').focus();
 }
 
+let voiceInFlight = false;  // true mientras la petición POST /voice está en curso
+
 async function toggleVoice() {
   if (isProcessing) {
     toast('JARVIS está procesando. Espere por favor.');
+    return;
+  }
+  // Bug real encontrado en revisión: nada impedía pulsar el botón otra vez
+  // mientras el fetch(API + '/voice') seguía en curso -- un segundo clic
+  // re-entraba aquí, apagaba `voiceActive` y reseteaba la UI a "listo"
+  // mientras la petición original todavía estaba en el aire; cuando esa
+  // petición por fin resolvía, volvía a tocar la UI (y podía disparar
+  // processMessage) por encima de un estado que el usuario ya creía
+  // cancelado. `voiceInFlight` es un guardia propio para la voz, igual que
+  // `isProcessing` ya protege el envío de texto.
+  if (voiceInFlight) {
+    toast('Ya estoy escuchando, espere un momento.');
     return;
   }
   voiceActive = !voiceActive;
@@ -723,6 +737,7 @@ async function toggleVoice() {
     label.textContent = 'GRABANDO';
     setOrbState('listening');
     toast('Escuchando... Hable ahora.');
+    voiceInFlight = true;
 
     try {
       const r = await fetch(API + '/voice', {method: 'POST', headers: {'X-Jarvis-Token': API_TOKEN}});
@@ -744,6 +759,8 @@ async function toggleVoice() {
       voiceActive = false;
       setOrbState('ready');
       toast('Error al capturar voz.');
+    } finally {
+      voiceInFlight = false;
     }
   } else {
     btn.classList.remove('recording');
