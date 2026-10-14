@@ -54,6 +54,51 @@ def test_viewmodel_audio_clamp_and_clear():
     assert vm.audio == {"level": 0.0, "spectrum": []}
 
 
+def test_metrics_service_offline_policy_corre_en_hilo_de_gui(monkeypatch):
+    """`_run()` (hilo de muestreo) leía `self._vm.state` directamente para
+    decidir la transición OFFLINE<->IDLE -- en contra de lo que el
+    docstring del módulo promete ("la mutación de estado y la emisión de
+    señales ocurren siempre en el hilo de la GUI"). La decisión ahora vive
+    en `_apply_online_policy`, conectada a una señal propia
+    (`_onlineChanged`) que Qt entrega en cola al hilo de la GUI -- mismo
+    mecanismo que `_sampled`/`_wantState` ya usaban. Prueba el camino
+    real de punta a punta: hilo de fondo real, `sample_all` controlado,
+    `_app.processEvents()` para dejar fluir la señal en cola."""
+    import time
+
+    from jarvis_local.ui.hud.viewmodel import ViewModel
+
+    vm = ViewModel()
+    svc = services.MetricsService(vm)
+    estado_online = {"valor": False}  # mutable: cada fase es un estado ESTABLE,
+                                       # no una transición puntual que cazar al vuelo
+
+    def _sample_falso():
+        return {"online": estado_online["valor"], "cpu": None, "ram": None,
+               "model": None, "healthPingMs": None, "voice": {}, "tools": {},
+               "memory": {}, "lastSession": None}
+
+    monkeypatch.setattr(services, "sample_all", _sample_falso)
+    monkeypatch.setattr(services, "SAMPLE_S", 0.01)  # sin esperar 2s reales
+
+    try:
+        svc.start()
+        t0 = time.monotonic()
+        while vm.state != "offline" and time.monotonic() - t0 < 3:
+            _app.processEvents()
+            time.sleep(0.01)
+        assert vm.state == "offline", "nunca pasó a offline con online=False"
+
+        estado_online["valor"] = True
+        t0 = time.monotonic()
+        while vm.state != "idle" and time.monotonic() - t0 < 3:
+            _app.processEvents()
+            time.sleep(0.01)
+        assert vm.state == "idle", "nunca volvió a idle con online=True"
+    finally:
+        svc.stop()
+
+
 def test_sample_all_shape_no_invention():
     """sample_all() devuelve un dict con las claves esperadas; los valores son
     None o de tipo correcto -- nunca aleatorios ni de relleno."""

@@ -155,6 +155,7 @@ class MetricsService(QObject):
     # emitidas desde el hilo de muestreo; entrega en cola al hilo de la GUI
     _sampled = Signal(dict)
     _wantState = Signal(str)
+    _onlineChanged = Signal(bool)
 
     def __init__(self, view_model: QObject, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -163,6 +164,12 @@ class MetricsService(QObject):
         self._thread: threading.Thread | None = None
         self._sampled.connect(view_model.push_metrics)
         self._wantState.connect(view_model.set_state)
+        # _apply_online_policy es un método de ESTE objeto (vive en el hilo
+        # de la GUI, igual que view_model): la conexión auto-detecta threads
+        # distintos entre el emisor (hilo de muestreo) y el receptor (este
+        # QObject) y entrega en cola, el mismo mecanismo que ya usan
+        # _sampled/_wantState arriba.
+        self._onlineChanged.connect(self._apply_online_policy)
 
     def start(self) -> None:
         if self._thread is not None:
@@ -181,9 +188,21 @@ class MetricsService(QObject):
             data = sample_all()
             self._sampled.emit(data)
             online = data.get("online")
-            state = self._vm.state
-            if online is False and state in ("idle", "offline"):
-                self._wantState.emit("offline")
-            elif online and state == "offline":
-                self._wantState.emit("idle")
+            if online is not None:
+                self._onlineChanged.emit(bool(online))
             self._stop.wait(SAMPLE_S)
+
+    def _apply_online_policy(self, online: bool) -> None:
+        """Decide la transición OFFLINE↔IDLE. Corre en el hilo de la GUI
+        (ver el comentario en __init__): antes `_run()` leía
+        `self._vm.state` directamente desde el hilo de muestreo, en contra
+        de lo que el docstring del módulo promete ("la mutación de estado
+        y la emisión de señales ocurren siempre en el hilo de la GUI") —
+        benigno en la práctica (lectura atómica por el GIL, se
+        autocorregía en el siguiente ciclo de 2s si leía un valor viejo),
+        pero violaba la disciplina de hilos que el propio módulo declara."""
+        state = self._vm.state
+        if not online and state in ("idle", "offline"):
+            self._wantState.emit("offline")
+        elif online and state == "offline":
+            self._wantState.emit("idle")
