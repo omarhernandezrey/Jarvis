@@ -83,14 +83,22 @@ def _delayed(action: str, win_flag: str, linux_flag: str, verbo: str,
         if IS_WINDOWS:
             out = _run_shutdown([win_flag, "/t", str(seconds)])
             ok = out.returncode == 0
+            segundos_reales = seconds
         else:
-            # `shutdown` en Linux solo acepta minutos, no segundos.
+            # `shutdown` en Linux solo acepta minutos, no segundos: el
+            # retraso real queda redondeado hacia arriba. El mensaje
+            # afirmaba los segundos PEDIDOS aunque el comando programado
+            # fuera otro (90s pedidos -> "+2" -> 120s reales) -- dado que
+            # la propia cuenta regresiva ES la confirmación de seguridad
+            # ("diga cancela el apagado"), decirle al usuario el número
+            # equivocado le resta margen real para cancelar a tiempo.
             minutos = max(1, math.ceil(seconds / 60))
             out = _run_shutdown_linux([linux_flag, f"+{minutos}"])
             ok = out.returncode == 0
+            segundos_reales = minutos * 60
         if not ok:
             raise OSError(out.stderr.strip() or f"shutdown {win_flag} fallo")
-        plan.result = (f"{verbo}re el equipo en {seconds} segundos, senor. "
+        plan.result = (f"{verbo}re el equipo en {segundos_reales} segundos, senor. "
                        "Diga 'cancela el apagado' si desea abortarlo.")
         plan.status = ActionStatus.EXECUTED
     except Exception as e:

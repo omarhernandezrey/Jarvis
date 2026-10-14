@@ -97,6 +97,80 @@ def test_show_linux():
     teardown(p)
 
 
+@pytest.mark.skipif(IS_WINDOWS, reason="Solo en Linux")
+def test_mostrar_no_toca_dotfiles_que_jarvis_no_ocultó():
+    """Bug real encontrado en revisión: "mostrar archivos" quitaba el punto
+    a CUALQUIER dotfile de la carpeta, no solo a los que el propio JARVIS
+    había ocultado -- un .gitignore o .env que ya estaba ahí antes se
+    desocultaba igual, un efecto colateral silencioso."""
+    from jarvis_local.tools.hidden_files import execute_hide
+
+    p = setup()
+    try:
+        preexistente = p / ".gitignore"
+        preexistente.write_text("*.pyc\n")  # dotfile ajeno, ya estaba ahí
+
+        execute_hide(str(p), hide=True)   # oculta archivo1/2/3.txt
+        plan = execute_hide(str(p), hide=False)  # "mostrar"
+        assert plan.status == ActionStatus.EXECUTED
+
+        files = os.listdir(str(p))
+        assert "archivo1.txt" in files  # lo que JARVIS ocultó, vuelve
+        assert ".gitignore" in files, "un dotfile ajeno NO debe desocultarse"
+        assert "gitignore" not in files
+    finally:
+        teardown(p)
+
+
+@pytest.mark.skipif(IS_WINDOWS, reason="Solo en Linux")
+def test_manifiesto_no_se_oculta_ni_se_cuenta_a_si_mismo():
+    """El manifiesto que registra qué ocultó JARVIS es un dotfile propio:
+    no debe aparecer como "elemento" contado ni tratarse como un archivo
+    normal a ocultar/mostrar."""
+    from jarvis_local.tools.hidden_files import _MANIFEST_NAME, execute_hide
+
+    p = setup()
+    try:
+        plan = execute_hide(str(p), hide=True)
+        assert plan.status == ActionStatus.EXECUTED
+        assert "3 elementos" in plan.result, plan.result  # no cuenta el manifiesto
+        assert (p / _MANIFEST_NAME).exists()
+    finally:
+        teardown(p)
+
+
+def test_hide_windows_attrib_fallido_reporta_error(monkeypatch):
+    """Bug real encontrado en revisión: _hide_windows descartaba el
+    CompletedProcess de `attrib` entero -- un fallo real (archivos de solo
+    lectura/bloqueados) se reportaba igual como "Listo, senor". No
+    verificable en esta máquina (no es Windows): se fuerza IS_WINDOWS y se
+    mockea subprocess.run para probar la lógica en aislado, con una
+    carpeta real (tmp_path) para que is_within_allowed/is_dir no hagan falta
+    mockearse también."""
+    import subprocess as _subprocess
+
+    import jarvis_local.tools.hidden_files as HF
+
+    p = setup()
+    try:
+        monkeypatch.setattr(HF, "IS_WINDOWS", True)
+
+        def _attrib_fallido(cmd, **kwargs):
+            return _subprocess.CompletedProcess(cmd, returncode=5,
+                                                stdout="", stderr="Acceso denegado.")
+
+        monkeypatch.setattr(HF.subprocess, "run", _attrib_fallido)
+
+        plan = HF.execute_hide(str(p), hide=True)
+
+        assert plan.status == ActionStatus.ERROR, (
+            "un fallo real de attrib se reportó como éxito"
+        )
+        assert "Acceso denegado" in plan.error or "5" in plan.error
+    finally:
+        teardown(p)
+
+
 if __name__ == "__main__":
     test_plan_hide_valid()
     test_plan_show_valid()

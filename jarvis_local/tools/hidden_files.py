@@ -3,6 +3,8 @@ JARVIS Local - Ocultar/mostrar archivos (Fase 4)
 Oculta todos los archivos de una carpeta permitida o los hace visibles.
 Accion de escritura: requiere plan + /confirmar.
 """
+import contextlib
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -54,7 +56,7 @@ def execute_hide(path: str, hide: bool = True) -> ActionPlan:
         else:
             _hide_linux(norm, hide)
         n = len([f for f in os.listdir(norm)
-                 if os.path.isfile(str(Path(norm) / f))])
+                 if f != _MANIFEST_NAME and os.path.isfile(str(Path(norm) / f))])
         estado = "ocultos" if hide else "visibles"
         plan.result = f"Listo, senor. Los archivos de {norm} ahora estan {estado} ({n} elementos)."
         plan.status = ActionStatus.EXECUTED
@@ -68,23 +70,72 @@ def execute_hide(path: str, hide: bool = True) -> ActionPlan:
 def _hide_windows(norm: str, hide: bool):
     """Oculta/muestra archivos en Windows usando attrib."""
     flag = "+h" if hide else "-h"
-    subprocess.run(["attrib", flag, str(Path(norm) / "*")],
-                   capture_output=True, text=True, timeout=60, shell=False)
+    r = subprocess.run(["attrib", flag, str(Path(norm) / "*")],
+                       capture_output=True, text=True, timeout=60, shell=False)
+    if r.returncode != 0:
+        # Antes se descartaba el CompletedProcess entero: un fallo real de
+        # attrib (archivos de solo lectura/bloqueados, glob inválido) se
+        # reportaba igual como "Listo, senor" -- execute_hide() ya tiene el
+        # try/except para convertir esto en ActionStatus.ERROR, solo
+        # faltaba levantar la excepción.
+        raise RuntimeError(f"attrib {flag} falló (código {r.returncode}): "
+                           f"{r.stderr.strip() or r.stdout.strip() or 'sin detalle'}")
+
+
+_MANIFEST_NAME = ".jarvis_hidden_manifest.json"
+
+
+def _manifest_path(norm: str) -> Path:
+    return Path(norm) / _MANIFEST_NAME
+
+
+def _leer_manifest(norm: str) -> set[str]:
+    p = _manifest_path(norm)
+    if not p.exists():
+        return set()
+    try:
+        return set(json.loads(p.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def _escribir_manifest(norm: str, nombres: set[str]) -> None:
+    p = _manifest_path(norm)
+    if not nombres:
+        with contextlib.suppress(Exception):
+            p.unlink(missing_ok=True)
+        return
+    p.write_text(json.dumps(sorted(nombres)), encoding="utf-8")
 
 
 def _hide_linux(norm: str, hide: bool):
     """
     Oculta/muestra archivos en Linux renombrando con/sin prefijo '.'.
     En Linux, los archivos ocultos empiezan con punto.
+
+    "Mostrar" solo revierte lo que ESTE comando ocultó -- antes
+    `elif not hide and filename.startswith('.')` quitaba el punto a
+    CUALQUIER dotfile de la carpeta, incluyendo los que ya estaban ahí
+    antes de que JARVIS tocara nada (.gitignore, .env, metadata de un
+    sincronizador...). Un manifiesto (_MANIFEST_NAME, un dotfile propio,
+    nunca se oculta/muestra a sí mismo) registra los nombres originales de
+    lo que SÍ ocultó, para no desocultar nada ajeno.
     """
+    ocultados_por_jarvis = _leer_manifest(norm)
     for filename in os.listdir(norm):
+        if filename == _MANIFEST_NAME:
+            continue
         filepath = str(Path(norm) / filename)
         if not Path(filepath).is_file():
             continue
         if hide and not filename.startswith('.'):
-            # Ocultar: añadir prefijo punto
+            # Ocultar: añadir prefijo punto, recordar el nombre original
             os.rename(filepath, str(Path(norm) / ('.' + filename)))
-        elif not hide and filename.startswith('.') and filename != '.':
-            # Mostrar: quitar prefijo punto
+            ocultados_por_jarvis.add(filename)
+        elif (not hide and filename.startswith('.') and filename != '.'
+              and filename[1:] in ocultados_por_jarvis):
+            # Mostrar: quitar prefijo punto SOLO si JARVIS fue quien lo puso
             new_name = filename[1:]  # Quitar el punto inicial
             os.rename(filepath, os.path.join(norm, new_name))
+            ocultados_por_jarvis.discard(new_name)
+    _escribir_manifest(norm, ocultados_por_jarvis)

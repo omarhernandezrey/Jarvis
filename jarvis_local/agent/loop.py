@@ -545,15 +545,28 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     if not _anafora:
         cacheado = decision_cache.get(user_message)
         if cacheado is not None:
-            c_tool, c_args = cacheado
             nombres = {t.get("function", {}).get("name") for t in tools}
-            if c_tool in nombres:
-                texto, pendiente = execute(c_tool, c_args)
-                log_decision(user_message, conf, [c_tool], [texto],
+            # todo-o-nada: si falta alguna de las herramientas cacheadas
+            # (catalogo cambio, o no entro en el recorte del retriever para
+            # este mensaje), no se reproduce una secuencia parcial -- se cae
+            # al camino normal del LLM.
+            if all(c_tool in nombres for c_tool, _c_args in cacheado):
+                usadas_cache: list[str] = []
+                resultados_cache: list[str] = []
+                for c_tool, c_args in cacheado:
+                    texto, pendiente = execute(c_tool, c_args)
+                    usadas_cache.append(c_tool)
+                    resultados_cache.append(texto)
+                    if pendiente:  # accion de riesgo: no se encadena mas
+                        log_decision(user_message, conf, usadas_cache, resultados_cache,
+                                     "cache_hit_pendiente_confirmacion", llm_calls=0, llm_secs=0.0)
+                        return AgentResult(text=texto, tools_used=usadas_cache,
+                                           pending_confirmation=True, confidence=conf)
+                log_decision(user_message, conf, usadas_cache, resultados_cache,
                              "cache_hit", llm_calls=0, llm_secs=0.0)
                 return AgentResult(
-                    text=texto, tools_used=[c_tool],
-                    pending_confirmation=pendiente, confidence=conf)
+                    text="\n".join(resultados_cache), tools_used=usadas_cache,
+                    pending_confirmation=False, confidence=conf)
 
     system = AGENT_SYSTEM_PROMPT
     if structured:
@@ -571,6 +584,7 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
     usadas: list[str] = []
     resultados: list[str] = []
     reintentos = 0
+    _decisiones_turno: list[tuple[str, dict]] = []  # para decision_cache (C6)
 
     # Instrumentacion (C1): nº de llamadas al LLM y tiempo total en ellas.
     # Un turno de 1 accion deberia hacer 1 sola llamada; mas de 2-3 indica un
@@ -692,9 +706,16 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
                                    pending_confirmation=True, confidence=conf)
 
             # C6: recordar la ELECCION (no el resultado) para la proxima vez
-            # que se pida esto mismo. Las anaforicas no se cachean.
+            # que se pida esto mismo. Las anaforicas no se cachean. Se
+            # acumula aqui y se guarda TODA la secuencia de una vez al
+            # terminar el turno (mas abajo) -- antes cada llamada
+            # sobrescribia la anterior con un solo put(), así que un turno
+            # con varias herramientas ("busca trabajo y abre la primera
+            # oferta") sólo recordaba la última: un repeat exacto de la
+            # frase dentro del TTL reejecutaba solo esa, perdiendo las
+            # demás en silencio.
             if not _anafora:
-                decision_cache.put(user_message, name, args)
+                _decisiones_turno.append((name, args))
 
             messages.append({"role": "tool", "name": name, "content": texto})
 
@@ -707,6 +728,9 @@ def _run_simple(client, user_message: str, history: list[dict] | None,
         # Las peticiones de varias acciones no llegan aqui: las divide
         # dividir_acciones() y cada clausula entra por su cuenta.
         break
+
+    if not _anafora and _decisiones_turno:
+        decision_cache.put(user_message, _decisiones_turno)
 
     log_decision(user_message, conf, usadas, resultados,
                  "ok" if usadas else "limite_de_pasos",

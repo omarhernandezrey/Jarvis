@@ -78,6 +78,29 @@ def test_verify_none_si_no_se_puede_releer(clip):
     assert "no he podido confirmar" in plan.result.lower()
 
 
+def test_deshaz_no_sobrescribe_con_vacio_si_la_lectura_previa_fallo(clip):
+    """Bug real encontrado en revisión: si la lectura del portapapeles
+    fallaba justo antes de escribir (backend caído en ese instante), el
+    contenido previo quedaba como `None` -- distinto de "" (portapapeles
+    genuinamente vacío). `restore_clipboard()` colapsaba ambos con
+    `previo = _PREVIO["texto"] or ""`: «deshaz» sobrescribía con una cadena
+    vacía y afirmaba haber restaurado, cuando en realidad el contenido real
+    (nunca leído) se perdió para siempre."""
+    clip["falla_lectura"] = True  # la lectura PREVIA a escribir también falla
+    plan = C.plan_write_clipboard("hola")
+    assert plan.status == ActionStatus.EXECUTED  # el escrito en sí funcionó
+
+    restaurado = C.restore_clipboard()
+
+    assert restaurado.status == ActionStatus.ERROR
+    assert "no sé qué restaurar" in restaurado.result.lower() or \
+        "no pude leer" in restaurado.result.lower()
+    assert clip["texto"] == "hola", (
+        "restore_clipboard() sobrescribió con una cadena vacía en vez de "
+        "negarse a adivinar"
+    )
+
+
 # --- confirmación condicional -----------------------------------
 
 @pytest.mark.parametrize("texto,pista", [

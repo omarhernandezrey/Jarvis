@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from filelock import FileLock
+from filelock import Timeout as FileLockTimeout
 
 from jarvis_local.logging_config import get_logger
 
@@ -62,6 +63,13 @@ class MemoryStore:
                 data = json.load(f)
             data = _migrate(data, "memory")
             self._items = data.get("items", [])
+        except FileLockTimeout:
+            # Lock contendido (CLI y HUD apuntando al mismo data/ a la vez):
+            # degradar a "sin memorias de disco esta vez", NO tratarlo como
+            # corrupción -- el archivo está sano, solo no se pudo leer ahora.
+            logger.warning("No se pudo adquirir el lock de memory.json (contención); "
+                           "arrancando sin memorias esta vez.")
+            self._items = []
         except (json.JSONDecodeError, KeyError, ValueError):
             corrupted = self.data_dir / f"memory.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
             with FileLock(str(self._lock_path), timeout=5):
@@ -76,16 +84,23 @@ class MemoryStore:
             "updated_at": datetime.now(UTC).isoformat(),
             "items": self._items,
         }
-        with FileLock(str(self._lock_path), timeout=5):
-            fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, str(self._path))
-            except Exception:
-                with contextlib.suppress(Exception):
-                    os.remove(tmp_path)
-                raise
+        try:
+            with FileLock(str(self._lock_path), timeout=5):
+                fd, tmp_path = tempfile.mkstemp(dir=str(self.data_dir), suffix=".json")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+                    os.replace(tmp_path, str(self._path))
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        os.remove(tmp_path)
+                    raise
+        except FileLockTimeout:
+            # El item YA está en self._items: la sesión en curso no pierde
+            # nada, solo no quedó en disco esta vez -- el próximo _save()
+            # que sí consiga el lock vuelve a escribir el estado completo.
+            logger.warning("No se pudo adquirir el lock de memory.json (contención); "
+                           "este cambio no se persistió a disco.")
 
     def add(self, text: str) -> dict | None:
         if len(self._items) >= MAX_MEMORIES:

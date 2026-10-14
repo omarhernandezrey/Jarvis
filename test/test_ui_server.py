@@ -99,6 +99,22 @@ def test_el_portapapeles_tiene_fallback_sin_contexto_seguro():
     assert "execCommand('copy')" in html
 
 
+def test_boton_de_voz_se_protege_contra_doble_clic_a_media_peticion():
+    """Bug real encontrado en revisión: nada impedía pulsar «HABLAR» otra
+    vez mientras `fetch(API + '/voice')` seguía en curso -- un segundo
+    clic apagaba `voiceActive` y reseteaba la UI a "listo" con la
+    petición original todavía en el aire; al resolver esa, volvía a tocar
+    la UI (y podía disparar processMessage) por encima de un estado que el
+    usuario ya creía cancelado. `voiceInFlight` es el mismo tipo de
+    guardia que `isProcessing` ya usa para el texto."""
+    html = _html()
+    assert "let voiceInFlight" in html
+    assert "if (voiceInFlight)" in html, \
+        "toggleVoice() no se niega a reentrar mientras la petición de voz está en curso"
+    assert "voiceInFlight = true" in html
+    assert "voiceInFlight = false" in html
+
+
 if __name__ == "__main__":
     test_server_import()
     test_server_has_main()

@@ -190,6 +190,13 @@ def execute_write_clipboard(texto: str) -> ActionPlan:
         plan.result = "La escritura del portapapeles está desactivada, senor."
         return plan
 
+    # `_leer()` devuelve None específicamente cuando la LECTURA en sí falló
+    # (backend caído/timeout) -- distinto de "" (portapapeles genuinamente
+    # vacío, lectura exitosa). Antes ambos casos se guardaban igual aquí y
+    # `restore_clipboard()` los colapsaba con `or ""`: si la lectura fallaba
+    # justo en este instante, el contenido real se perdía para siempre y
+    # «deshaz» sobrescribía con una cadena vacía reportando éxito, cuando en
+    # realidad nunca supo qué había antes.
     _PREVIO["texto"] = _leer()
     _PREVIO["hubo"] = True
     ok = _escribir(texto)
@@ -225,7 +232,17 @@ def restore_clipboard() -> ActionPlan:
         plan.status = ActionStatus.EXECUTED
         plan.result = "No he tocado tu portapapeles en esta sesión, senor; no hay nada que restaurar."
         return plan
-    previo = _PREVIO["texto"] or ""
+    if _PREVIO["texto"] is None:
+        # La lectura previa a escribir falló de verdad (backend caído en ese
+        # instante) -- no es que el portapapeles estuviera vacío, es que
+        # nunca se supo qué había. Restaurar con "" aquí sobrescribiría el
+        # contenido real (perdido ya) y mentiría diciendo que se restauró.
+        plan.status = ActionStatus.ERROR
+        plan.result = ("No pude leer qué tenías en el portapapeles antes de "
+                       "sobrescribirlo, senor, así que no sé qué restaurar con "
+                       "seguridad. No he tocado el portapapeles.")
+        return plan
+    previo = _PREVIO["texto"]
     ok = _escribir(previo)
     _v.wait_until(lambda: _leer() == previo, timeout=1.5, interval=0.2)
     leido = _leer()
