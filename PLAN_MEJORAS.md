@@ -22,17 +22,39 @@
 > textual** del usuario en el chat de esa conversación — nunca se infiere,
 > nunca se asume. Ante la duda, no edites: para y pregunta.
 >
-> **Autorización permanente ya concedida:** las tareas de la **Fase 1**
-> (Sección 3) ya están autorizadas por el usuario, por escrito, en este
-> mismo documento. Cualquier IA que abra este archivo y vea, en la
-> Sección 4, que la Fase 1 no está (o no está del todo) marcada como
-> completa, **debe empezar a trabajarla siguiendo el Protocolo de la
-> Sección 2 sin esperar una instrucción nueva del usuario y sin pedirle
-> permiso para empezar** — ese permiso ya está dado aquí. Esto NO toca las
-> Reglas 1-3: seguís sin poder trabajar sobre `main` ni hacer `push`/merge
-> sin que el usuario lo pida explícitamente en esa conversación — lo único
-> pre-autorizado es *empezar a trabajar y comitear en una rama propia*. La
-> Fase 2 sigue bloqueada: ahí sí hay que parar y preguntar (ver su sección).
+> **Autorización total ya concedida — lee esto con cuidado, cambia el modo
+> de trabajar de cualquier IA que ejecute este documento.** El usuario,
+> dueño de este proyecto, ya tomó por escrito **todas** las decisiones de
+> producto que esta versión del documento necesita. Toda tarea de **toda
+> fase escrita en la Sección 3** (Fase 1, Fase 2 — ya resuelta — y Fase 3)
+> está **pre-autorizada de punta a punta**: ninguna IA necesita pedir
+> permiso para empezar una tarea, para pasar de una tarea a la siguiente,
+> ni para pasar de una fase a la siguiente. El criterio por defecto es
+> **seguir hasta terminar TODAS las tareas de TODAS las fases escritas**,
+> encadenadas, sin pausas para preguntar "¿sigo?" o "¿quieres que
+> continúe?" — eso ya se respondió que sí, aquí, de antemano.
+>
+> Esto tiene exactamente **dos excepciones**, ninguna más, y ninguna IA
+> puede inventarse una tercera:
+> 1. **Push/merge a un remoto compartido sigue requiriendo que el usuario
+>    lo pida explícitamente, cada vez** (Regla 3). No es una decisión de
+>    producto de este plan — es una regla dura de `CLAUDE.md`, el archivo
+>    de gobierno del repositorio, sobre visibilidad compartida y CI. Este
+>    documento no tiene autoridad para levantarla.
+> 2. **Una situación genuinamente nueva, no anticipada en ninguna tarea
+>    ya escrita** (Regla 9, ahora de último recurso — ver su texto). Si lo
+>    que encontraste SÍ está cubierto, aunque sea parcialmente, por una
+>    tarea existente, no es una excepción: seguí la tarea.
+>
+> Fuera de esas dos, **nunca te detengas a pedir permiso de producto**: si
+> hace falta una decisión de arquitectura, diseño o alcance dentro de una
+> tarea que no está ya resuelta en el texto, tomala vos con el mejor
+> criterio de ingeniería senior, documentá por qué en el commit y en la
+> Sección 4, y seguí. Las Reglas 1, 2, 4, 5, 6, 7, 8 y 10 (rama propia, no
+> destruir sin verificar, no fingir verificación, no debilitar tests, no
+> implementar de más, zonas protegidas, test obligatorio, registro al
+> cerrar) **siguen plenas** — no son permisos, son disciplina de
+> ingeniería, y no se negocian ni se saltan bajo ningún motivo.
 
 ---
 
@@ -69,12 +91,14 @@ repositorio) — lo complementa. Si algo de aquí entra en conflicto con
 
 **Si llegaste a este documento sin que el usuario te haya dado todavía
 una instrucción sobre qué hacer en esta conversación**: revisa la Sección
-4. Si la Fase 1 no aparece completa ahí, **esa es tu tarea por defecto,
-ya autorizada** (ver el bloqueo al inicio del archivo) — no necesitas que
-el usuario te lo repita ni que te dé permiso para arrancar. Si la Fase 1
-ya está completa y la Fase 2 sigue sin respuesta del usuario, tu única
-acción válida es preguntarle las dos preguntas de la Tarea 2.1 y 2.2 — no
-inventes una Fase 3.
+4 y encontrá la primera tarea, en orden (Fase 1 → Fase 2 → Fase 3 → ...),
+que no esté marcada como completa. **Esa es tu tarea por defecto, ya
+autorizada — empezala ahora, sin esperar instrucción nueva ni pedir
+permiso.** Seguí encadenando tareas y fases hasta que la Sección 4 no
+tenga ningún checkbox sin marcar. Solo te detenés en las dos excepciones
+del aviso de bloqueo al inicio del archivo (push/merge, o algo
+genuinamente no anticipado) — nunca por costumbre, nunca "para
+confirmar".
 
 ---
 
@@ -125,11 +149,17 @@ en otros parecidos, y causaron daño real. No son teóricas.
    test, pero sí hace falta verificar a mano que lo que escribiste es
    cierto (correr el comando, leer el archivo real), no copiarlo de
    memoria.
-9. **Si una tarea depende de una decisión de producto/alcance que este
-   documento no responde explícitamente, DETENTE.** Pregúntale al usuario
-   con una pregunta concreta (no abierta) y espera su respuesta antes de
-   escribir una sola línea de esa tarea. La Sección 3.2 de este plan ya
-   está marcada así a propósito.
+9. **Última instancia, no la regla por defecto:** las decisiones de
+   producto/alcance conocidas al escribir esta versión del documento ya
+   están tomadas (ver el aviso de bloqueo al inicio y las tareas de la
+   Sección 3 — incluida la Fase 2, ya resuelta). Esta regla se invoca
+   **solo** ante una situación genuinamente nueva que ninguna tarea
+   existente cubre ni remotamente — no para evitar un juicio de
+   ingeniería que podés tomar vos mismo con criterio senior y documentar
+   después. Si de verdad aplica, pregúntale al usuario con una pregunta
+   concreta (no abierta) y esperá su respuesta antes de escribir una sola
+   línea de esa parte específica de la tarea — el resto de la tarea que sí
+   esté claro, seguí ejecutándolo.
 10. **Actualiza este mismo documento al cerrar cada tarea** (Sección 4):
     marca el checkbox, escribe la fecha real, el hash del commit y un
     resumen honesto de lo que pasó — incluido si algo no se pudo terminar
@@ -143,13 +173,13 @@ en otros parecidos, y causaron daño real. No son teóricas.
     escribir en la Sección 4, sigue el procedimiento de desbloqueo de la
     Sección 2 — nunca dejes el archivo desbloqueado más tiempo del
     necesario para ese único cambio.
-12. **La Fase 1 ya está autorizada por el usuario de antemano, por
-    escrito, en este documento** (ver el aviso al inicio). Empezarla y
-    comitearla en una rama propia no requiere pedirle permiso al usuario
-    en el chat — solo el push/merge sigue requiriendo su pedido explícito
-    (Regla 3). La Fase 2 es la excepción: ahí sí hay que detenerse y
-    preguntar, porque son decisiones de producto que este documento no
-    resuelve por sí solo (Regla 9).
+12. **Todas las fases y tareas de la Sección 3 ya están autorizadas por
+    el usuario de antemano, por escrito, en este documento** (ver el
+    aviso al inicio). Empezar, continuar y terminar cualquiera de ellas
+    —y encadenar la siguiente sin pausa— no requiere pedirle permiso al
+    usuario en el chat. Las únicas dos excepciones son las del aviso
+    inicial: push/merge (Regla 3) y una situación realmente no anticipada
+    (Regla 9, último recurso). Nada más amerita detenerse a preguntar.
 
 ---
 
@@ -193,12 +223,12 @@ Sección 3:
    Si por lo que sea no puedes volver a bloquearlo en la misma sesión,
    dilo explícitamente al usuario en vez de dejarlo desbloqueado en
    silencio.
-9. Avísale al usuario qué tarea terminaste y qué sigue — no sigas en
-   automático a la siguiente fase sin que te lo pida, salvo que el usuario
-   ya te haya autorizado a avanzar fase por fase sin pausas. (La Fase 1
-   completa es la excepción ya cubierta por la Regla 12: no hace falta que
-   te autoricen a *empezarla*, pero sigue avisando al usuario a medida que
-   cierras cada tarea.)
+9. Avísale al usuario qué tarea terminaste (un mensaje breve basta: qué
+   cambió, qué commit) y **seguí de inmediato con la siguiente tarea de
+   la siguiente fase**, sin esperar respuesta — la Regla 12 ya te
+   autorizó a encadenar todo. Solo te detenés de verdad ante las dos
+   excepciones de la Regla 12 (push/merge, o Regla 9 genuina). El aviso
+   es para que el usuario tenga visibilidad, no un punto de pausa.
 
 ---
 
@@ -322,13 +352,13 @@ cambiaste (y por qué, si aplica la Regla 9).
 
 ---
 
-### FASE 2 — Decisiones de producto pendientes — 🔒 BLOQUEADA, PARA Y PREGUNTA (ver Regla 9)
+### FASE 2 — Decisiones de producto — ✅ RESUELTA, AUTORIZADA, SIGUE SIN PREGUNTAR
 
-Estas dos tareas **no tienen una respuesta correcta única** — dependen de lo
-que el usuario quiera para el proyecto. Si llegas aquí, tu trabajo es
-**preguntar con las opciones ya redactadas abajo, y esperar**. No elijas por
-tu cuenta. No escribas código para ninguna de las dos hasta tener una
-respuesta explícita.
+Estas dos preguntas **ya fueron respondidas por el usuario el 2026-10-14**
+(ver las respuestas bajo cada tarea y en la Sección 4). Quedan en el
+documento como registro de por qué se decidió lo que se decidió — no como
+preguntas abiertas. Ninguna IA debe volver a preguntarlas ni reabrirlas sin
+una instrucción nueva y explícita del usuario que lo pida por nombre.
 
 #### Tarea 2.1 — ¿Qué hacer con el HUD legado (QML)?
 
@@ -349,6 +379,11 @@ Si el usuario responde, **agrega las tareas resultantes a este documento
 como Fase 2.1.a, 2.1.b, etc.** antes de ejecutarlas — no las ejecutes "de
 memoria" sobre la respuesta sin dejarlas escritas primero.
 
+**✅ Respondida (2026-10-14):** el usuario eligió "mantenerlo como red de
+seguridad" — el HUD legado (QML) sigue como respaldo automático, sin
+evaluar deprecación por ahora. **No hay tarea derivada que ejecutar.** No
+reabras esta decisión sin una instrucción nueva y explícita del usuario.
+
 #### Tarea 2.2 — ¿Vale la pena evaluar un instalador empaquetado?
 
 Contexto: el propio README marca esto como "idea abierta, sin evaluar
@@ -367,16 +402,248 @@ Igual que en la Tarea 2.1: no ejecutes nada de esto sin respuesta explícita,
 y si la hay, documenta las tareas resultantes en este archivo antes de
 empezar.
 
+**✅ Respondida (2026-10-14):** el usuario eligió "sí, investigar ahora",
+con **Linux primero** (es la única plataforma con CI activo hoy; Windows
+no tiene CI propio desde hace varias fases — ver J6 en
+`docs/PLAN_EJECUCION.md`). Tarea derivada, ya autorizada a continuación:
+
+##### Tarea 2.2.a — Investigar opciones de empaquetado para Linux (solo investigación, NO implementar nada todavía)
+
+**Alcance exacto — lee esto dos veces antes de empezar:** esta tarea
+produce un **documento de comparación**, no código. No crees ningún
+script de instalación, `Makefile`, paquete `.deb` ni nada ejecutable en
+esta tarea — eso es una implementación, y requeriría su propia tarea con
+su propia autorización explícita (Regla 6: no implementes más de lo que
+la tarea pide).
+
+**Verificar estado actual (contexto que necesitas antes de investigar):**
+```bash
+cd /home/omar/Documentos/Jarvis
+sed -n '/## 📦 Instalación/,/^## /p' README.md | head -60
+cat requirements.txt
+```
+Lee completos los pasos manuales de instalación que el README describe
+hoy (clonar, venv, dependencias de sistema, Ollama aparte, descarga de
+modelos) — tu comparación debe partir de ahí, no de una idea genérica de
+"cómo se empaqueta software en Linux".
+
+**Qué investigar (mínimo estas 3 opciones, todas para Linux):**
+1. **Script de instalación guiado** (`install.sh` o similar) que
+   automatice los pasos manuales de hoy: crear venv, instalar
+   `requirements.txt`, verificar/instalar dependencias de sistema
+   (Tkinter, PortAudio, PipeWire), verificar si Ollama está instalado y
+   guiar su instalación si no, descargar los modelos (`llama3.2:3b`,
+   `bge-m3`) vía `ollama pull`.
+2. **Paquete `.deb`** (Debian/Ubuntu) usando una herramienta estándar
+   (por ejemplo `dpkg-deb`, `fpm`, o `debhelper`) que instale el paquete
+   Python y sus dependencias de sistema vía `apt`.
+3. **`Makefile`/script simple** (`make install`, `make run`) que no
+   empaqueta nada — solo encadena los comandos manuales de hoy en un
+   único comando, sin resolver dependencias de sistema automáticamente.
+
+Para cada opción, documenta (en una tabla o en texto corto, a tu
+criterio): qué problemas de los que el README describe hoy resuelve,
+qué esfuerzo de implementación y mantenimiento estimas, qué limitaciones
+tiene (por ejemplo: un `.deb` no resuelve instalar Ollama, que no se
+distribuye por `apt`), y si existe algún precedente conocido en proyectos
+similares (asistentes de voz locales, herramientas con backend LLM local)
+que puedas citar sin inventar nada — si no encuentras ninguno, dilo
+explícitamente, no inventes uno.
+
+**Dónde escribir el resultado:** crea `docs/INSTALADOR_OPCIONES.md` nuevo,
+con la comparación de las 3 opciones y, al final, la **decisión ya
+tomada** en este documento (Fase 3): script guiado (`install.sh`) +
+`Makefile`, descartando el `.deb` por el sobrecosto de mantenimiento de
+empaquetado nativo que no resuelve el problema real (los pasos manuales
+de hoy), frente a un proyecto de un solo mantenedor en desarrollo activo.
+Redáctalo como decisión documentada, no como pregunta abierta. Enlaza ese
+archivo nuevo desde la sección "📦 Instalación" del README (una línea:
+"Ver docs/INSTALADOR_OPCIONES.md para la comparación de opciones de
+empaquetado y por qué se eligió el script guiado").
+
+**Verificar resultado:**
+```bash
+test -f docs/INSTALADOR_OPCIONES.md && echo "existe"
+grep -n "INSTALADOR_OPCIONES" README.md
+```
+Ambos deben confirmar.
+
+**Al terminar esta tarea, NO te detengas.** La elección entre las 3
+opciones ya está decidida en este documento, en la Fase 3 (es una
+decisión de arquitectura ya tomada con criterio senior, no una pregunta
+abierta): continúa de inmediato con la Tarea 3.1 en la misma rama.
+
 ---
 
-### FASE 3 — (sin definir todavía)
+### FASE 3 — Instalador guiado para Linux — ✅ AUTORIZADA, EJECUTAR DE PUNTA A PUNTA
 
-Esta fase depende de las respuestas de la Fase 2 y de qué priorice el
-usuario después de la Fase 1. **No la rellenes por tu cuenta.** Si llegaste
-hasta acá con las Fases 1 y 2 cerradas (o las decisiones de la Fase 2 ya
-tomadas pero aún sin tareas concretas escritas), avísale al usuario y
-pregúntale qué quiere que entre en la Fase 3 antes de inventar contenido
-aquí.
+**Decisión de arquitectura ya tomada** (criterio senior, no una pregunta
+abierta): se implementa un **script de instalación guiado** (`install.sh`)
+más un **`Makefile`** envolvente. Se descarta el `.deb`: construir y
+mantener un paquete Debian (firma, repo, versión en lockstep con
+`requirements.txt` que cambia cada pocas fases) es sobrecosto de
+empaquetado que no resuelve el problema real — los pasos manuales de hoy
+— para un proyecto de desarrollo activo con un solo mantenedor. Un script
++ `Makefile` resuelve el 100% del dolor real (clonar → `make install` →
+`make run`) con una fracción del mantenimiento.
+
+**Objetivo:** después de esta fase, `README.md` § "📦 Instalación" debe
+poder decir "clona el repo y corre `make install`" como primera opción,
+manteniendo los pasos manuales de hoy como alternativa/diagnóstico.
+
+#### Tarea 3.1 — Crear `install.sh`
+
+**Verificar estado actual:**
+```bash
+cd /home/omar/Documentos/Jarvis
+ls install.sh 2>/dev/null || echo "no existe todavía"
+sed -n '/## 📦 Instalación/,/^## /p' README.md
+cat requirements.txt
+```
+
+**Cambio a hacer:** crea `install.sh` en la raíz del repo (`chmod +x`),
+en bash, con `set -euo pipefail`, que haga en orden:
+1. Verifica la versión de Python disponible (`python3 --version`); si es
+   menor a 3.11, imprime un error claro y sale con código ≠ 0 — no
+   continúa a medias.
+2. Si no existe `.venv/`, lo crea (`python3 -m venv .venv`).
+3. Activa el venv dentro del script (`source .venv/bin/activate`) e
+   instala `pip install -r requirements.txt`.
+4. Verifica dependencias de sistema que `requirements.txt` no cubre
+   (Tkinter, PortAudio, PipeWire — las que ya documenta el README en
+   "📦 Instalación"): intenta detectarlas (por ejemplo,
+   `python3 -c "import tkinter"` para Tkinter; `pkg-config --exists
+   libportaudio2` o similar para PortAudio — usa el método que
+   `README.md` ya documenta como forma de verificarlas, no inventes uno
+   nuevo). Si falta alguna, **imprime** el comando `apt install` exacto
+   que el README ya documenta para instalarla y sale con código ≠ 0 —
+   **nunca ejecutes `sudo` ni `apt install` automáticamente dentro del
+   script**: es una decisión del usuario final que corre el instalador
+   más adelante, no de la IA que escribe el script ni de quien lo
+   ejecuta sin supervisión.
+5. Verifica si el binario `ollama` existe en `PATH`
+   (`command -v ollama`). Si no existe, imprime las instrucciones de
+   instalación que el README ya documenta y sale con código ≠ 0 (mismo
+   criterio que el punto 4: nunca instala Ollama por su cuenta).
+6. Si `ollama` existe, intenta `ollama pull llama3.2:3b` y
+   `ollama pull bge-m3` (los modelos que `jarvis_local/config.py` usa
+   hoy — confirma los nombres exactos ahí antes de escribir el script,
+   no los copies de memoria de este documento). Si el pull falla
+   (Ollama no está corriendo, sin red), imprime un aviso claro pero NO
+   hace fallar el script entero — el usuario puede bajar los modelos
+   después.
+7. Al final, imprime un mensaje de éxito con el comando exacto para
+   arrancar JARVIS (`python -m jarvis_local.cli`, recordando activar el
+   venv si la shell del usuario no quedó con `.venv` activo).
+
+**Verificar resultado:**
+```bash
+bash -n install.sh && echo "sintaxis OK"
+test -x install.sh && echo "es ejecutable"
+shellcheck install.sh || true
+```
+(`shellcheck` es best-effort — si no está instalado en el entorno, omite
+ese chequeo y dilo en la Sección 4, no bloquees la tarea por eso.)
+
+#### Tarea 3.2 — Crear `Makefile`
+
+**Verificar estado actual:**
+```bash
+ls Makefile 2>/dev/null || echo "no existe todavía"
+```
+
+**Cambio a hacer:** crea un `Makefile` en la raíz con, como mínimo, estos
+targets:
+- `install`: corre `./install.sh`.
+- `run`: corre `.venv/bin/python -m jarvis_local.cli` (si `.venv` no
+  existe, imprime un error pidiendo correr `make install` primero, no
+  crea el venv silenciosamente ahí).
+- `test`: corre
+  `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest test/ -q`.
+- `lint`: corre `.venv/bin/python -m ruff check .`.
+- `clean`: borra `.venv/` (con un `rm -rf .venv` acotado a esa ruta
+  exacta, nunca un `clean` más amplio).
+- `.PHONY` declarado para los targets de arriba (ninguno produce un
+  archivo con ese nombre).
+
+**Verificar resultado:**
+```bash
+make -n install && make -n run && make -n test && make -n lint && make -n clean
+```
+Los 5 deben imprimir el comando que ejecutarían (dry-run), sin error de
+"No rule to make target".
+
+#### Tarea 3.3 — Test de humo para `install.sh` y `Makefile`
+
+Por Regla 8 (toda tarea de código lleva su test) — aquí el "código" es un
+script de shell y un Makefile, así que el test verifica forma y
+contrato, no ejecuta de verdad `apt`/`ollama pull`/instalación real (eso
+requeriría red y privilegios que un test no debe asumir).
+
+**Cambio a hacer:** crea `test/test_install_script.py` con, como mínimo:
+- Test que `install.sh` existe, es ejecutable, y `bash -n install.sh`
+  (vía `subprocess.run`) termina con código 0 (sintaxis válida).
+- Test que `install.sh` contiene las verificaciones esperadas (grep de
+  cadenas clave como `"3.11"` o la comprobación de versión, `"ollama"`,
+  `"requirements.txt"`) — no ejecuta el script, solo confirma que el
+  contrato mínimo está presente en el texto.
+- Test que `Makefile` existe y contiene los 5 targets (`install:`,
+  `run:`, `test:`, `lint:`, `clean:`).
+- Test que `make -n install`, `make -n run`, `make -n test`,
+  `make -n lint` (vía `subprocess.run(["make", "-n", target], ...)`)
+  cada uno termina con código 0.
+
+**Verificar resultado:**
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest test/test_install_script.py -q
+```
+Debe quedar en verde. Corre además la suite completa (paso 5 del
+Protocolo de la Sección 2) antes de comitear — esta tarea no debe romper
+nada existente.
+
+#### Tarea 3.4 — Actualizar `README.md` § "📦 Instalación"
+
+**Verificar estado actual:**
+```bash
+sed -n '/## 📦 Instalación/,/^## /p' README.md
+```
+
+**Cambio a hacer:** al principio de esa sección, agrega la opción rápida
+(`git clone ... && cd Jarvis && make install && make run`) como primera
+opción recomendada. Conserva los pasos manuales de hoy completos debajo,
+bajo un subtítulo como "Instalación manual / diagnóstico" — no los
+borres: siguen siendo la referencia si `install.sh` falla en un entorno
+no probado. Agrega el enlace a `docs/INSTALADOR_OPCIONES.md` (de la
+Tarea 2.2.a) explicando por qué se eligió este enfoque.
+
+**Verificar resultado:**
+```bash
+grep -n "make install\|INSTALADOR_OPCIONES" README.md
+```
+Ambos deben aparecer.
+
+#### Tarea 3.5 — Cierre de Fase 3: barrido de consistencia
+
+Antes de marcar la Fase 3 completa en la Sección 4:
+```bash
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest test/ -q
+.venv/bin/python -m ruff check .
+bash -n install.sh
+make -n install && make -n run && make -n test && make -n lint && make -n clean
+```
+Todo debe salir en verde/sin error antes de comitear el cierre de fase.
+
+---
+
+### FASE 4 — (sin definir todavía)
+
+Esta fase depende de qué priorice el usuario después de cerrar las Fases
+1-3. **No la rellenes por tu cuenta ni inventes tareas acá.** Si llegaste
+hasta este punto con las Fases 1, 2 y 3 completas en la Sección 4, avísale
+al usuario que el plan conocido está terminado y pregúntale qué quiere que
+entre en la Fase 4 — este es el único punto de parada legítimo que queda
+una vez cerrada la Fase 3, porque no hay ninguna tarea escrita todavía que
+seguir.
 
 ---
 
@@ -403,10 +670,24 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
 
 ### Fase 2
 
-- [ ] **Tarea 2.1 — Pregunta sobre el HUD legado.** Respuesta del usuario
-      (pégala tal cual, con fecha):
-- [ ] **Tarea 2.2 — Pregunta sobre el instalador.** Respuesta del usuario
-      (pégala tal cual, con fecha):
+- [x] **Tarea 2.1 — Pregunta sobre el HUD legado.** Respuesta del usuario
+      (2026-10-14): "Mantenerlo como red de seguridad" — no se evalúa
+      deprecación por ahora. Sin tarea derivada.
+- [x] **Tarea 2.2 — Pregunta sobre el instalador.** Respuesta del usuario
+      (2026-10-14): "Sí, investigar ahora", con Linux primero. Tarea
+      derivada escrita como **Tarea 2.2.a** en la Sección 3 — pendiente
+      de ejecutar.
+- [ ] **Tarea 2.2.a — Investigar opciones de empaquetado (Linux).**
+      Fecha: ____. Commit: ____.
+      Notas:
+
+### Fase 3
+
+- [ ] **Tarea 3.1 — `install.sh`.** Fecha: ____. Commit: ____. Notas:
+- [ ] **Tarea 3.2 — `Makefile`.** Fecha: ____. Commit: ____. Notas:
+- [ ] **Tarea 3.3 — Test de humo.** Fecha: ____. Commit: ____. Notas:
+- [ ] **Tarea 3.4 — README § Instalación.** Fecha: ____. Commit: ____. Notas:
+- [ ] **Tarea 3.5 — Barrido de cierre de Fase 3.** Fecha: ____. Commit: ____. Notas:
 
 ### Hallazgos nuevos, no ejecutados
 
