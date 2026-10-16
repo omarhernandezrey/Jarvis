@@ -949,7 +949,9 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
 
 ### Fase 5
 
-- [ ] **Tarea 5.1 — `CHANGELOG.md` al día.** Fecha: ____. Commit: ____. Notas:
+- [x] **Tarea 5.1 — `CHANGELOG.md` al día.**
+      Fecha: 2026-10-16. Commit: a5bf252.
+      Notas: hashes y fechas verificados con `git show -s --format` antes de escribir (2017ec3=2026-09-14, 2d61cb0=2026-09-25, 21ed8b0/b96db46/fa1e6c4=2026-10-13/14). Agregadas 4 versiones nuevas (9.0.0 endurecimiento, 9.1.0 HUD pro, 9.2.0 revisión de bugs con el conteo real de los títulos de los 3 PRs — 8+9+3=20 bugs, no el "17" que tenía la memoria de sesiones previas, corregido con la fuente real — y 10.0.0 instalador) entre `[Unreleased]` y `[8.1.0]`. `grep -n "^## \["` confirma orden descendente sin huecos.
 - [ ] **Tarea 5.2 — Scrapers de empleo verificados en vivo.** Fecha: ____. Commit: ____. Notas:
 
 ### Hallazgos nuevos, no ejecutados
