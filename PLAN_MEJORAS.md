@@ -841,9 +841,16 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
 
 ### Fase 4
 
-- [ ] **Tarea 4.1 — `install.ps1` (Windows).** Fecha: ____. Commit: ____. Notas:
-- [ ] **Tarea 4.2 — README § Instalación (Windows).** Fecha: ____. Commit: ____. Notas:
-- [ ] **Tarea 4.3 — README § Evolución (Fase 10).** Fecha: ____. Commit: ____. Notas:
+- [x] **Tarea 4.1 — `install.ps1` (Windows).**
+      Fecha: 2026-10-16. Commit: 1b60023 (+ f56195f para su test de humo).
+      Notas: ya existía un `install.ps1` viejo (commit 07be29e, agosto) que no validaba versión de Python numéricamente y bajaba el modelo equivocado (qwen2.5:3b en vez de llama3.2:3b). Se reescribió por analogía exacta con `install.sh`: valida Python >=3.11, crea `.venv`, instala `requirements.txt` con ruta explícita del venv, detecta Ollama solo con `Get-Command` (nunca lo instala), y descarga `llama3.2:3b` + `bge-m3` best-effort. **Límite documentado, no se oculta**: este entorno de desarrollo es Linux, sin máquina Windows ni `pwsh`/`powershell` disponibles — no se pudo ejecutar ni validar sintaxis real del script. El aviso queda escrito al inicio del propio `install.ps1` y repetido en el README (Tarea 4.2). Extendí además `test/test_install_script.py` (Regla 8) para blindar forma/contrato de `install.ps1` igual que `install.sh` — 14 tests, verdes.
+- [x] **Tarea 4.2 — README § Instalación (Windows).**
+      Fecha: 2026-10-16. Commit: 33cfffd.
+      Notas: agregada sección "Windows — instalación rápida" con `.\install.ps1`, con aviso visible (⚠️) de que no está probado en Windows real; pasos manuales conservados debajo como "Windows — instalación manual / diagnóstico". `grep` confirma ambas cadenas.
+- [x] **Tarea 4.3 — README § Evolución (Fase 10).**
+      Fecha: 2026-10-16. Commit: e6e8461.
+      Notas: agregada entrada "✅ Fase 10" después de Fase 9: HUD pro (PySide6) como HUD predeterminado desde el commit `2d61cb0` (2026-09-25, confirmado con `git log --diff-filter=A`) con el legado QML como respaldo, y la revisión de bugs 2026-10-13/14 (PRs #4, #6, #7, confirmados con `git log --merges`). `grep -n "Fase 10"` confirma.
+      Hallazgo NO corregido (fuera de alcance exacto de esta tarea, Regla 6): la línea "💡 Ideas evaluadas y descartadas" de esa misma sección todavía dice "Un instalador empaquetado sigue siendo una idea abierta, sin evaluar todavía" — desactualizado desde la Fase 2/3 de este mismo plan. Anotado abajo en "Hallazgos nuevos, no ejecutados".
 
 ### Hallazgos nuevos, no ejecutados
 
@@ -852,5 +859,6 @@ tarea — anótalas aquí, con el archivo/línea exacto, para que el usuario
 decida después si entran a una fase futura. No las ejecutes sin que te lo
 pidan — Regla 6.)
 
-- README.md § "🗺️ Evolución": termina en Fase 9, pero existieron trabajos posteriores reales (HUD pro por defecto en jarvis_local/ui/hud_select.py; revisión de bugs 2026-10-14). No se agregó entrada por Regla 9 (decisión de alcance, no simple error de dato). Decidir si extender Evolución para registrar Fase 10/bug review o dejarlo. Detectado en Tarea 1.4 (2026-10-14).
+- ~~README.md § "🗺️ Evolución": termina en Fase 9...~~ **RESUELTO en Tarea 4.3 (2026-10-16, commit e6e8461)**: se agregó la entrada "Fase 10" con HUD pro y revisión de bugs. Detectado originalmente en Tarea 1.4 (2026-10-14).
+- README.md § "🗺️ Evolución", línea "💡 Ideas evaluadas y descartadas": todavía dice "Un instalador empaquetado sigue siendo una idea abierta, sin evaluar todavía" — desactualizado desde que la Fase 2 (Tarea 2.2) y la Fase 3 de este mismo plan evaluaron e implementaron el instalador guiado (`install.sh`/`install.ps1` + `Makefile`). No se corrigió en la Tarea 4.3 porque esa tarea pedía exactamente agregar la entrada de Fase 10, no tocar esta otra línea (Regla 6). Detectado en Tarea 4.3 (2026-10-16).
 -
