@@ -170,6 +170,22 @@ Ver [docs/INSTALADOR_OPCIONES.md](docs/INSTALADOR_OPCIONES.md) para la comparaci
 
 **Requisitos**: Windows 10/11 o Linux (probado en Ubuntu/GNOME) · Python 3.11+ · [Ollama](https://ollama.com/download) · micrófono (opcional)
 
+### Linux — instalación rápida (recomendada)
+
+```bash
+git clone https://github.com/omarhernandezrey/Jarvis.git
+cd Jarvis
+make install
+make run
+```
+
+`make install` corre `install.sh`, que valida la versión de Python, crea el
+entorno virtual, instala `requirements.txt`, detecta las dependencias de
+sistema y Ollama (sin instalarlos por su cuenta — si falta algo, imprime el
+comando exacto para instalarlo) y descarga los modelos. Ver
+[docs/INSTALADOR_OPCIONES.md](docs/INSTALADOR_OPCIONES.md) para por qué se
+eligió este enfoque frente a un paquete `.deb`.
+
 ### Windows
 
 ```powershell
@@ -190,7 +206,10 @@ $env:PYTHONIOENCODING = "utf-8"
 python -m jarvis_local.cli
 ```
 
-### Linux (Ubuntu/Debian)
+### Linux (Ubuntu/Debian) — instalación manual / diagnóstico
+
+Usa estos pasos si `make install` falla en tu entorno, o si quieres entender
+qué hace cada paso por separado.
 
 ```bash
 # 1. Paquetes del sistema: portapapeles, multimedia, microfono, interfaz de
