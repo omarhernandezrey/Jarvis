@@ -887,6 +887,11 @@ Fase 6 si el usuario quiere seguir en la misma línea de mantenimiento.
 Rellena esta sección al cerrar cada tarea, con datos reales — no un resumen
 optimista. Si algo quedó a medias, dilo aquí tal cual.
 
+> **Fases 1-5 mergeadas a `main`: 2026-10-16, merge `f54d808`** (commit
+> `3e58174` de la rama `docs/plan-mejoras-fase-1`, CI verde en Tests
+> (Linux, Python 3.11/3.12/3.13) antes del merge — a pedido explícito del
+> usuario). Rama de trabajo borrada tras el merge.
+
 ### Fase 1
 
 - [x] **Tarea 1.1 — Conteo real de tests.**
