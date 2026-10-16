@@ -186,7 +186,21 @@ comando exacto para instalarlo) y descarga los modelos. Ver
 [docs/INSTALADOR_OPCIONES.md](docs/INSTALADOR_OPCIONES.md) para por qué se
 eligió este enfoque frente a un paquete `.deb`.
 
-### Windows
+### Windows — instalación rápida
+
+```powershell
+git clone https://github.com/omarhernandezrey/Jarvis.git
+cd Jarvis
+.\install.ps1
+```
+
+> ⚠️ **`install.ps1` no se ha probado todavía en una máquina Windows
+> real** (se escribió por analogía con `install.sh`, ya probado en Linux,
+> sin acceso a Windows durante su creación — ver el aviso al inicio del
+> propio script). Hasta que alguien lo confirme en uso real, los pasos
+> manuales de abajo son la vía verificada.
+
+### Windows — instalación manual / diagnóstico
 
 ```powershell
 # 1. Clonar (la carpeta puede llamarse como quieras)
