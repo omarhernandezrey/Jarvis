@@ -5,7 +5,7 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 [![Tests](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml/badge.svg)](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-1362%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1813%20passing-brightgreen)
 ![Offline](https://img.shields.io/badge/LLM-100%25%20local-orange)
 ![OS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux-informational)
 
@@ -18,6 +18,7 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 > [`PLAN_MAESTRO.md`](PLAN_MAESTRO.md) (26/26, eficacia funcional) y
 > [`docs/PLAN_EJECUCION.md`](docs/PLAN_EJECUCION.md) (A→J, VERIFY/auditoría,
 > control de máquina, HUD, endurecimiento). Ninguno tiene tareas pendientes.
+> Plan activo ahora: [`PLAN_MEJORAS.md`](PLAN_MEJORAS.md) (Fase 1 — documentación al día en curso).
 > La sección **J6 — Cierre** de `PLAN_EJECUCION.md` es la evaluación honesta
 > más reciente del proyecto: qué sigue frágil, qué deuda queda abierta y qué
 > seguiría a continuación.
@@ -165,9 +166,41 @@ Un agente que puede ejecutar acciones en tu PC necesita límites reales, no buen
 
 ## 📦 Instalación
 
+Ver [docs/INSTALADOR_OPCIONES.md](docs/INSTALADOR_OPCIONES.md) para la comparación de opciones de empaquetado y por qué se eligió el script guiado.
+
 **Requisitos**: Windows 10/11 o Linux (probado en Ubuntu/GNOME) · Python 3.11+ · [Ollama](https://ollama.com/download) · micrófono (opcional)
 
-### Windows
+### Linux — instalación rápida (recomendada)
+
+```bash
+git clone https://github.com/omarhernandezrey/Jarvis.git
+cd Jarvis
+make install
+make run
+```
+
+`make install` corre `install.sh`, que valida la versión de Python, crea el
+entorno virtual, instala `requirements.txt`, detecta las dependencias de
+sistema y Ollama (sin instalarlos por su cuenta — si falta algo, imprime el
+comando exacto para instalarlo) y descarga los modelos. Ver
+[docs/INSTALADOR_OPCIONES.md](docs/INSTALADOR_OPCIONES.md) para por qué se
+eligió este enfoque frente a un paquete `.deb`.
+
+### Windows — instalación rápida
+
+```powershell
+git clone https://github.com/omarhernandezrey/Jarvis.git
+cd Jarvis
+.\install.ps1
+```
+
+> ⚠️ **`install.ps1` no se ha probado todavía en una máquina Windows
+> real** (se escribió por analogía con `install.sh`, ya probado en Linux,
+> sin acceso a Windows durante su creación — ver el aviso al inicio del
+> propio script). Hasta que alguien lo confirme en uso real, los pasos
+> manuales de abajo son la vía verificada.
+
+### Windows — instalación manual / diagnóstico
 
 ```powershell
 # 1. Clonar (la carpeta puede llamarse como quieras)
@@ -187,7 +220,10 @@ $env:PYTHONIOENCODING = "utf-8"
 python -m jarvis_local.cli
 ```
 
-### Linux (Ubuntu/Debian)
+### Linux (Ubuntu/Debian) — instalación manual / diagnóstico
+
+Usa estos pasos si `make install` falla en tu entorno, o si quieres entender
+qué hace cada paso por separado.
 
 ```bash
 # 1. Paquetes del sistema: portapapeles, multimedia, microfono, interfaz de
@@ -258,6 +294,7 @@ y su coste de memoria, en [`docs/LANZADOR_ESCRITORIO.md`](docs/LANZADOR_ESCRITOR
 
 ```
 Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, data/, logs/)
+├── hud_pro/                HUD de escritorio por defecto (PySide6/QtWidgets); si "hud_pro" falla al importarse o al crear su ventana, se usa jarvis_local/ui/hud/ (HUD legado, QML) como respaldo automáticamente (ver jarvis_local/ui/hud_select.py)
 ├── jarvis_local/            El paquete Python
 │   ├── cli.py               Punto de entrada
 │   ├── jarvis.py            Orquestador: la cascada de 4 capas
@@ -272,14 +309,14 @@ Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, dat
 │   ├── voice/               STT · TTS · wake word · streaming
 │   ├── storage/             Historial, memorias y 🆕 índice semántico
 │   ├── memory_context/      Memorias activas y 🆕 recuerdo automático
-│   └── ui/                  Interfaz web y de escritorio
-└── test/                    772 tests
+│   └── ui/                  Interfaz web + HUD legado (QML), usado como respaldo si hud_pro falla al importarse
+└── test/                    1813 tests
 ```
 
 ## 🧪 Tests y calidad
 
 ```bash
-python -m pytest test -q            # 772 tests (Windows y Linux)
+python -m pytest test -q            # 1813 tests (Windows y Linux)
 python -m pytest -m live            # 9 tests que pegan a APIs reales (nocturno en CI)
 ruff check .                        # lint
 python -m jarvis_local.cli doctor   # diagnóstico del entorno (Ollama, red, credenciales, micro)
@@ -310,6 +347,7 @@ Los tests que tocan una API exclusiva de un SO (`ctypes.windll` en Windows, `log
 - ✅ **Fase 7**: **Soporte Linux** (Ubuntu/GNOME): terminal, energía, volumen, portapapeles y apps con su API nativa; degradado explícito de la gestión de ventanas en Wayland
 - ✅ **Fase 8 — eficacia** ([`PLAN_MAESTRO.md`](PLAN_MAESTRO.md)): auditoría funcionalidad por funcionalidad y arreglo con test que lo blinde. Fases A–D: huecos del parser (clima, notas, cálculo, ubicaciones), re-autorización accionable de Calendar/Spotify, apps que no se abren dos veces, instrumentación y poda de la latencia del agente, `jarvis doctor`, tests `live` + nocturno, prueba de voz e2e
 - ✅ **Fase 9 — endurecimiento** ([`docs/PLAN_EJECUCION.md`](docs/PLAN_EJECUCION.md), A→J): VERIFY post-acción + auditoría append-only + salida estructurada (D), control de máquina — procesos/systemd/notificaciones (E), ventanas Wayland/brillo/red/Bluetooth (F), portapapeles (G), poda de código muerto — **visión y proactividad evaluadas y descartadas**, no integradas (H, ver más abajo), rediseño e iluminación del HUD (I), y endurecimiento final: banco de pruebas ampliado, rutas de error revisadas, traza por petición consultable, techos de recursos y timeouts, tests deterministas (J)
+- ✅ **Fase 10**: HUD pro (PySide6/QtWidgets) integrado como interfaz de escritorio predeterminada (commit `2d61cb0`, 2026-09-25), con el HUD legado (QML) como respaldo automático si `hud_pro` falla al importarse; revisión completa de bugs de alta/media/baja severidad en todo `jarvis_local/` (PRs #4, #6, #7, 2026-10-13/14)
 - 💡 **Ideas evaluadas y descartadas** (no en el roadmap, por límites reales de esta máquina/escritorio — detalle en `docs/PLAN_EJECUCION.md` FASE H y sección J6): **visión** (OCR funciona en 0,6 s, pero la captura de pantalla automática y sin diálogos no es viable en GNOME+Wayland sin un compositor con `wlr-screencopy` o consentimiento interactivo en cada llamada) y **proactividad en segundo plano** (cualquier regla que consultara el LLM sin que el usuario preguntara violaba el requisito de "consumo en reposo indistinguible de cero"). Un **instalador** empaquetado sigue siendo una idea abierta, sin evaluar todavía.
 
 ## 📄 Licencia
