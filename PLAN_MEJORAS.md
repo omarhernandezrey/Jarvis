@@ -776,14 +776,109 @@ grep -n "Fase 10" README.md
 
 ---
 
-### FASE 5 — (sin definir todavía)
+### FASE 5 — Mantenimiento: CHANGELOG y scrapers de empleo — ✅ AUTORIZADA POR EL USUARIO (2026-10-16), EJECUTAR DE PUNTA A PUNTA
 
-Esta fase depende de qué priorice el usuario después de cerrar la Fase 4.
+**Origen:** a pedido del usuario ("busca cómo podemos mejorar más la
+app"), se investigó el repo (deuda J6 de `docs/PLAN_EJECUCION.md`, TODOs
+reales, cobertura de tests, dependencias desactualizadas) y se propusieron
+4 oportunidades con impacto estimado. El usuario respondió explícitamente,
+en el chat (2026-10-16): "soluciona todas prioridad nivel alto" — las dos
+de impacto alto quedan autorizadas de punta a punta como esta fase. Las de
+impacto medio/bajo (actualizar ~20 dependencias desactualizadas; agregar
+`pip-audit` a CI) **no están autorizadas** — no se ejecutan sin que el
+usuario las pida explícitamente.
+
+#### Tarea 5.1 — `CHANGELOG.md` desactualizado desde v8.1.0 (2026-09-22)
+
+**Contexto:** el archivo no registraba nada de: Fase 9 — endurecimiento
+(`docs/PLAN_EJECUCION.md`, A→J, mergeado `2017ec3` el 2026-09-14), el HUD
+pro como predeterminado (commit `2d61cb0`, 2026-09-25), la revisión de
+bugs de severidad alta/media/baja (PRs #4, #6, #7, 2026-10-13/14) ni el
+instalador guiado de las Fases 1-4 de este mismo documento.
+
+**Verificar estado actual:**
+```bash
+cd /home/omar/Documentos/Jarvis
+cat CHANGELOG.md
+git show -s --format="%H %ad %s" 2017ec3 2d61cb0 21ed8b0 b96db46 fa1e6c4
+```
+Confirma hashes y fechas reales antes de escribir — no los copies de este
+documento sin re-verificar, pueden cambiar si la historia de git se
+reescribe (no debería, pero confirmá).
+
+**Cambio a hacer:** agrega entradas nuevas entre `[Unreleased]` y
+`[8.1.0]`, siguiendo el estilo Keep a Changelog ya usado en el archivo
+(Added/Changed/Fixed/Removed, un número de versión semántico por release),
+cubriendo en orden cronológico inverso: el instalador guiado (Fases 1-4 de
+este plan), la revisión de bugs (PRs #4/#6/#7, con el conteo real de bugs
+de los títulos de los PRs, no un número de memoria), el HUD pro como
+predeterminado, y la Fase 9 de endurecimiento (resumen de alto nivel,
+citando `docs/PLAN_EJECUCION.md` en vez de reescribir sus 1800 líneas).
+
+**Verificar resultado:**
+```bash
+grep -n "^## \[" CHANGELOG.md
+```
+Confirma que los números de versión quedan en orden descendente y que no
+hay un hueco de fechas obviamente falso.
+
+#### Tarea 5.2 — Verificar en vivo si los scrapers de empleo siguen funcionando
+
+**Contexto:** `jarvis_local/tools/jobs.py` (Selenium contra Computrabajo,
+LinkedIn, El Empleo) no se tocó desde agosto; los tests que lo cubren se
+saltan en CI por necesitar red/navegador real, así que un cambio de
+layout en cualquiera de los 3 portales rompería la función en silencio,
+sin que ningún pipeline lo detecte.
+
+**Verificar estado actual:**
+```bash
+cd /home/omar/Documentos/Jarvis
+cat jarvis_local/tools/jobs.py | head -40
+grep -rn "live\|@pytest.mark.live" test/test_live_integracion.py | grep -i "job\|empleo\|computrabajo\|linkedin"
+```
+
+**Cambio a hacer — esto es una verificación, no necesariamente una
+implementación:**
+1. Corre los tests `live` de empleo contra los portales reales (requieren
+   red real y navegador — confirmar que el entorno lo permite):
+   ```bash
+   QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest test/test_live_integracion.py -m live -k "job or empleo or computrabajo or linkedin" -v
+   ```
+2. **Si pasan de verdad** (resultados reales de los 3 portales, no un
+   mock): documenta en la Sección 4 que se confirmó funcionando en vivo
+   en esta fecha, con la salida real pegada. No hace falta tocar código.
+3. **Si alguno falla** (selector roto, cambio de layout, bloqueo
+   anti-bot): arregla la causa raíz en `jobs.py` para ese portal
+   específico, con su test actualizado si el test mismo quedó
+   desactualizado — no debilites el test para que "pase" (Regla 5). Si
+   el bloqueo es anti-bot/CAPTCHA y no hay arreglo razonable sin
+   credenciales o infraestructura que no existe en este entorno,
+   documenta el límite exacto (qué portal, qué error exacto, por qué no
+   se puede arreglar aquí) en vez de fingir que se arregló — regla dura
+   de `CLAUDE.md`.
+4. Si la tarea toca código (paso 3), corre el protocolo completo de la
+   Sección 2 (suite + ruff) antes de comitear.
+
+**Verificar resultado:** la salida real de los tests `live` pegada en la
+Sección 4 — nunca un "debería funcionar" sin haberlo corrido de verdad.
+
+---
+
+### FASE 6 — (sin definir todavía)
+
+Esta fase depende de qué priorice el usuario después de cerrar la Fase 5.
 **No la rellenes por tu cuenta ni inventes tareas acá.** Si llegaste hasta
-este punto con las Fases 1-4 completas en la Sección 4, avísale al usuario
+este punto con las Fases 1-5 completas en la Sección 4, avísale al usuario
 que el plan conocido está terminado y pregúntale qué quiere que entre en
-la Fase 5 — este es el único punto de parada legítimo que queda una vez
-cerrada la Fase 4, porque no hay ninguna tarea escrita todavía que seguir.
+la Fase 6 — este es el único punto de parada legítimo que queda una vez
+cerrada la Fase 5, porque no hay ninguna tarea escrita todavía que seguir.
+
+Recordatorio de lo que quedó explícitamente NO autorizado en la Fase 5
+(impacto medio/bajo, detectado pero no ejecutado a pedido del usuario):
+actualizar ~20 dependencias de `requirements.txt` con versiones más
+nuevas disponibles (incluida `cryptography`); agregar `pip-audit` u
+otro escaneo de vulnerabilidades a CI. Candidatos naturales para una
+Fase 6 si el usuario quiere seguir en la misma línea de mantenimiento.
 
 ---
 
@@ -851,6 +946,11 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
       Fecha: 2026-10-16. Commit: e6e8461.
       Notas: agregada entrada "✅ Fase 10" después de Fase 9: HUD pro (PySide6) como HUD predeterminado desde el commit `2d61cb0` (2026-09-25, confirmado con `git log --diff-filter=A`) con el legado QML como respaldo, y la revisión de bugs 2026-10-13/14 (PRs #4, #6, #7, confirmados con `git log --merges`). `grep -n "Fase 10"` confirma.
       Hallazgo NO corregido (fuera de alcance exacto de esta tarea, Regla 6): la línea "💡 Ideas evaluadas y descartadas" de esa misma sección todavía dice "Un instalador empaquetado sigue siendo una idea abierta, sin evaluar todavía" — desactualizado desde la Fase 2/3 de este mismo plan. Anotado abajo en "Hallazgos nuevos, no ejecutados".
+
+### Fase 5
+
+- [ ] **Tarea 5.1 — `CHANGELOG.md` al día.** Fecha: ____. Commit: ____. Notas:
+- [ ] **Tarea 5.2 — Scrapers de empleo verificados en vivo.** Fecha: ____. Commit: ____. Notas:
 
 ### Hallazgos nuevos, no ejecutados
 
