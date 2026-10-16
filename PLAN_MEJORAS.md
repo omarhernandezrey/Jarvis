@@ -683,11 +683,21 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
 
 ### Fase 3
 
-- [ ] **Tarea 3.1 — `install.sh`.** Fecha: ____. Commit: ____. Notas:
-- [ ] **Tarea 3.2 — `Makefile`.** Fecha: ____. Commit: ____. Notas:
-- [ ] **Tarea 3.3 — Test de humo.** Fecha: ____. Commit: ____. Notas:
-- [ ] **Tarea 3.4 — README § Instalación.** Fecha: ____. Commit: ____. Notas:
-- [ ] **Tarea 3.5 — Barrido de cierre de Fase 3.** Fecha: ____. Commit: ____. Notas:
+- [x] **Tarea 3.1 — `install.sh`.**
+      Fecha: 2026-10-16. Commit: 3c6e6ce.
+      Notas: ya existía un `install.sh` viejo (commit 07be29e, agosto) que no cumplía el contrato nuevo — ejecutaba `sudo apt install` y `curl | sh` de Ollama automáticamente. Se reescribió por completo: valida Python >=3.11, crea `.venv`, instala `requirements.txt`, detecta Tkinter/PortAudio/PipeWire y Ollama solo con `command -v`/`pkg-config`/import (nunca instala nada de sistema), imprime el comando `apt install` exacto y sale con error si falta algo, y descarga `llama3.2:3b` + `bge-m3` (confirmados en `jarvis_local/config.py` y `jarvis_local/storage/semantic.py`) como paso best-effort. `bash -n install.sh` y permiso ejecutable verificados.
+- [x] **Tarea 3.2 — `Makefile`.**
+      Fecha: 2026-10-16. Commit: faca0a5.
+      Notas: targets `install`, `run`, `test`, `lint`, `clean` con `.PHONY`. `run` falla con mensaje claro si `.venv` no existe (no lo crea). `make -n` en los 5 targets confirmado sin error.
+- [x] **Tarea 3.3 — Test de humo.**
+      Fecha: 2026-10-16. Commit: 63cfe66.
+      Notas: `test/test_install_script.py` verifica existencia/permiso ejecutable, sintaxis (`bash -n` vía subprocess), presencia de las verificaciones clave (3.11, ollama, requirements.txt), que ninguna línea de código (fuera de echo/printf) ejecute `sudo`/`apt` directamente, los 5 targets del Makefile presentes, y `make -n` en los 4 targets ejecutables. `pytest test/test_install_script.py -q`: 9 passed.
+- [x] **Tarea 3.4 — README § Instalación.**
+      Fecha: 2026-10-16. Commit: f8ef212.
+      Notas: agregada sección "Linux — instalación rápida (recomendada)" con `make install && make run` antes de "### Windows"; pasos manuales de Linux conservados completos bajo "Linux (Ubuntu/Debian) — instalación manual / diagnóstico"; enlace a `docs/INSTALADOR_OPCIONES.md` agregado explicando la elección. `grep` confirma ambas cadenas.
+- [x] **Tarea 3.5 — Barrido de cierre de Fase 3.**
+      Fecha: 2026-10-16. Commit: (este commit de cierre de Sección 4).
+      Notas: suite completa (`pytest test/ -q`) sin FAILED; `ruff check .` → "All checks passed!"; `bash -n install.sh` → OK; `make -n` en los 5 targets sin error. Todo verificado en la misma sesión, salida real pegada arriba en cada tarea.
 
 ### Hallazgos nuevos, no ejecutados
 
