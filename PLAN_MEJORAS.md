@@ -635,15 +635,155 @@ Todo debe salir en verde/sin error antes de comitear el cierre de fase.
 
 ---
 
-### FASE 4 — (sin definir todavía)
+### FASE 4 — Instalador Windows + README al día — ✅ AUTORIZADA POR EL USUARIO (2026-10-16), EJECUTAR DE PUNTA A PUNTA
 
-Esta fase depende de qué priorice el usuario después de cerrar las Fases
-1-3. **No la rellenes por tu cuenta ni inventes tareas acá.** Si llegaste
-hasta este punto con las Fases 1, 2 y 3 completas en la Sección 4, avísale
-al usuario que el plan conocido está terminado y pregúntale qué quiere que
-entre en la Fase 4 — este es el único punto de parada legítimo que queda
-una vez cerrada la Fase 3, porque no hay ninguna tarea escrita todavía que
-seguir.
+**Origen:** el usuario eligió explícitamente estos dos temas para la Fase 4,
+en el chat, el 2026-10-16, respondiendo a una pregunta directa (dos
+opciones del menú, ambas marcadas): "Instalador para Windows" y
+"Actualizar 'Evolución' del README". Quedan autorizadas de punta a punta
+igual que las fases anteriores (Regla 12) — no hace falta volver a
+preguntar para empezar, continuar o encadenar estas dos tareas.
+
+#### Tarea 4.1 — Script de instalación guiado para Windows (`install.ps1`)
+
+**Contexto importante, léelo antes de escribir una línea:** este entorno
+de desarrollo es Linux — **no hay máquina Windows disponible para probar
+el script de verdad**, y no hay `pwsh`/`powershell` instalado aquí para
+siquiera validar sintaxis. El CI de Windows de este repo fue **eliminado**
+(no arreglado) en el pasado por indiagnosticable sin logs ni máquina — ver
+`docs/PLAN_EJECUCION.md` sección J6. Esta tarea tiene la misma limitación
+de fondo: se puede escribir el script con cuidado, a partir de los pasos
+manuales ya documentados en `README.md` § "📦 Instalación" → "### Windows",
+pero **no se puede verificar que corra de verdad en Windows real**. Eso no
+es motivo para no hacerla (Regla de `CLAUDE.md`: "si algo no se puede
+arreglar del todo... documenta el límite exacto y deja un error
+accionable. Nunca finjas que funciona ni inventes un resultado") — se hace
+la tarea completa, y se documenta el límite exacto en la Sección 4 y en un
+comentario al inicio del propio script, en vez de fingir una verificación
+que no ocurrió.
+
+**Verificar estado actual:**
+```bash
+cd /home/omar/Documentos/Jarvis
+ls install.ps1 2>/dev/null || echo "no existe todavía"
+sed -n '/### Windows/,/### Linux/p' README.md
+which pwsh powershell 2>/dev/null || echo "no hay intérprete de PowerShell en este entorno"
+```
+
+**Cambio a hacer:** crea `install.ps1` en la raíz del repo, en PowerShell,
+con el mismo contrato y espíritu que `install.sh` (Tarea 3.1) adaptado a
+Windows — mismo orden de pasos, mismas reglas duras:
+1. Verifica la versión de Python (`python --version` o `py --version`); si
+   es menor a 3.11, imprime un error claro y termina con código ≠ 0
+   (`exit 1`).
+2. Si no existe `.venv\`, lo crea (`python -m venv .venv`).
+3. Instala dependencias con el `pip` del venv
+   (`.venv\Scripts\pip.exe install -r requirements.txt`) — no asumas que
+   el venv quedó "activado" en la sesión de quien llama al script, usa la
+   ruta explícita como ya hace `install.sh` en Linux.
+4. Verifica si el comando `ollama` existe en `PATH`
+   (`Get-Command ollama -ErrorAction SilentlyContinue`). Si no existe,
+   imprime el enlace de descarga que el README ya documenta
+   (`https://ollama.com/download`) y termina con código ≠ 0. **Nunca
+   descarga ni instala Ollama por su cuenta** — mismo criterio que
+   `install.sh` (Regla de `install.sh`, punto 5 de la Tarea 3.1): es
+   decisión del usuario final.
+5. Si `ollama` existe, intenta `ollama pull llama3.2:3b` y
+   `ollama pull bge-m3` (mismos modelos que Linux, confirmados en
+   `jarvis_local/config.py` y `jarvis_local/storage/semantic.py` — no los
+   copies de memoria de este documento, confírmalos de nuevo si cambiaron
+   desde la Fase 3). Si el pull falla, imprime un aviso pero no aborta el
+   script.
+6. Al final, imprime el comando exacto para arrancar JARVIS
+   (`.venv\Scripts\python.exe -m jarvis_local.cli`), recordando que hay
+   que fijar `$env:PYTHONIOENCODING = "utf-8"` antes (ver el bloque
+   Windows actual del README).
+7. **Al principio del archivo**, como comentario, deja escrito tal cual:
+   que este script no se ha podido ejecutar ni probar en una máquina
+   Windows real durante su creación (sin máquina disponible en este
+   entorno de desarrollo), que se escribió por análogia exacta con
+   `install.sh` (ya probado en Linux) y a partir de los pasos manuales
+   documentados en el README, y que agradece un reporte de issue si falla
+   en un caso real.
+
+**Verificar resultado:**
+```bash
+test -f install.ps1 && echo "existe"
+grep -n "3.11\|ollama\|requirements.txt\|no se ha podido ejecutar" install.ps1
+```
+No hay comando de sintaxis real disponible en este entorno (no hay
+`pwsh`) — dilo explícitamente en la Sección 4 en vez de omitir el paso en
+silencio. Pide al usuario, si tiene acceso a una máquina Windows, que
+confirme que corre antes de considerar la tarea "probada en uso real" (no
+solo "escrita") — hasta entonces, el estado honesto es "escrito y
+razonado, no verificado en Windows real".
+
+#### Tarea 4.2 — README § "📦 Instalación": documentar `install.ps1`
+
+**Verificar estado actual:**
+```bash
+sed -n '/### Windows/,/### Linux/p' README.md
+```
+
+**Cambio a hacer:** en el bloque "### Windows" del README, agrega la
+opción rápida con `install.ps1` (análoga a `make install` en Linux —
+```powershell
+git clone https://github.com/omarhernandezrey/Jarvis.git
+cd Jarvis
+.\install.ps1
+```
+) antes de los pasos manuales actuales, que se conservan debajo como
+"instalación manual / diagnóstico" (mismo patrón que la Tarea 3.4 en
+Linux). Agrega una nota explícita y visible (no escondida en una sola
+palabra) de que `install.ps1` no se ha probado en una máquina Windows
+real todavía y que los pasos manuales son la vía confirmada mientras
+tanto.
+
+**Verificar resultado:**
+```bash
+grep -n "install.ps1\|no se ha probado" README.md
+```
+
+#### Tarea 4.3 — Actualizar "🗺️ Evolución" del README
+
+**Contexto:** la Tarea 1.4 (Fase 1) encontró que esta sección termina en
+"Fase 9" sin mencionar trabajo real posterior (el HUD pro como
+predeterminado, la revisión de bugs de 2026-10-14) y lo dejó anotado como
+hallazgo sin ejecutar (Regla 9 — decisión de alcance). El usuario ya
+decidió ahora, explícitamente, que esto se ejecute.
+
+**Verificar estado actual:**
+```bash
+sed -n '/## 🗺️ Evolución/,/## 📄 Licencia/p' README.md
+git log --oneline --diff-filter=A -- hud_pro/__init__.py | tail -3
+git log --oneline | grep -iE "severidad|revision-bugs" | head -5
+```
+
+**Cambio a hacer:** agrega una entrada nueva "✅ **Fase 10**" (después de
+la Fase 9 existente, antes de la línea "💡 Ideas evaluadas y
+descartadas") que mencione, en una o dos líneas: el HUD pro (PySide6)
+integrado como HUD de escritorio predeterminado (con el legado QML como
+respaldo automático — commit `2d61cb0`, 2026-09-25) y la revisión completa
+de bugs de 2026-10-13/14 (PRs #4, #6, #7 — alta/media/baja severidad,
+todos arreglados). Confirma las fechas y hashes reales con los comandos
+de arriba antes de escribirlos — no los copies de memoria de este
+documento ni de conversaciones previas sin re-verificar.
+
+**Verificar resultado:**
+```bash
+grep -n "Fase 10" README.md
+```
+
+---
+
+### FASE 5 — (sin definir todavía)
+
+Esta fase depende de qué priorice el usuario después de cerrar la Fase 4.
+**No la rellenes por tu cuenta ni inventes tareas acá.** Si llegaste hasta
+este punto con las Fases 1-4 completas en la Sección 4, avísale al usuario
+que el plan conocido está terminado y pregúntale qué quiere que entre en
+la Fase 5 — este es el único punto de parada legítimo que queda una vez
+cerrada la Fase 4, porque no hay ninguna tarea escrita todavía que seguir.
 
 ---
 
@@ -698,6 +838,12 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
 - [x] **Tarea 3.5 — Barrido de cierre de Fase 3.**
       Fecha: 2026-10-16. Commit: (este commit de cierre de Sección 4).
       Notas: suite completa (`pytest test/ -q`) sin FAILED; `ruff check .` → "All checks passed!"; `bash -n install.sh` → OK; `make -n` en los 5 targets sin error. Todo verificado en la misma sesión, salida real pegada arriba en cada tarea.
+
+### Fase 4
+
+- [ ] **Tarea 4.1 — `install.ps1` (Windows).** Fecha: ____. Commit: ____. Notas:
+- [ ] **Tarea 4.2 — README § Instalación (Windows).** Fecha: ____. Commit: ____. Notas:
+- [ ] **Tarea 4.3 — README § Evolución (Fase 10).** Fecha: ____. Commit: ____. Notas:
 
 ### Hallazgos nuevos, no ejecutados
 
