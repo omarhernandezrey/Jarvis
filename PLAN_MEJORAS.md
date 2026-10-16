@@ -677,9 +677,9 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
       (2026-10-14): "Sí, investigar ahora", con Linux primero. Tarea
       derivada escrita como **Tarea 2.2.a** en la Sección 3 — pendiente
       de ejecutar.
-- [ ] **Tarea 2.2.a — Investigar opciones de empaquetado (Linux).**
-      Fecha: ____. Commit: ____.
-      Notas:
+- [x] **Tarea 2.2.a — Investigar opciones de empaquetado (Linux).**
+      Fecha: 2026-10-14. Commit: d79e1ee.
+      Notas: creado `docs/INSTALADOR_OPCIONES.md` comparando las 3 opciones (script guiado, `.deb`, Makefile/script simple); decisión documentada: script guiado (`install.sh`) + `Makefile`, descartando `.deb` por sobrecosto de mantenimiento. Enlazado desde README.md:169. Verificado con `test -f` y `grep` según protocolo.
 
 ### Fase 3
 
