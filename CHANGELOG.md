@@ -36,6 +36,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - el 403 de `previous` ya no culpa a Premium — es el límite de Spotify
     para retroceder en los primeros segundos de la canción.
 
+## [10.0.0] - 2026-10-16
+
+Instalador guiado para Linux y Windows (`PLAN_MEJORAS.md`, Fases 1-4).
+
+### Added
+- `install.sh` + `Makefile` (Linux): script que valida Python 3.11+, crea
+  el entorno virtual, instala `requirements.txt`, detecta dependencias de
+  sistema (Tkinter/PortAudio/PipeWire) y Ollama sin instalarlos nunca por
+  su cuenta — si falta algo, imprime el comando exacto y sale con error.
+  `make install` / `run` / `test` / `lint` / `clean`.
+- `install.ps1` (Windows) reescrito con el mismo contrato que `install.sh`.
+  **No se pudo ejecutar ni validar en una máquina Windows real** (entorno
+  de desarrollo sin Windows/PowerShell disponible) — aviso explícito
+  dejado en el propio script y en el README hasta que alguien lo confirme
+  en uso real.
+- `docs/INSTALADOR_OPCIONES.md`: comparación de 3 opciones de empaquetado
+  para Linux (script guiado, `.deb`, `Makefile` simple) y por qué se
+  eligió script + Makefile.
+- `test/test_install_script.py`: test de humo de forma/contrato para
+  `install.sh`, `install.ps1` y `Makefile`.
+
+### Changed
+- `README.md` § Instalación: `make install && make run` (Linux) y
+  `.\install.ps1` (Windows) como opción rápida recomendada; los pasos
+  manuales existentes se conservan como instalación manual/diagnóstico.
+- `README.md` § Evolución: nueva entrada "Fase 10" (HUD pro + revisión de
+  bugs, ver 9.1.0 y 9.2.0 más abajo).
+
+## [9.2.0] - 2026-10-13 a 2026-10-14
+
+Revisión completa de bugs en todo `jarvis_local/` (PRs #4, #6, #7):
+20 bugs encontrados y arreglados (8 alta severidad, 9 media, 3 baja).
+
+### Fixed
+- Voz: un fallo al decodificar el MP3 dejaba a Jarvis mudo sin avisar;
+  `speak_stream` ya no traga en silencio un fallo de `speak_fn`.
+- Memoria semántica: nunca se sincronizaba en producción; `sync()` podía
+  dejar memoria y disco del índice inconsistentes entre sí.
+- HUD: el orbe rojo de error casi nunca se veía (sobrescrito al instante);
+  `MetricsService` ya no lee `self._vm.state` desde el hilo de muestreo.
+- WhatsApp: `send_whatsapp` fallaba siempre en Linux en vez de caer a
+  WhatsApp Web.
+- Cada turno resuelto por el parser se guardaba dos veces en el historial.
+- `safety`: la guardia de intocables para NetworkManager/ModemManager era
+  sensible a mayúsculas; `pending_plan` no se escribía bajo lock desde
+  todos los callers.
+- Spotify: pausa/siguiente/volumen/aleatorio/repetir/transferir/me-gusta
+  ahora verifican de verdad el resultado.
+- Apps/archivos: `close_app` no reclama éxito si el proceso sigue vivo;
+  `execute_delete_file` revalida la whitelist por sí misma; BORRAR sin
+  objeto ya no se expande a toda la carpeta permitida.
+- Web UI: el botón de voz se podía togglear dos veces a media petición.
+- `power`: el mensaje de apagado/reinicio decía los segundos pedidos, no
+  los reales.
+- Archivos ocultos: `attrib` fallido y "mostrar" tocaba dotfiles ajenos
+  sin pedirlo.
+- Portapapeles: «deshaz» podía sobrescribir con vacío si la lectura previa
+  había fallado.
+- `storage`: un `filelock.Timeout` sin capturar podía crashear un turno
+  completo.
+- `agent`: `decision_cache` recordaba solo la última herramienta de un
+  turno, no todas.
+
+## [9.1.0] - 2026-09-25
+
+HUD de escritorio "pro" integrado como interfaz predeterminada
+(commit `2d61cb0`), sin tocar el HUD legado.
+
+### Added
+- `hud_pro/` (PySide6/QtWidgets): nuevo HUD de escritorio, predeterminado
+  vía `JARVIS_HUD=pro` en `jarvis_local/ui/hud_select.py`.
+
+### Changed
+- El HUD legado (QML, `jarvis_local/ui/hud/`) pasa a ser el respaldo
+  automático: solo se usa si `hud_pro` falla al importarse.
+
+## [9.0.0] - 2026-09-14
+
+Fase 9 — endurecimiento (`docs/PLAN_EJECUCION.md`, fases A→J). Mergeado a
+`main` en `2017ec3`.
+
+### Added
+- VERIFY post-acción + auditoría append-only + salida estructurada (D).
+- Control de máquina: procesos, systemd, notificaciones (E).
+
+### Changed
+- CI: job real de Linux (Ubuntu, Python 3.11/3.12/3.13) con el protocolo
+  exacto de `CLAUDE.md`; el job de Windows, en rojo desde antes de este
+  trabajo y sin logs ni máquina para diagnosticarlo, se elimina en vez de
+  dejarlo fingiendo una señal que no existe (J5) — el código Windows queda
+  sin ningún control automático de regresión, solo verificación manual.
+- Ventanas (Wayland), brillo, red y Bluetooth (F); portapapeles (G);
+  rediseño e iluminación del HUD (I).
+- Endurecimiento final: banco de pruebas ampliado, rutas de error
+  revisadas, traza por petición consultable, techos de recursos y
+  timeouts, tests deterministas (J).
+
+### Removed
+- Poda de código muerto; visión (OCR/captura automática) y proactividad en
+  segundo plano evaluadas y **descartadas** con evidencia técnica (H) — no
+  llegaron a integrarse, no es una regresión.
+
+### Known issues (ver J6 — Cierre, `docs/PLAN_EJECUCION.md`)
+- El agente sigue siendo lento por hardware (CPU 2 núcleos sin GPU), no
+  por software.
+- Residuo verde del shader del satélite del orbe (`core.frag` ~línea 223),
+  cosmético, sin arreglar.
+- F4.3 (extensión de GNOME para ventanas) mergeada pero no instalada en la
+  sesión real de trabajo — decisión pendiente del usuario.
+- WiFi, Bluetooth y visión/OCR automático no verificables en este
+  hardware/escritorio — documentado, no fingido.
+
 ## [8.1.0] - 2026-09-22
 
 Spotify "Pro": de buscar-y-reproducir a control completo por Web API, a
