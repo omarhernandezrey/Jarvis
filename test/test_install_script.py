@@ -4,6 +4,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INSTALL_SH = REPO_ROOT / "install.sh"
+INSTALL_PS1 = REPO_ROOT / "install.ps1"
 MAKEFILE = REPO_ROOT / "Makefile"
 
 
@@ -46,6 +47,33 @@ def test_install_sh_never_runs_sudo_or_apt():
             continue
         assert not stripped.startswith("sudo"), f"ejecuta sudo directamente: {line!r}"
         assert not stripped.startswith("apt "), f"ejecuta apt directamente: {line!r}"
+
+
+def test_install_ps1_exists():
+    assert INSTALL_PS1.is_file()
+
+
+def test_install_ps1_checks_python_version():
+    content = INSTALL_PS1.read_text()
+    assert "3.11" in content
+
+
+def test_install_ps1_checks_ollama():
+    content = INSTALL_PS1.read_text()
+    assert "ollama" in content
+
+
+def test_install_ps1_installs_requirements():
+    content = INSTALL_PS1.read_text()
+    assert "requirements.txt" in content
+
+
+def test_install_ps1_documents_untested_on_real_windows():
+    # No hay maquina Windows ni interprete de PowerShell en este entorno de
+    # desarrollo para probar install.ps1 de verdad (ver Tarea 4.1 del plan):
+    # el script debe dejarlo dicho explicitamente, no fingir que se probo.
+    content = INSTALL_PS1.read_text().lower()
+    assert "no se ha podido ejecutar ni probar" in content
 
 
 def test_makefile_exists():
