@@ -51,7 +51,7 @@ if ! .venv/bin/python3 -c "import tkinter" &> /dev/null; then
     MISSING_SYSTEM_DEPS=1
 fi
 
-if ! pkg-config --exists libportaudio2 2>/dev/null && ! ldconfig -p 2>/dev/null | grep -q libportaudio; then
+if ! pkg-config --exists portaudio-2.0 2>/dev/null && ! ldconfig -p 2>/dev/null | grep -q libportaudio; then
     echo "[FALTA] PortAudio (libportaudio2) no encontrado."
     MISSING_SYSTEM_DEPS=1
 fi
@@ -90,7 +90,15 @@ echo "[5/6] Descargando modelos de Ollama (llama3.2:3b, bge-m3)..."
 ollama pull llama3.2:3b || echo "[WARN] No se pudo descargar llama3.2:3b (puedes bajarlo despues)"
 ollama pull bge-m3 || echo "[WARN] No se pudo descargar bge-m3 (puedes bajarlo despues)"
 
-echo "[6/6] Instalación completada."
+# 7. Verificacion final: si una dependencia de sistema rota rompe el import
+#    (p. ej. Tkinter mal instalado pese a pasar el chequeo del paso 3), que
+#    el script lo diga en vez de afirmar "instalacion completada" a ciegas.
+echo "[6/6] Verificando instalación..."
+.venv/bin/python3 -c "import jarvis_local" || {
+    echo "[ERROR] jarvis_local no se pudo importar tras instalar. Revisa los mensajes de arriba."
+    exit 1
+}
+echo "[OK] jarvis_local importado correctamente."
 echo ""
 echo "=========================================="
 echo "  JARVIS Local listo"

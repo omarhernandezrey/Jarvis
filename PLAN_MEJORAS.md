@@ -702,7 +702,8 @@ Windows — mismo orden de pasos, mismas reglas duras:
    que este script no se ha podido ejecutar ni probar en una máquina
    Windows real durante su creación (sin máquina disponible en este
    entorno de desarrollo), que se escribió por análogia exacta con
-   `install.sh` (ya probado en Linux) y a partir de los pasos manuales
+   `install.sh` (validado solo con sintaxis y test de contrato, no
+   ejecutado de punta a punta tampoco) y a partir de los pasos manuales
    documentados en el README, y que agradece un reporte de issue si falla
    en un caso real.
 
@@ -964,6 +965,52 @@ optimista. Si algo quedó a medias, dilo aquí tal cual.
       - **LinkedIn: funciona** (fetch 200, parseo correcto, resultados reales) — en algunas queries no aporta resultados porque `es_relevante()` exige coincidencia literal de palabra ("contador" no matchea "Contable"/"RTR"), una limitación de diseño preexistente, no una rotura nueva — NO se tocó, fuera de alcance de esta tarea (Regla 6).
       - **El Empleo: ROTO.** `build_elempleo_url` devuelve 200 con HTML real, pero el sitio ya NO filtra por query en el HTML estático — devuelve un listado genérico (confirmado con 3 queries distintas, 0 resultados relevantes en las 3). El filtrado real ahora vive en `data-webapi-search="/co/api/joboffers/findbyfilter"`, una API que responde 401 ("Authorization has been denied") sin el token que la página genera vía JS — confirmado probando GET y POST directos a esa ruta. **No se intentó reversear el esquema de autenticación ni reescribir con Selenium/Playwright**: es un cambio de arquitectura (requests estático → render de JS), esfuerzo grande, fuera del alcance de "verificar en vivo" de esta tarea — documentado como límite exacto, no fingido como arreglado (regla de `CLAUDE.md`). El sistema ya degrada con gracia (`fetch_all` atrapa la excepción/0 resultados por fuente sin romper el resto, y `search_jobs` solo menciona en `fuentes` los portales que de verdad aportaron algo), así que el usuario nunca ve un dato falso — solo tiene 2 de 3 portales activos hoy en vez de 3.
       No se corrió el protocolo de suite+ruff completo porque no se tocó código de producción — solo se verificó en vivo, sin cambios.
+
+### Revisión de código post-merge (2026-10-16)
+
+A pedido del usuario ("revisa razonamiento y funcionalidad mejoras"), se
+corrió `/code-review` sobre el rango `fa1e6c4..f54d808` (todo lo mergeado
+en las Fases 1-5). 4 hallazgos CONFIRMED, 1 candidato REFUTED. El usuario
+pidió explícitamente arreglar los 4 confirmados — hecho en la rama
+`fix/code-review-instalador`, commit ver `git log`:
+
+1. **`install.sh`/`install.ps1` perdieron el chequeo final `import
+   jarvis_local`** que el script viejo tenía (si una dependencia de
+   sistema rota rompe el import, decían "instalación completada" igual).
+   Repuesto en ambos. En `install.ps1` esto también resolvió la variable
+   `$venvPython` que había quedado declarada sin uso.
+2. **`install.ps1` afirmaba que `install.sh` estaba "ya probado en uso
+   real"** — falso, ambos se validaron solo con sintaxis/test de
+   contrato, nunca ejecución real de punta a punta (habría alterado el
+   entorno de desarrollo). Corregido en 3 lugares: `install.ps1` (aviso
+   de cabecera), `README.md` (aviso de Windows) y la propia Tarea 4.1 de
+   la Sección 3 de este documento (la redacción original venía de ahí).
+3. **README badge/recuento de tests desactualizado**: decía 1813, el
+   real (verificado de nuevo con `pytest --collect-only`) es **1827**
+   (1813 + los 14 tests nuevos de `test_install_script.py` del mismo
+   trabajo). Corregido en las 3 ubicaciones (badge, Estructura, Tests).
+4. **`install.sh` comprobaba PortAudio con el nombre de paquete Debian
+   (`libportaudio2`) en vez del módulo real de `pkg-config`
+   (`portaudio-2.0`)** — esa rama del chequeo siempre era falsa; el
+   fallback (`ldconfig -p`) sí funcionaba, así que no rompía nada, pero
+   daba falsa confianza. Corregido el nombre de módulo.
+
+Al arreglar (2) tuve que corregir también el propio `install.ps1` para
+no romper `test_install_script.py::test_install_ps1_documents_untested_on_real_windows`
+(el salto de línea del comentario partía la frase exacta que el test
+busca) — ajustado el formato del comentario, no el test. Suite completa
++ ruff verdes tras los 4 arreglos.
+
+**Candidato REFUTED** (no es un bug, se descartó): la hipótesis de que
+`--system-site-packages` en el venv rompería Tkinter — un venv siempre
+hereda el stdlib del intérprete base; Tkinter no depende de ese flag.
+
+**Hallazgo nuevo durante la verificación, no corregido** (fuera de
+alcance de esta revisión, zona protegida — Regla 7): `test_hud_pro_gpu.py::test_holostage_frozen_background_does_not_recompute_dynamic_bg`
+falló una vez corriendo la suite completa, pasó en 2 corridas aisladas
+posteriores — parece flaky (timing), no causado por estos cambios (no se
+tocó código de `hud_pro`). No se investigó más por ser zona protegida sin
+tarea explícita que la nombre.
 
 ### Hallazgos nuevos, no ejecutados
 

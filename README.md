@@ -5,7 +5,7 @@ Entiende lenguaje natural, decide qué herramientas usar y ejecuta acciones real
 
 [![Tests](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml/badge.svg)](https://github.com/omarhernandezrey/Jarvis/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![Tests](https://img.shields.io/badge/tests-1813%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1827%20passing-brightgreen)
 ![Offline](https://img.shields.io/badge/LLM-100%25%20local-orange)
 ![OS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux-informational)
 
@@ -195,8 +195,9 @@ cd Jarvis
 ```
 
 > ⚠️ **`install.ps1` no se ha probado todavía en una máquina Windows
-> real** (se escribió por analogía con `install.sh`, ya probado en Linux,
-> sin acceso a Windows durante su creación — ver el aviso al inicio del
+> real** (se escribió por analogía con `install.sh`, validado solo con
+> sintaxis y un test de contrato — ninguno de los dos corrió de punta a
+> punta en una instalación real desde cero; ver el aviso al inicio del
 > propio script). Hasta que alguien lo confirme en uso real, los pasos
 > manuales de abajo son la vía verificada.
 
@@ -310,13 +311,13 @@ Jarvis/                      (raíz del proyecto: config.yaml, secrets.yaml, dat
 │   ├── storage/             Historial, memorias y 🆕 índice semántico
 │   ├── memory_context/      Memorias activas y 🆕 recuerdo automático
 │   └── ui/                  Interfaz web + HUD legado (QML), usado como respaldo si hud_pro falla al importarse
-└── test/                    1813 tests
+└── test/                    1827 tests
 ```
 
 ## 🧪 Tests y calidad
 
 ```bash
-python -m pytest test -q            # 1813 tests (Windows y Linux)
+python -m pytest test -q            # 1827 tests (Windows y Linux)
 python -m pytest -m live            # 9 tests que pegan a APIs reales (nocturno en CI)
 ruff check .                        # lint
 python -m jarvis_local.cli doctor   # diagnóstico del entorno (Ollama, red, credenciales, micro)

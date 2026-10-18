@@ -1,13 +1,19 @@
 # JARVIS Local - Script de instalación guiado para Windows
 #
 # AVISO IMPORTANTE: este script se escribió por analogía exacta con
-# install.sh (el instalador de Linux, ya probado en uso real) y a partir de
-# los pasos manuales documentados en README.md Seccion "Instalacion" ->
-# "Windows". NO se ha podido ejecutar ni probar en una maquina Windows real
-# durante su creacion -- el entorno de desarrollo donde se escribio es
-# Linux, sin maquina Windows ni interprete de PowerShell disponibles para
-# validarlo. Si falla en tu maquina, por favor abre un issue describiendo
-# el error exacto.
+# install.sh (el instalador de Linux) y a partir de los pasos manuales
+# documentados en README.md Seccion "Instalacion" -> "Windows".
+#
+# NO se ha podido ejecutar ni probar en una maquina Windows real durante su creacion
+# -- el entorno de desarrollo es Linux, sin maquina Windows ni interprete de
+# PowerShell disponibles.
+#
+# NOTA HONESTA: tampoco install.sh se ejecuto de punta a punta en una
+# instalacion real desde cero (habria alterado el entorno de desarrollo) --
+# ambos se validaron solo con sintaxis (`bash -n`) y un test de contrato
+# (test/test_install_script.py) que verifica forma, no ejecucion real.
+#
+# Si falla en tu maquina, por favor abre un issue describiendo el error exacto.
 #
 # Uso: .\install.ps1
 
@@ -83,7 +89,16 @@ try {
     Write-Host "[WARN] No se pudo descargar bge-m3 (puedes bajarlo despues)"
 }
 
-Write-Host "[5/5] Instalacion completada."
+Write-Host "[5/5] Verificando instalacion..."
+& $venvPython -c "import jarvis_local"
+if ($LASTEXITCODE -ne 0) {
+    # try/catch no detecta un codigo de salida != 0 de un ejecutable nativo
+    # (solo excepciones reales de PowerShell) -- por eso se revisa
+    # $LASTEXITCODE en vez de envolver esto en try/catch.
+    Write-Host "[ERROR] jarvis_local no se pudo importar tras instalar. Revisa los mensajes de arriba."
+    exit 1
+}
+Write-Host "[OK] jarvis_local importado correctamente."
 Write-Host ""
 Write-Host "=========================================="
 Write-Host "  JARVIS Local listo"
