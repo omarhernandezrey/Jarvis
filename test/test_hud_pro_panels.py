@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+from hud_pro import system_metrics
 from hud_pro.command_palette import Command, CommandPalette
 from hud_pro.panels import ActivityPanel, Sparkline, SystemPanel, TokenGauge
 from hud_pro.qt_compat import QtCore
@@ -546,3 +547,29 @@ def test_topbar_update_metrics_repeat_does_not_repaint(qapp, paint_clock):
     assert paint_clock.rate_for(bar.ollama_dot) == 0.0
     bar.close()
     bar.deleteLater()
+
+
+# ── system_metrics: fuente única de CPU/RAM (bug real arreglado) ────────
+def test_cpu_metrics_are_consistent_across_widgets(qapp, hud_window, monkeypatch):
+    """Regresión: antes, la barra superior (2s), el anillo de la esquina
+    (1s) y el panel SISTEMA (1s) llamaban CADA UNO por su cuenta a
+    `psutil.cpu_percent(interval=None)` — esa función guarda un único
+    timestamp GLOBAL de "última llamada", así que se robaban la ventana
+    de muestreo entre sí y mostraban números de CPU DISTINTOS al mismo
+    tiempo en la misma pantalla (visto en captura real). Ahora los tres
+    leen de `system_metrics.sampler`, la única fuente real — deben
+    mostrar siempre el mismo número."""
+    monkeypatch.setattr(system_metrics.psutil, "cpu_percent", lambda interval=None: 47.0)
+    monkeypatch.setattr(
+        system_metrics.psutil,
+        "virtual_memory",
+        lambda: type("VM", (), {"percent": 68.0})(),
+    )
+
+    w = hud_window()
+    system_metrics.sampler._sample()  # fuerza un tick real, sin esperar el QTimer
+    qapp.processEvents()
+
+    assert w.top_bar.metrics_label.text() == "CPU 47%  ·  RAM 68%"
+    assert w.corner_system._cpu_ring._value == 47.0
+    assert w.corner_system._ram_ring._value == 68.0
