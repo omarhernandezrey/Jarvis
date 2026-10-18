@@ -15,7 +15,7 @@ import time
 from collections import deque
 from typing import Optional
 
-from . import theme
+from . import system_metrics, theme
 from .qt_compat import Qt, QtCore, QtGui, QtWidgets
 
 try:  # métricas opcionales, igual convención que widgets.py
@@ -205,10 +205,12 @@ class CornerBadge(QtWidgets.QFrame):
 
 class CompactSystemWidget(CornerBadge):
     """Esquina arriba-izquierda: CPU/RAM en mini anillos. Mismo dato real
-    de `psutil` que `SystemPanel` (el cajón de detalle) — 1Hz, un solo
-    timer que se para si no es visible."""
-
-    UPDATE_MS = 1000
+    que `SystemPanel` (el cajón de detalle) y la barra superior — los
+    tres leen de `system_metrics.sampler`, la única fuente real de
+    `psutil.cpu_percent` (ver `hud_pro/system_metrics.py`: llamarlo por
+    separado desde varios widgets hacía que mostraran números de CPU
+    distintos al mismo tiempo). Se suscribe mientras es visible, nada
+    más."""
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -220,26 +222,26 @@ class CompactSystemWidget(CornerBadge):
         for ring, tip in ((self._cpu_ring, "CPU"), (self._ram_ring, "RAM")):
             ring.setToolTip(tip)
             lay.addWidget(ring)
-        self._timer = QtCore.QTimer(self)
-        self._timer.timeout.connect(self._sample)
-        if psutil is not None:
-            psutil.cpu_percent(interval=None)
+        self._subscribed = False
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
-        if not self._timer.isActive():
-            self._timer.start(self.UPDATE_MS)
-            self._sample()
+        if not self._subscribed:
+            self._subscribed = True
+            system_metrics.sampler.sampled.connect(self._on_sampled)
+            system_metrics.sampler.acquire()
+            self._on_sampled(*system_metrics.sampler.last())
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:  # noqa: N802
         super().hideEvent(event)
-        self._timer.stop()
+        if self._subscribed:
+            self._subscribed = False
+            system_metrics.sampler.sampled.disconnect(self._on_sampled)
+            system_metrics.sampler.release()
 
-    def _sample(self) -> None:
-        if psutil is None:
-            return
-        self._cpu_ring.push(psutil.cpu_percent(interval=None))
-        self._ram_ring.push(psutil.virtual_memory().percent)
+    def _on_sampled(self, cpu: float, ram: float) -> None:
+        self._cpu_ring.push(cpu)
+        self._ram_ring.push(ram)
 
 
 class CompactServicesWidget(CornerBadge):
@@ -368,7 +370,11 @@ class CompactToolWidget(CornerBadge):
 
 class SystemPanel(QtWidgets.QFrame):
     """Panel SISTEMA: CPU/RAM/ping/red reales (nunca sintetizados) a 1Hz,
-    más el uptime del sistema. Sólo corre su timer mientras es visible."""
+    más el uptime del sistema. Sólo corre su timer mientras es visible.
+    CPU/RAM vienen de `system_metrics.sampler` (misma fuente que la barra
+    superior y el anillo de la esquina — ver `hud_pro/system_metrics.py`);
+    ping/red/uptime no tienen ese problema de estado compartido y se
+    siguen midiendo aquí directamente."""
 
     UPDATE_MS = 1000
 
@@ -400,11 +406,15 @@ class SystemPanel(QtWidgets.QFrame):
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._sample)
-        if psutil is not None:
-            psutil.cpu_percent(interval=None)  # cebar la medición
+        self._subscribed = False
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
+        if not self._subscribed:
+            self._subscribed = True
+            system_metrics.sampler.sampled.connect(self._on_sampled)
+            system_metrics.sampler.acquire()
+            self._on_sampled(*system_metrics.sampler.last())
         if not self._timer.isActive():
             self._timer.start(self.UPDATE_MS)
             self._sample()
@@ -412,16 +422,19 @@ class SystemPanel(QtWidgets.QFrame):
     def hideEvent(self, event: QtGui.QHideEvent) -> None:  # noqa: N802
         super().hideEvent(event)
         self._timer.stop()
+        if self._subscribed:
+            self._subscribed = False
+            system_metrics.sampler.sampled.disconnect(self._on_sampled)
+            system_metrics.sampler.release()
+
+    def _on_sampled(self, cpu: float, ram: float) -> None:
+        self._cpu_spark.push(cpu, vmax=100.0)
+        self._cpu_val.setText(f"{cpu:.0f}%")
+        self._ram_spark.push(ram, vmax=100.0)
+        self._ram_val.setText(f"{ram:.0f}%")
 
     def _sample(self) -> None:
         if psutil is not None:
-            cpu = psutil.cpu_percent(interval=None)
-            ram = psutil.virtual_memory().percent
-            self._cpu_spark.push(cpu, vmax=100.0)
-            self._cpu_val.setText(f"{cpu:.0f}%")
-            self._ram_spark.push(ram, vmax=100.0)
-            self._ram_val.setText(f"{ram:.0f}%")
-
             now = psutil.net_io_counters()
             t1 = time.monotonic()
             dt = max(1e-3, t1 - self._last_net_t)

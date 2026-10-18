@@ -6,7 +6,7 @@ import math
 import time
 from typing import Optional
 
-from . import theme
+from . import system_metrics, theme
 from .qt_compat import Qt, QtCore, QtGui, QtWidgets
 from .state import OrbState, StateLike, parse_state
 
@@ -560,8 +560,15 @@ class TopBar(QtWidgets.QWidget):
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._refresh)
         self._timer.start(2000)
-        if psutil is not None:
-            psutil.cpu_percent(interval=None)  # cebar la medición
+        # CPU/RAM vienen de system_metrics.sampler, la unica fuente real de
+        # psutil.cpu_percent en el HUD (ver hud_pro/system_metrics.py).
+        # Suscrita a la senal (no a un timer propio mas lento) para que
+        # muestre exactamente el mismo numero, en el mismo instante, que el
+        # anillo de la esquina y el panel SISTEMA -- nunca un valor mas
+        # viejo mientras el reloj de esta barra todavia no le toca refrescar.
+        system_metrics.sampler.sampled.connect(self._on_sampled)
+        system_metrics.sampler.acquire()
+        self._on_sampled(*system_metrics.sampler.last())
         self._refresh()
 
     def set_model(self, name: str) -> None:
@@ -617,13 +624,10 @@ class TopBar(QtWidgets.QWidget):
         # el reloj muestra HH:MM: fuera de un cambio de minuto, setText con
         # la misma hora es un repaint de la ventana entera tirado a la basura
         _set_label_text(self.clock, time.strftime("%H:%M"))
-        if psutil is not None:
-            try:
-                cpu = psutil.cpu_percent(interval=None)
-                ram = psutil.virtual_memory().percent
-                _set_label_text(self.metrics_label, f"CPU {cpu:.0f}%  ·  RAM {ram:.0f}%")
-            except Exception:  # pragma: no cover
-                self.metrics_label.setVisible(False)
+
+    def _on_sampled(self, cpu: float, ram: float) -> None:
+        if system_metrics.AVAILABLE:
+            _set_label_text(self.metrics_label, f"CPU {cpu:.0f}%  ·  RAM {ram:.0f}%")
 
 
 class StatusBlock(QtWidgets.QWidget):
