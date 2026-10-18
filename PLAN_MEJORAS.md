@@ -972,7 +972,11 @@ A pedido del usuario ("revisa razonamiento y funcionalidad mejoras"), se
 corrió `/code-review` sobre el rango `fa1e6c4..f54d808` (todo lo mergeado
 en las Fases 1-5). 4 hallazgos CONFIRMED, 1 candidato REFUTED. El usuario
 pidió explícitamente arreglar los 4 confirmados — hecho en la rama
-`fix/code-review-instalador`, commit ver `git log`:
+`fix/code-review-instalador`, commit `ead63fb`. Mergeado a `main`
+(`--no-ff`) el 2026-10-18, merge `76170a2`, con CI verde en Tests
+(Linux, Python 3.11/3.12/3.13) antes del merge, a pedido explícito del
+usuario. Rama de trabajo y su rama `feature/` de disparo de CI, borradas
+tras el merge.
 
 1. **`install.sh`/`install.ps1` perdieron el chequeo final `import
    jarvis_local`** que el script viejo tenía (si una dependencia de
