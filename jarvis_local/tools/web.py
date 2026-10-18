@@ -2,10 +2,22 @@
 JARVIS Local - Herramientas Web (Fase 4)
 Abrir sitios web, buscar en Google y reproducir en YouTube.
 """
+import json
+import re
 import webbrowser
 from urllib.parse import quote_plus, urlparse
 
+import requests
+
 from jarvis_local.safety.policy import ActionPlan, ActionStatus, RiskLevel
+
+_YT_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"),
+    "Accept-Language": "es-CO,es;q=0.9",
+}
+_YT_TIMEOUT = 6.0
+_YT_INITIAL_DATA_RE = re.compile(r"var ytInitialData = (\{.*?\});</script>", re.DOTALL)
 
 
 def _is_safe_url(url: str) -> bool:
@@ -76,10 +88,104 @@ def google_search(query: str) -> ActionPlan:
     return plan
 
 
+def _fetch_youtube_search_html(query: str) -> str | None:
+    """HTML publico de la pagina de resultados de YouTube, sin API key —
+    mismo patron que `jobs.py::_fetch`. `None` si la red falla."""
+    try:
+        r = requests.get(build_youtube_url(query), headers=_YT_HEADERS, timeout=_YT_TIMEOUT)
+        r.raise_for_status()
+        return r.text
+    except Exception:
+        return None
+
+
+def _find_video_renderer(node):
+    """Primer `videoRenderer` real (no `reelItemRenderer`/shorts, no
+    `channelRenderer`, etc.) en el arbol de `ytInitialData` — recorrido en
+    el mismo orden en que aparecen en la pagina, así que es el primer
+    resultado que vería una persona."""
+    if isinstance(node, dict):
+        if "videoRenderer" in node:
+            return node["videoRenderer"]
+        for value in node.values():
+            found = _find_video_renderer(value)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _find_video_renderer(item)
+            if found is not None:
+                return found
+    return None
+
+
+def parse_first_youtube_video(html: str) -> tuple[str, str] | None:
+    """(video_id, titulo) del primer video real de una pagina de resultados
+    de YouTube ya descargada. Lee el bloque `var ytInitialData = {...};`
+    que YouTube ya manda embebido en el HTML (lo necesita su propio JS para
+    pintar la pagina — no hace falta ejecutar JS ni usar su API). `None` si
+    YouTube cambio el formato de la pagina — el caller debe caer a abrir la
+    busqueda, nunca inventar un video."""
+    m = _YT_INITIAL_DATA_RE.search(html)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return None
+
+    renderer = _find_video_renderer(data)
+    if not renderer:
+        return None
+    video_id = renderer.get("videoId")
+    if not video_id:
+        return None
+    try:
+        title = renderer["title"]["runs"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        title = video_id
+    return video_id, title
+
+
+def _first_youtube_video(query: str) -> tuple[str, str] | None:
+    """(video_id, titulo) del primer resultado real de buscar `query` en
+    YouTube. `None` si la red falla, YouTube cambio su HTML, o no hay
+    resultados — el caller debe caer a abrir la busqueda."""
+    html = _fetch_youtube_search_html(query)
+    if html is None:
+        return None
+    return parse_first_youtube_video(html)
+
+
+def build_youtube_watch_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
 def youtube_play(query: str) -> ActionPlan:
-    """Busca/reproduce una cancion o video en YouTube."""
-    plan = _open(build_youtube_url(query), "reproducir_youtube",
-                 f"Reproducir '{query}' en YouTube")
+    """Busca y reproduce una cancion o video en YouTube: abre directo el
+    primer resultado real (la pagina /watch, que arranca sola) en vez de
+    la pagina de busqueda — antes el usuario tenia que elegir el video a
+    mano. Si no se puede determinar el video (red caida, YouTube cambio su
+    HTML), cae a abrir la busqueda en vez de inventar un video.
+
+    Antes de abrir la pestana nueva, pausa cualquier reproductor MPRIS
+    activo (Spotify, otra pestana de YouTube, VLC...) — webbrowser.open()
+    siempre abre una pestana nueva y no puede cerrar la anterior, asi que
+    sin este paso quedaban dos cosas sonando a la vez (reportado en uso
+    real: pedir una cancion nueva no paraba la que ya estaba sonando)."""
+    found = _first_youtube_video(query)
+    if found is not None:
+        video_id, title = found
+        url, ok_msg = build_youtube_watch_url(video_id), f"Reproduciendo '{title}' en YouTube."
+    else:
+        url, ok_msg = build_youtube_url(query), (
+            f"No pude identificar un video exacto de '{query}', "
+            "le abro la busqueda en YouTube. Seleccione el video que desee.")
+
+    from jarvis_local.tools.media_controls import pause_all_media
+    pause_all_media()
+
+    plan = _open(url, "reproducir_youtube", f"Reproducir '{query}' en YouTube")
     if plan.status == ActionStatus.EXECUTED:
-        plan.result = f"Buscando '{query}' en YouTube. Seleccione el video que desee."
+        plan.result = ok_msg
     return plan

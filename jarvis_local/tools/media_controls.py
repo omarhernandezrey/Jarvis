@@ -10,6 +10,7 @@ Linux: volumen por `wpctl` (PipeWire nativo, lee y fija el nivel real igual
 que WASAPI). Play/pausa y cambio de cancion van por `playerctl`, que habla el
 protocolo MPRIS que entienden Spotify, YouTube en el navegador, VLC, etc.
 """
+import contextlib
 import subprocess
 import time
 
@@ -445,6 +446,22 @@ def _player_status() -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     return out.stdout.strip() if out.returncode == 0 else None
+
+
+def pause_all_media() -> None:
+    """Pausa TODO reproductor MPRIS activo (Spotify, una pestaña de
+    YouTube/el navegador, VLC, etc.) — best-effort, nunca lanza ni devuelve
+    nada que verificar. Pensado para que otra herramienta (p. ej.
+    `web.youtube_play`) no deje dos cosas sonando al mismo tiempo antes de
+    arrancar una nueva. Pausar algo ya pausado no hace nada (`playerctl`
+    es idempotente ahí) — nunca "revive" un reproductor detenido.
+
+    Sin equivalente en Windows: no hay MPRIS ahí. No hace nada, documentado
+    en vez de fingir — ver IS_WINDOWS en todo este módulo."""
+    if IS_WINDOWS:
+        return
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        _playerctl("--all-players", "pause")
 
 
 def _player_fingerprint() -> str | None:
