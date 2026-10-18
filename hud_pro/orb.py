@@ -260,11 +260,6 @@ class OrbRenderer:
             )
             for _ in range(particles)
         ]
-        # filamentos de plasma dentro del núcleo: curvas cerradas con fase propia
-        self._plasma = [
-            (rnd.uniform(0, TAU), rnd.uniform(0.55, 0.85) * rnd.choice((-1, 1)), rnd.uniform(0, TAU))
-            for _ in range(3)
-        ]
 
     # ── API ───────────────────────────────────────────────────────────────
     def set_state(self, state: OrbState) -> None:
@@ -730,37 +725,6 @@ class OrbRenderer:
         qp.drawLines(lines)
         qp.setPen(Qt.PenStyle.NoPen)
 
-    def _paint_plasma(self, qp, c, Rr, P, A, core_k) -> None:
-        """Filamentos de plasma curvos girando dentro del núcleo (siempre
-        vivos, más lentos en reposo vía `motion`/`_def_t`)."""
-        if Rr < 30:
-            return
-        t = self._def_t
-        cx, cy = c.x(), c.y()
-        steps = 10
-        for i, (ph0, spd, ph1) in enumerate(self._plasma):
-            pts = []
-            for k in range(steps + 1):
-                u = TAU * k / steps
-                rx = Rr * (0.30 + 0.14 * math.sin(u * 2 + ph1))
-                ang = u + ph0 + t * spd
-                x = cx + math.cos(ang) * rx * (0.9 + 0.25 * math.sin(u * 3 - t * 1.3))
-                y = cy + math.sin(ang) * rx * 0.62 * (0.9 + 0.25 * math.cos(u * 2 + t * 0.9))
-                pts.append(QPointF(x, y))
-            path = QtGui.QPainterPath()
-            path.moveTo(pts[0])
-            for k in range(1, len(pts) - 1):
-                mid = QPointF((pts[k].x() + pts[k + 1].x()) / 2, (pts[k].y() + pts[k + 1].y()) / 2)
-                path.quadTo(pts[k], mid)
-            path.closeSubpath()
-            colr = P if i % 2 == 0 else A
-            glow = _hairline(_col(colr, 0.10 * core_k))
-            glow.setWidthF(3.0)
-            qp.setPen(glow)
-            qp.drawPath(path)
-            qp.setPen(_hairline(_col((235, 250, 255), 0.20 * core_k)))
-            qp.drawPath(path)
-
     def _paint_arcs(self, qp, c, R, Rr, A) -> None:
         """Arcos eléctricos breves núcleo→borde (PROCESANDO, 3-5/s, ~150 ms)."""
         if not self._arcs:
@@ -864,11 +828,16 @@ class OrbRenderer:
 
         qp.setCompositionMode(Plus)
         t = self._def_t
+        # Antes: 4 manchas (mezclando P/S/A) + 3 filamentos de plasma
+        # (_paint_plasma, curvas cerradas rotando) + un remolino conico de
+        # rayas. Esas piezas juntas pintaban una espiral de varios tonos
+        # ("se ve como una rocola", reportado en uso real) en vez de un
+        # nucleo de energia limpio. Se deja solo 2 manchas del mismo par de
+        # colores (P/A, sin mezclar S) con menos alpha -- un solo tono
+        # pulsando, no una nebulosa.
         for wx, wy, ph, rr, colr, a in (
-            (0.9, 1.3, 0.0, 0.62, P, 0.42),
-            (1.2, 0.7, 2.1, 0.55, S, 0.55),
-            (0.6, 1.1, 4.0, 0.50, A, 0.22),
-            (1.5, 0.9, 5.2, 0.44, P, 0.30),
+            (0.9, 1.3, 0.0, 0.62, P, 0.30),
+            (1.2, 0.7, 2.1, 0.55, A, 0.22),
         ):
             gp = QPointF(cx + Rr * 0.40 * math.cos(wx * t + ph), cy + Rr * 0.36 * math.sin(wy * t + ph * 0.7))
             rad = Rr * rr
@@ -878,15 +847,6 @@ class OrbRenderer:
             g.setColorAt(1.0, _col(colr, 0.0))
             qp.setBrush(g)
             qp.drawEllipse(gp, rad, rad)
-
-        self._paint_plasma(qp, c, Rr, P, A, core)
-
-        sw = QtGui.QConicalGradient(c, (self._ring * 22.0) % 360)
-        stripes = 18
-        for i in range(stripes + 1):
-            sw.setColorAt(i / stripes, _col(P, 0.09 if i % 2 else 0.0))
-        qp.setBrush(sw)
-        qp.drawEllipse(c, Rr, Rr)
 
         cr = Rr * 0.64 * (1.0 + 0.10 * lvl)
         g = QtGui.QRadialGradient(c, cr)
