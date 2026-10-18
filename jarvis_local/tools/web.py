@@ -166,19 +166,26 @@ def youtube_play(query: str) -> ActionPlan:
     primer resultado real (la pagina /watch, que arranca sola) en vez de
     la pagina de busqueda — antes el usuario tenia que elegir el video a
     mano. Si no se puede determinar el video (red caida, YouTube cambio su
-    HTML), cae a abrir la busqueda en vez de inventar un video."""
+    HTML), cae a abrir la busqueda en vez de inventar un video.
+
+    Antes de abrir la pestana nueva, pausa cualquier reproductor MPRIS
+    activo (Spotify, otra pestana de YouTube, VLC...) — webbrowser.open()
+    siempre abre una pestana nueva y no puede cerrar la anterior, asi que
+    sin este paso quedaban dos cosas sonando a la vez (reportado en uso
+    real: pedir una cancion nueva no paraba la que ya estaba sonando)."""
     found = _first_youtube_video(query)
     if found is not None:
         video_id, title = found
-        plan = _open(build_youtube_watch_url(video_id), "reproducir_youtube",
-                     f"Reproducir '{query}' en YouTube")
-        if plan.status == ActionStatus.EXECUTED:
-            plan.result = f"Reproduciendo '{title}' en YouTube."
-        return plan
+        url, ok_msg = build_youtube_watch_url(video_id), f"Reproduciendo '{title}' en YouTube."
+    else:
+        url, ok_msg = build_youtube_url(query), (
+            f"No pude identificar un video exacto de '{query}', "
+            "le abro la busqueda en YouTube. Seleccione el video que desee.")
 
-    plan = _open(build_youtube_url(query), "reproducir_youtube",
-                 f"Reproducir '{query}' en YouTube")
+    from jarvis_local.tools.media_controls import pause_all_media
+    pause_all_media()
+
+    plan = _open(url, "reproducir_youtube", f"Reproducir '{query}' en YouTube")
     if plan.status == ActionStatus.EXECUTED:
-        plan.result = (f"No pude identificar un video exacto de '{query}', "
-                       "le abro la busqueda en YouTube. Seleccione el video que desee.")
+        plan.result = ok_msg
     return plan

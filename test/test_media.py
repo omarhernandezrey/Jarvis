@@ -6,12 +6,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jarvis_local.intent.parser import parse_intent
 from jarvis_local.safety.policy import ActionStatus
+from jarvis_local.tools import media_controls as media_controls_mod
 from jarvis_local.tools.media_controls import (
     get_volume,
     is_muted,
     media_next,
     media_play_pause,
     media_previous,
+    pause_all_media,
     set_volume,
     volume_down,
     volume_mute,
@@ -168,6 +170,40 @@ def test_media_keys_no_fallan():
         plan = fn()
         assert plan.status in _ok
         assert plan.result, "un ActionPlan sin mensaje no informa nada"
+
+
+# --- pause_all_media: evita que dos reproductores suenen a la vez ---
+# Regresión: pedir una canción nueva en YouTube no paraba la que ya sonaba
+# (webbrowser.open() siempre abre una pestaña nueva, no puede cerrar la
+# anterior) — web.youtube_play() llama a esto antes de abrir la nueva.
+
+def test_pause_all_media_calls_playerctl_all_players_pause():
+    from unittest.mock import patch
+    calls = []
+    with patch.object(media_controls_mod, "IS_WINDOWS", False), \
+         patch.object(media_controls_mod, "_playerctl", lambda *a: calls.append(a)):
+        pause_all_media()
+    assert calls == [("--all-players", "pause")]
+
+
+def test_pause_all_media_never_raises_without_playerctl_installed():
+    from unittest.mock import patch
+
+    def _boom(*a):
+        raise OSError("playerctl: command not found")
+
+    with patch.object(media_controls_mod, "IS_WINDOWS", False), \
+         patch.object(media_controls_mod, "_playerctl", _boom):
+        pause_all_media()  # no debe lanzar
+
+
+def test_pause_all_media_noop_on_windows():
+    from unittest.mock import patch
+    calls = []
+    with patch.object(media_controls_mod, "IS_WINDOWS", True), \
+         patch.object(media_controls_mod, "_playerctl", lambda *a: calls.append(a)):
+        pause_all_media()
+    assert calls == [], "en Windows no hay MPRIS -- no debe llamar a playerctl"
 
 
 if __name__ == "__main__":

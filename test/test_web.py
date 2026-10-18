@@ -145,6 +145,7 @@ def test_youtube_play_opens_direct_watch_url_when_video_resolved(monkeypatch):
         web_mod, "_first_youtube_video",
         lambda query: ("abc12345678", "AC/DC - Back In Black (Official 4K Video)"),
     )
+    monkeypatch.setattr("jarvis_local.tools.media_controls.pause_all_media", lambda: None)
     plan = youtube_play("back in black")
     assert plan.status == ActionStatus.EXECUTED
     assert opened == ["https://www.youtube.com/watch?v=abc12345678"]
@@ -157,10 +158,31 @@ def test_youtube_play_falls_back_to_search_when_video_not_resolved(monkeypatch):
     opened = []
     monkeypatch.setattr(web_mod.webbrowser, "open", lambda url: opened.append(url) or True)
     monkeypatch.setattr(web_mod, "_first_youtube_video", lambda query: None)
+    monkeypatch.setattr("jarvis_local.tools.media_controls.pause_all_media", lambda: None)
     plan = youtube_play("una cancion muy rara")
     assert plan.status == ActionStatus.EXECUTED
     assert opened == ["https://www.youtube.com/results?search_query=una+cancion+muy+rara"]
     assert "Seleccione el video" in plan.result
+
+
+def test_youtube_play_pauses_other_players_before_opening_new_video(monkeypatch):
+    """Regresión reportada en uso real: pedir una canción nueva en YouTube
+    no paraba la que ya estaba sonando — quedaban las dos sonando a la vez
+    (webbrowser.open() siempre abre una pestaña nueva, no puede cerrar la
+    anterior). youtube_play() debe pausar cualquier reproductor MPRIS
+    activo ANTES de abrir la pestaña nueva."""
+    calls = []
+    monkeypatch.setattr(web_mod.webbrowser, "open", lambda url: calls.append(("open", url)) or True)
+    monkeypatch.setattr(web_mod, "_first_youtube_video", lambda query: ("vid", "Yo Soy El Rey"))
+    monkeypatch.setattr(
+        "jarvis_local.tools.media_controls.pause_all_media",
+        lambda: calls.append(("pause", None)),
+    )
+    plan = youtube_play("yo soy el rey")
+    assert plan.status == ActionStatus.EXECUTED
+    assert calls == [("pause", None), ("open", "https://www.youtube.com/watch?v=vid")], (
+        "debe pausar ANTES de abrir la pestana nueva, no despues ni nunca"
+    )
 
 
 if __name__ == "__main__":
