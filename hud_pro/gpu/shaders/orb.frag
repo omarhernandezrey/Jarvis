@@ -21,18 +21,12 @@ const int MAX_STEPS = 40;
 
 float sdSphere(vec3 p, float r) { return length(p) - r; }
 
-mat2 rot(float a) {
-    float c = cos(a), s = sin(a);
-    return mat2(c, -s, s, c);
-}
-
 void main() {
     vec2 uv = (vUv - 0.5) * 2.0;
     if (length(uv) > 1.05) { fragColor = vec4(0.0); return; }
 
     vec3 ro = vec3(0.0, 0.0, 2.2);
     vec3 rd = normalize(vec3(uv, -1.6));
-    float spin = u_time * 0.22 * u_stateMult;
 
     // sphere-tracing normal MIENTRAS el rayo está fuera (saltos grandes,
     // según la distancia real al SDF); al entrar cambia a paso FIJO y
@@ -49,10 +43,15 @@ void main() {
         vec3 p = ro + rd * t;
         float d = sdSphere(p, 1.0);
         if (d < 0.0) {
-            vec3 q = p;
-            q.xz = rot(spin) * q.xz;
-            float n1 = texture(u_noise3d, q * 1.4 + vec3(0.0, 0.0, u_time * 0.05)).r;
-            float n2 = texture(u_noise3d, q * 3.2 - vec3(0.0, 0.0, u_time * 0.09)).g;
+            // Antes `p` se rotaba como bloque rigido (mat2 rot(spin)) antes
+            // de muestrear el ruido 3D: todo el campo de plasma giraba
+            // junto, como un disco — "se ve como una rocola", reportado en
+            // uso real sobre la maquina real (GPU, no el fallback offscreen
+            // que usa orb.py). Sin esa rotacion compartida, cada octava solo
+            // deriva en Z a su propia velocidad (ya existia, con signos
+            // opuestos) -- turbulencia organica, no un remolino rigido.
+            float n1 = texture(u_noise3d, p * 1.4 + vec3(0.0, 0.0, u_time * 0.05 * u_stateMult)).r;
+            float n2 = texture(u_noise3d, p * 3.2 - vec3(0.0, 0.0, u_time * 0.09 * u_stateMult)).g;
             float plasma = n1 * 0.6 + n2 * 0.4 + 0.35;
             float amount = plasma * (0.5 + 0.5 * u_energy);
             density += amount * 0.11;
