@@ -168,6 +168,15 @@ class HudWindow(QtWidgets.QMainWindow):
             # de push-to-talk (clic/hover/geometría intactos).
             self.orb.set_render_visible(False)
         self.status = StatusBlock(root)
+        if self.gpu_stage is not None:
+            # Igual que `OrbWidget` (ver orb.py): en modo GPU este widget
+            # se posiciona a mano SOBRE el canvas del orbe/anillos (ver
+            # `_position_status_below_rings`), así que debe quedar
+            # transparente por las mismas razones — nunca confirmado como
+            # la causa del corte real (ver fix de `_ORB_MARGIN` en
+            # stage.py), pero mismo riesgo latente si algún día pinta algo
+            # propio.
+            self.status.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         stage.addWidget(self.orb, 1)
         if self.gpu_stage is None:
             stage.addWidget(self.status)
@@ -559,7 +568,7 @@ class HudWindow(QtWidgets.QMainWindow):
                 cx = g.center().x()
                 radius_px = 0.30 * min(g.width(), g.height())
                 margin_px = max(16.0, g.height() * 0.05)
-                cy_pref = g.top() + g.height() * 0.42
+                cy_pref = g.top() + g.height() * 0.36  # antes 0.42 -- "subí el orbe", reportado en uso real
                 cy_lo = g.top() + radius_px + margin_px
                 cy_hi = g.top() + g.height() - radius_px - margin_px
                 cy = min(max(cy_pref, cy_lo), cy_hi) if cy_hi >= cy_lo else g.top() + g.height() * 0.5
