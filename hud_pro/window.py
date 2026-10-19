@@ -616,10 +616,30 @@ class HudWindow(QtWidgets.QMainWindow):
         self.chat.mode_chevron.setText("▴" if self._console_expanded else "▾")
 
     def _fit_stage_height(self) -> None:
-        """El orbe ocupa como mínimo el STAGE_MIN_FRACTION del alto de la
-        ventana — un piso, no un tope: crece más si sobra sitio (tiene
-        stretch=1 en el layout; `status` se queda con su alto natural)."""
-        self.orb.setMinimumHeight(round(self.height() * self.STAGE_MIN_FRACTION))
+        """El orbe ocupa como mínimo el STAGE_MIN_FRACTION del alto
+        REALMENTE disponible para el escenario (ventana menos barra
+        superior, fila de servicios y consola) — un piso, no un tope:
+        crece más si sobra sitio (tiene stretch=1 en el layout; `status`
+        se queda con su alto natural).
+
+        Antes el piso del 55% se aplicaba sobre el alto TOTAL de la
+        ventana, sin restar la consola: con la consola expandida (hasta
+        36% de la ventana, ver `_target_chat_height`) ambos pisos sumados
+        podían superar el espacio real disponible, y el orbe terminaba
+        desbordando su celda de layout y solapándose con la consola en
+        vez de dejarle aire antes de ella — "se ve como entre el piso",
+        reportado en uso real."""
+        outer = self._root.layout()
+        m = outer.contentsMargins()
+        reserved = (
+            m.top() + m.bottom()
+            + self.top_bar.height() + outer.spacing()
+            + self._services_row_widget.height() + outer.spacing()
+            + outer.spacing() + 8  # hueco stage->chat_row + margen propio de chat_row
+            + self.chat.height()
+        )
+        available = max(0, self.height() - reserved)
+        self.orb.setMinimumHeight(round(available * self.STAGE_MIN_FRACTION))
 
     # FASE D — bajo este ancho los paneles SISTEMA/ACTIVIDAD dejan de
     # estar siempre visibles y pasan a ser un cajón que se abre/cierra
