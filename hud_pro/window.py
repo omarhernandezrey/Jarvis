@@ -543,20 +543,27 @@ class HudWindow(QtWidgets.QMainWindow):
             g = self.orb.geometry()
             self._root.set_focus_point(QtCore.QPointF(g.center().x(), g.center().y()))
             if self.gpu_stage is not None and self._root.width() > 0 and self._root.height() > 0:
-                # el centro geométrico del widget del orbe queda pegado al
-                # texto de estado (vive justo debajo, en el mismo layout)
-                # — subirlo un poco dentro de su propia caja le da aire
-                # antes de tocar ese texto.
+                # El orbe GPU (raymarch, HoloStage) se posiciona por UV
+                # propio (set_light_uv/set_light_radius), independiente del
+                # widget `orb` (invisible en este modo, sólo da el ancla).
+                # Antes `cy` era una fracción fija (0.42) del alto de la
+                # caja: a cajas grandes (consola compacta, mucho espacio
+                # libre con stretch=1) el radio calculado del MISMO modo
+                # (0.30 del lado menor) podía ser tan grande que, sumado a
+                # esa fracción fija, el borde inferior del círculo se salía
+                # de la caja y quedaba recortado/tapado por la consola de
+                # abajo — "enterrado en el suelo, no se ve redondo",
+                # reportado en uso real. Ahora se calcula el radio PRIMERO
+                # y se acota `cy` para que el círculo entero (con margen)
+                # quepa dentro de la caja, sea cual sea su tamaño real.
                 cx = g.center().x()
-                cy = g.top() + g.height() * 0.42
-                self.gpu_stage.set_light_uv(cx / self._root.width(), cy / self._root.height())
-                # 0.30 del lado menor (el mandato original) se veía
-                # deslucido — casi tapado por el propio texto de estado en
-                # capturas reales a 1920x1080/1366x768 (esto se notó DESPUÉS
-                # de corregir el bug real: un uniform escalar que dejaba
-                # todo el pipeline congelado, ver `shader_loader.py`). 0.34
-                # lo hace protagonista sin invadir la consola de abajo.
                 radius_px = 0.30 * min(g.width(), g.height())
+                margin_px = max(16.0, g.height() * 0.05)
+                cy_pref = g.top() + g.height() * 0.42
+                cy_lo = g.top() + radius_px + margin_px
+                cy_hi = g.top() + g.height() - radius_px - margin_px
+                cy = min(max(cy_pref, cy_lo), cy_hi) if cy_hi >= cy_lo else g.top() + g.height() * 0.5
+                self.gpu_stage.set_light_uv(cx / self._root.width(), cy / self._root.height())
                 self.gpu_stage.set_light_radius(radius_px / self._root.height())
                 if self._status_manual_position:
                     self._position_status_below_rings(g, cy, radius_px)
