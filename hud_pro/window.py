@@ -568,7 +568,16 @@ class HudWindow(QtWidgets.QMainWindow):
                 cx = g.center().x()
                 radius_px = 0.30 * min(g.width(), g.height())
                 margin_px = max(16.0, g.height() * 0.05)
-                cy_pref = g.top() + g.height() * 0.36  # antes 0.42 -- "subí el orbe", reportado en uso real
+                # 0.40 (antes 0.42, probado en 0.36): "subí el orbe", pero a
+                # 0.36 el halo/bloom en ESCUCHANDO/HABLANDO (alta energía)
+                # subía tanto que tapaba los badges de CPU/RAM y el panel
+                # "HERRAMIENTA" de las esquinas superiores -- reportado en
+                # uso real ("agranda el contenedor, la tapa en algunas
+                # partes"). Confirmado con capturas reales en los 4 estados
+                # con energía pico: a 0.40 el halo ya no llega a esas
+                # esquinas en ninguno y el orbe sigue notablemente más
+                # arriba que el original.
+                cy_pref = g.top() + g.height() * 0.40
                 cy_lo = g.top() + radius_px + margin_px
                 cy_hi = g.top() + g.height() - radius_px - margin_px
                 cy = min(max(cy_pref, cy_lo), cy_hi) if cy_hi >= cy_lo else g.top() + g.height() * 0.5
