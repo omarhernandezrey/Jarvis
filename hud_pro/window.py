@@ -168,6 +168,15 @@ class HudWindow(QtWidgets.QMainWindow):
             # de push-to-talk (clic/hover/geometría intactos).
             self.orb.set_render_visible(False)
         self.status = StatusBlock(root)
+        if self.gpu_stage is not None:
+            # Igual que `OrbWidget` (ver orb.py): en modo GPU este widget
+            # se posiciona a mano SOBRE el canvas del orbe/anillos (ver
+            # `_position_status_below_rings`), así que debe quedar
+            # transparente por las mismas razones — nunca confirmado como
+            # la causa del corte real (ver fix de `_ORB_MARGIN` en
+            # stage.py), pero mismo riesgo latente si algún día pinta algo
+            # propio.
+            self.status.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         stage.addWidget(self.orb, 1)
         if self.gpu_stage is None:
             stage.addWidget(self.status)
@@ -543,20 +552,36 @@ class HudWindow(QtWidgets.QMainWindow):
             g = self.orb.geometry()
             self._root.set_focus_point(QtCore.QPointF(g.center().x(), g.center().y()))
             if self.gpu_stage is not None and self._root.width() > 0 and self._root.height() > 0:
-                # el centro geométrico del widget del orbe queda pegado al
-                # texto de estado (vive justo debajo, en el mismo layout)
-                # — subirlo un poco dentro de su propia caja le da aire
-                # antes de tocar ese texto.
+                # El orbe GPU (raymarch, HoloStage) se posiciona por UV
+                # propio (set_light_uv/set_light_radius), independiente del
+                # widget `orb` (invisible en este modo, sólo da el ancla).
+                # Antes `cy` era una fracción fija (0.42) del alto de la
+                # caja: a cajas grandes (consola compacta, mucho espacio
+                # libre con stretch=1) el radio calculado del MISMO modo
+                # (0.30 del lado menor) podía ser tan grande que, sumado a
+                # esa fracción fija, el borde inferior del círculo se salía
+                # de la caja y quedaba recortado/tapado por la consola de
+                # abajo — "enterrado en el suelo, no se ve redondo",
+                # reportado en uso real. Ahora se calcula el radio PRIMERO
+                # y se acota `cy` para que el círculo entero (con margen)
+                # quepa dentro de la caja, sea cual sea su tamaño real.
                 cx = g.center().x()
-                cy = g.top() + g.height() * 0.42
-                self.gpu_stage.set_light_uv(cx / self._root.width(), cy / self._root.height())
-                # 0.30 del lado menor (el mandato original) se veía
-                # deslucido — casi tapado por el propio texto de estado en
-                # capturas reales a 1920x1080/1366x768 (esto se notó DESPUÉS
-                # de corregir el bug real: un uniform escalar que dejaba
-                # todo el pipeline congelado, ver `shader_loader.py`). 0.34
-                # lo hace protagonista sin invadir la consola de abajo.
                 radius_px = 0.30 * min(g.width(), g.height())
+                margin_px = max(16.0, g.height() * 0.05)
+                # 0.40 (antes 0.42, probado en 0.36): "subí el orbe", pero a
+                # 0.36 el halo/bloom en ESCUCHANDO/HABLANDO (alta energía)
+                # subía tanto que tapaba los badges de CPU/RAM y el panel
+                # "HERRAMIENTA" de las esquinas superiores -- reportado en
+                # uso real ("agranda el contenedor, la tapa en algunas
+                # partes"). Confirmado con capturas reales en los 4 estados
+                # con energía pico: a 0.40 el halo ya no llega a esas
+                # esquinas en ninguno y el orbe sigue notablemente más
+                # arriba que el original.
+                cy_pref = g.top() + g.height() * 0.40
+                cy_lo = g.top() + radius_px + margin_px
+                cy_hi = g.top() + g.height() - radius_px - margin_px
+                cy = min(max(cy_pref, cy_lo), cy_hi) if cy_hi >= cy_lo else g.top() + g.height() * 0.5
+                self.gpu_stage.set_light_uv(cx / self._root.width(), cy / self._root.height())
                 self.gpu_stage.set_light_radius(radius_px / self._root.height())
                 if self._status_manual_position:
                     self._position_status_below_rings(g, cy, radius_px)
@@ -616,10 +641,30 @@ class HudWindow(QtWidgets.QMainWindow):
         self.chat.mode_chevron.setText("▴" if self._console_expanded else "▾")
 
     def _fit_stage_height(self) -> None:
-        """El orbe ocupa como mínimo el STAGE_MIN_FRACTION del alto de la
-        ventana — un piso, no un tope: crece más si sobra sitio (tiene
-        stretch=1 en el layout; `status` se queda con su alto natural)."""
-        self.orb.setMinimumHeight(round(self.height() * self.STAGE_MIN_FRACTION))
+        """El orbe ocupa como mínimo el STAGE_MIN_FRACTION del alto
+        REALMENTE disponible para el escenario (ventana menos barra
+        superior, fila de servicios y consola) — un piso, no un tope:
+        crece más si sobra sitio (tiene stretch=1 en el layout; `status`
+        se queda con su alto natural).
+
+        Antes el piso del 55% se aplicaba sobre el alto TOTAL de la
+        ventana, sin restar la consola: con la consola expandida (hasta
+        36% de la ventana, ver `_target_chat_height`) ambos pisos sumados
+        podían superar el espacio real disponible, y el orbe terminaba
+        desbordando su celda de layout y solapándose con la consola en
+        vez de dejarle aire antes de ella — "se ve como entre el piso",
+        reportado en uso real."""
+        outer = self._root.layout()
+        m = outer.contentsMargins()
+        reserved = (
+            m.top() + m.bottom()
+            + self.top_bar.height() + outer.spacing()
+            + self._services_row_widget.height() + outer.spacing()
+            + outer.spacing() + 8  # hueco stage->chat_row + margen propio de chat_row
+            + self.chat.height()
+        )
+        available = max(0, self.height() - reserved)
+        self.orb.setMinimumHeight(round(available * self.STAGE_MIN_FRACTION))
 
     # FASE D — bajo este ancho los paneles SISTEMA/ACTIVIDAD dejan de
     # estar siempre visibles y pasan a ser un cajón que se abre/cierra

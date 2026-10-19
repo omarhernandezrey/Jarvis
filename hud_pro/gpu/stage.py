@@ -866,7 +866,16 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         scene = self._fbos["scene"]
         scene.bind()
         self._gl.glViewport(0, 0, scene.width(), scene.height())
-        sx, sy, sw, sh = self._scissor_rect_around_orb(_ORB_MARGIN * 1.1, scene.width(), scene.height())
+        # Margen 1.8x (antes 1.1x): confirmado con capturas reales +
+        # muestreo de píxeles que a 1.1x este glScissor cortaba en seco
+        # (una sola fila de píxeles, de brillo ~95 a ~4) el glow/rim del
+        # orbe ANTES de que su propio alpha llegara a cero -- se veía como
+        # un corte recto justo debajo del orbe, "no aparece el círculo
+        # completo, tapado abajo", reportado en uso real. 1.8x deja ese
+        # alpha apagarse solo (fade suave contra el piso hexagonal),
+        # consistente con el "2.8x" de sangrado de bloom ya documentado en
+        # `_position_status_below_rings` (window.py).
+        sx, sy, sw, sh = self._scissor_rect_around_orb(_ORB_MARGIN * 1.8, scene.width(), scene.height())
         self._gl.glEnable(_GL_SCISSOR_TEST)
         self._gl.glScissor(sx, sy, sw, sh)
         self._gl.glEnable(_GL_BLEND)

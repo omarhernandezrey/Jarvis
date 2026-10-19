@@ -47,7 +47,7 @@ void main() {
     // barrido rotatorio (más rápido en PROCESANDO)
     float sweepAngle = mod(u_time * 0.7 * u_stateMult, TAU);
     float angDiff = abs(mod(ang - sweepAngle + 3.14159265, TAU) - 3.14159265);
-    float sweep = smoothstep(0.22, 0.0, angDiff) * ringLine(d, r * 1.45, 0.07);
+    float sweep = smoothstep(0.22, 0.0, angDiff) * ringLine(d, r * 1.45, 0.012);
     col += u_tint * sweep * 0.6;
     a += sweep * 0.6;
 
