@@ -503,6 +503,44 @@ def test_noise3d_tiles_without_seams():
     assert edge_diff < interior_diff * 3 + 5
 
 
+def test_fbo_filter_helper_uses_bilinear_and_clamp_to_edge():
+    """Las texturas de FBO nacen con GL_NEAREST en esta build de Qt; los
+    pases reducidos (bloom/rayos/escena) asumen GL_LINEAR. Sin este filtro
+    aparecían cuadros rectos sobre el orbe en PENSANDO (bug real)."""
+    from hud_pro.gpu import stage as stage_mod
+
+    calls: list[tuple] = []
+
+    class _GL:
+        def glActiveTexture(self, unit):
+            calls.append(("active", unit))
+
+        def glBindTexture(self, target, tex):
+            calls.append(("bind", target, tex))
+
+        def glTexParameteri(self, target, pname, value):
+            calls.append(("param", target, pname, value))
+
+    class _FBO:
+        def texture(self):
+            return 77
+
+    class _Stage:
+        _gl = _GL()
+
+    stage_mod.HoloStage._set_fbo_linear(_Stage(), _FBO())
+
+    params = {(call[2], call[3]) for call in calls if call[0] == "param"}
+    assert params == {
+        (stage_mod._GL_TEXTURE_MIN_FILTER, stage_mod._GL_LINEAR),
+        (stage_mod._GL_TEXTURE_MAG_FILTER, stage_mod._GL_LINEAR),
+        (stage_mod._GL_TEXTURE_WRAP_S, stage_mod._GL_CLAMP_TO_EDGE),
+        (stage_mod._GL_TEXTURE_WRAP_T, stage_mod._GL_CLAMP_TO_EDGE),
+    }
+    assert ("bind", stage_mod._GL_TEXTURE_2D, 77) in calls
+    assert ("bind", stage_mod._GL_TEXTURE_2D, 0) in calls
+
+
 # ── FASE B: comportamiento real de HoloStage (necesita sesión gráfica) ──
 @pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
 def test_holostage_scan_wave_triggers_on_state_change_and_energy_onset():

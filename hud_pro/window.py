@@ -242,6 +242,8 @@ class HudWindow(QtWidgets.QMainWindow):
         self.chat.submitted.connect(self._on_submitted)
         self.chat.mic_toggled.connect(self.mic_toggled.emit)
         self.chat.header_clicked.connect(self.toggle_console_mode)
+        # el interior del orbe responde a la escritura real del usuario
+        self.chat.input.edit.textEdited.connect(self._on_chat_typing)
         self.orb.installEventFilter(self)
         self.chat.installEventFilter(self)
         self._sync_glass_rect()
@@ -379,6 +381,11 @@ class HudWindow(QtWidgets.QMainWindow):
         """Transcripción parcial/final del STT bajo el orbe."""
         self.status.set_transcript(text)
 
+    def pulse_orb_activity(self, amount: float = 0.25) -> None:
+        """Enciende el interior del orbe (tecleo, envío, respuesta…)."""
+        if self.gpu_stage is not None:
+            self.gpu_stage.pulse_activity(amount)
+
     def add_user_message(self, text: str) -> MessageBubble:
         return self.chat.add_message("user", text)
 
@@ -391,6 +398,8 @@ class HudWindow(QtWidgets.QMainWindow):
     def stream_assistant(self, chunk: str) -> None:
         """Agrega tokens a la respuesta en curso (crea la burbuja si no existe)."""
         self.chat.stream(chunk)
+        if self.gpu_stage is not None and chunk:
+            self.gpu_stage.pulse_activity(0.09)
 
     def end_assistant_stream(self) -> None:
         self.chat.end_stream()
@@ -497,9 +506,16 @@ class HudWindow(QtWidgets.QMainWindow):
         self._position_corner_widgets()
 
     # ── Internos ──────────────────────────────────────────────────────────
+    def _on_chat_typing(self, _text: str) -> None:
+        """Cada tecla enciende brevemente el interior (sin acumularse)."""
+        if self.gpu_stage is not None:
+            self.gpu_stage.pulse_activity(0.22)
+
     def _on_submitted(self, text: str) -> None:
         if self._echo:
             self.chat.add_message("user", text)
+        if self.gpu_stage is not None:
+            self.gpu_stage.pulse_activity(0.70)
         self.message_submitted.emit(text)
 
     def _install_shortcuts(self) -> None:

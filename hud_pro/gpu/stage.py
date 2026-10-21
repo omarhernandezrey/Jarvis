@@ -25,7 +25,7 @@ from shiboken6 import VoidPtr
 from ..qt_compat import QtCore, QtGui, QtOpenGL, QtOpenGLWidgets, Signal
 from ..state import OrbState
 from ..theme import STATE_STYLES
-from . import noise3d
+from . import filaments, noise3d
 from .quality import QUALITY_PRESETS, AutoQualityController, Quality, QualitySettings, parse_quality
 from .shader_loader import ShaderCompileError, ShaderProgram
 
@@ -34,6 +34,12 @@ log = logging.getLogger("jarvis.hud_pro.gpu")
 _GL_COLOR_BUFFER_BIT = 0x4000
 _GL_TEXTURE_2D = 0x0DE1
 _GL_TEXTURE0 = 0x84C0
+_GL_TEXTURE_MIN_FILTER = 0x2801
+_GL_TEXTURE_MAG_FILTER = 0x2800
+_GL_TEXTURE_WRAP_S = 0x2802
+_GL_TEXTURE_WRAP_T = 0x2803
+_GL_LINEAR = 0x2601
+_GL_CLAMP_TO_EDGE = 0x812F
 _GL_BLEND = 0x0BE1
 _GL_SRC_ALPHA = 0x0302
 _GL_ONE_MINUS_SRC_ALPHA = 0x0303
@@ -123,6 +129,9 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._time = 0.0
         self._energy = 0.0
         self._prev_energy = 0.0
+        # pulso transitorio del interior: tecleo, envío, respuesta o
+        # cambio de estado; decae solo en `paintGL` (ver `pulse_activity`)
+        self._activity_boost = 0.0
         self._state = OrbState.IDLE
         self._paused = False
         self._init_ok = False
@@ -151,6 +160,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._dust_vao = None
         self._dust_vbo = None
         self._noise_tex = None
+        self._filament_tex = None
         self._gl = None
         self._timer_query = None  # QOpenGLTimerQuery, si la extensión existe
 
@@ -186,6 +196,9 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
     def set_state(self, state: OrbState) -> None:
         if state != self._state:
             self._trigger_scan()
+            # cada cambio de estado enciende el interior (escucha, habla,
+            # generación, error) con un pulso que se apaga solo
+            self._activity_boost = max(self._activity_boost, 0.45)
         entering_thinking = state is OrbState.THINKING and self._state is not OrbState.THINKING
         leaving_thinking = state is not OrbState.THINKING and self._state is OrbState.THINKING
         self._state = state
@@ -253,6 +266,30 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             self._rebuild_fbos(*self._device_size())
         finally:
             self.doneCurrent()
+
+    def pulse_activity(self, amount: float = 0.25) -> None:
+        """Enciende el interior del orbe con un pulso transitorio (0..1).
+
+        Lo alimenta el HUD con actividad REAL del sistema: cada tecla en
+        el campo de texto, el envío de un mensaje, cada trozo de respuesta
+        del LLM y los cambios de estado. `paintGL` lo hace decaer, así que
+        no se acumula sin límite."""
+        value = max(0.0, min(1.0, float(amount)))
+        self._activity_boost = max(self._activity_boost, value)
+
+    def _orb_activity(self) -> float:
+        """Actividad 0..1.6 del interior por estado + pulso transitorio."""
+        if self._state is OrbState.THINKING:
+            base = 0.85
+        elif self._state is OrbState.LISTENING:
+            base = 0.32 + 0.55 * self._energy
+        elif self._state is OrbState.SPEAKING:
+            base = 0.38 + 0.55 * self._energy
+        elif self._state is OrbState.ERROR:
+            base = 0.45
+        else:
+            base = 0.18
+        return max(0.0, min(1.6, base + self._activity_boost))
 
     def set_energy(self, energy: float) -> None:
         e = max(0.0, min(1.0, float(energy)))
@@ -331,7 +368,12 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
                 raise HoloStageError("QOpenGLVertexArrayObject.create() falló")
             self._compile_programs()
             self._init_noise_texture()
+            self._init_filament_texture()
             self._init_dust_buffers()
+            # determinista: existe aunque el primer frame aún no haya
+            # llegado (el camino congelado de `_render_scene` también lo
+            # garantiza, pero no si THINKING entra antes del primer paint)
+            self._ensure_dynamic_bg_fbo()
             if self.context().hasExtension(b"GL_ARB_timer_query"):
                 self._timer_query = QtOpenGL.QOpenGLTimerQuery(self)
                 self._timer_query.create()
@@ -410,6 +452,9 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         if self._noise_tex is not None:
             self._noise_tex.destroy()
             self._noise_tex = None
+        if self._filament_tex is not None:
+            self._filament_tex.destroy()
+            self._filament_tex = None
         self._fbos.clear()
 
     def _compile_programs(self) -> None:
@@ -450,6 +495,26 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             QtOpenGL.QOpenGLTexture.PixelFormat.RG, QtOpenGL.QOpenGLTexture.PixelType.UInt8, data,
         )
         self._noise_tex = tex
+
+    def _init_filament_texture(self) -> None:
+        size = filaments.DEFAULT_SIZE
+        data = filaments.generate_or_load(size)
+        tex = QtOpenGL.QOpenGLTexture(QtOpenGL.QOpenGLTexture.Target.Target2D)
+        tex.setFormat(QtOpenGL.QOpenGLTexture.TextureFormat.RGBA8_UNorm)
+        tex.setSize(size, size)
+        tex.setMipLevels(size.bit_length())
+        tex.setWrapMode(QtOpenGL.QOpenGLTexture.WrapMode.ClampToEdge)
+        tex.setMinMagFilters(
+            QtOpenGL.QOpenGLTexture.Filter.LinearMipMapLinear, QtOpenGL.QOpenGLTexture.Filter.Linear,
+        )
+        tex.allocateStorage(
+            QtOpenGL.QOpenGLTexture.PixelFormat.RGBA, QtOpenGL.QOpenGLTexture.PixelType.UInt8,
+        )
+        tex.setData(
+            QtOpenGL.QOpenGLTexture.PixelFormat.RGBA, QtOpenGL.QOpenGLTexture.PixelType.UInt8, data,
+        )
+        tex.generateMipMaps()
+        self._filament_tex = tex
 
     def _init_dust_buffers(self) -> None:
         self._dust_vao = QtOpenGL.QOpenGLVertexArrayObject(self)
@@ -514,6 +579,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
         fmt.setInternalTextureFormat(0x881A)  # GL_RGBA16F: rango HDR para el bloom/tonemap
         self._fbos["scene"] = QtOpenGL.QOpenGLFramebufferObject(rw, rh, fmt)
+        self._set_fbo_linear(self._fbos["scene"])
 
         # el resto de las FBOs son buffers intermedios de post-proceso —
         # nunca se leen para el tone mapping en sí (eso sólo pasa una vez,
@@ -532,11 +598,13 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._kawase_sizes = [(max(2, bw >> i), max(2, bh >> i)) for i in range(levels)]
         for i, (lw, lh) in enumerate(self._kawase_sizes):
             self._fbos[f"kawase{i}"] = QtOpenGL.QOpenGLFramebufferObject(lw, lh, fmt8)
+            self._set_fbo_linear(self._fbos[f"kawase{i}"])
         # flare a 1/8 de la resolución de PANTALLA (no de `bloom_scale`,
         # que en high ya es 1/4) — es un efecto muy difuminado de por sí,
         # media res extra sobre el bloom no se nota y sólo cuesta fill-rate.
         sw, sh = max(2, round(rw / 8)), max(2, round(rh / 8))
         self._fbos["streak"] = QtOpenGL.QOpenGLFramebufferObject(sw, sh, fmt8)
+        self._set_fbo_linear(self._fbos["streak"])
         # los rayos de dios son el pase más caro del pipeline (32-48
         # muestras por píxel, medido: ~2.4ms de los ~7.8ms totales en
         # HIGH) — el piso de muestras es un mandato ("nunca menos de 32"),
@@ -546,8 +614,16 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # extra no se nota.
         gw, gh = max(4, bw // 4), max(4, bh // 4)
         self._fbos["godray"] = QtOpenGL.QOpenGLFramebufferObject(gw, gh, fmt8)
+        self._set_fbo_linear(self._fbos["godray"])
 
         self._log_effective_config(w, h, bw, bh, levels, gw, gh)
+
+        # "dynamic_bg" acaba de borrarse arriba; el camino CONGELADO de
+        # THINKING sólo lo recrea al pintar. Si no llega un frame antes de
+        # que alguien consulte `_fbos` (o si el widget queda oculto), el
+        # dict queda incompleto. Crearlo aquí, con el contexto ya corriente
+        # (ver `_apply_settings_change_safely`), mantiene el invariante.
+        self._ensure_dynamic_bg_fbo()
 
     def _log_effective_config(
         self, w: int, h: int, bw: int, bh: int, kawase_levels: int, gw: int, gh: int,
@@ -585,6 +661,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         dt = self._clock.restart() / 1000.0
         if not self._reduced_motion:
             self._time += dt
+        # el pulso del interior se apaga solo (tecleo/envío/respuesta)
+        self._activity_boost = max(0.0, self._activity_boost - dt * 2.2)
 
         gl_started = False
         if self._timer_query is not None:
@@ -632,6 +710,24 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._gl.glDrawArrays(0x0004, 0, 3)  # GL_TRIANGLES
         self._vao.release()
 
+    def _set_fbo_linear(self, fbo) -> None:
+        """Filtro bilineal explícito para TODA textura de FBO.
+
+        En esta build de Qt, las texturas de `QOpenGLFramebufferObject`
+        nacen con GL_NEAREST. Los pases que se muestrean a otra resolución
+        (bloom, rayos de dios, escena con `_render_scale`, vidrio) asumen
+        GL_LINEAR — sin esto, cada texel del buffer reducido se ve como un
+        bloque recto (confirmado en capturas: cuadros blancos sobre el orbe
+        en PENSANDO). El coste de GL_LINEAR es despreciable."""
+        gl = self._gl
+        gl.glActiveTexture(_GL_TEXTURE0)
+        gl.glBindTexture(_GL_TEXTURE_2D, fbo.texture())
+        gl.glTexParameteri(_GL_TEXTURE_2D, _GL_TEXTURE_MIN_FILTER, _GL_LINEAR)
+        gl.glTexParameteri(_GL_TEXTURE_2D, _GL_TEXTURE_MAG_FILTER, _GL_LINEAR)
+        gl.glTexParameteri(_GL_TEXTURE_2D, _GL_TEXTURE_WRAP_S, _GL_CLAMP_TO_EDGE)
+        gl.glTexParameteri(_GL_TEXTURE_2D, _GL_TEXTURE_WRAP_T, _GL_CLAMP_TO_EDGE)
+        gl.glBindTexture(_GL_TEXTURE_2D, 0)
+
     def _bind_texture(self, program: ShaderProgram, uniform: str, unit: int, tex_id: int) -> None:
         self._gl.glActiveTexture(_GL_TEXTURE0 + unit)
         self._gl.glBindTexture(_GL_TEXTURE_2D, tex_id)
@@ -649,6 +745,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
         fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8 — nunca HDR, sólo compositing
         self._fbos["static_bg"] = QtOpenGL.QOpenGLFramebufferObject(dw, dh, fmt)
+        self._set_fbo_linear(self._fbos["static_bg"])
         self._static_bg_size = (dw, dh)
         fbo = self._fbos["static_bg"]
         fbo.bind()
@@ -670,6 +767,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
             fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8
             fbo = QtOpenGL.QOpenGLFramebufferObject(w, h, fmt)
+            self._set_fbo_linear(fbo)
             # el contenido de una textura recién creada es indefinido —
             # si esto pasa con el fondo CONGELADO (`_bg_frozen`, GOBERNADOR
             # DE RENDER), `_composite_background` leería basura de GPU en
@@ -800,18 +898,20 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p.release()
 
     def _ensure_orb_fbo(self) -> None:
-        """FBO propio del orbe (FASE C), cuadrado, a la MITAD de la
-        resolución de su propio cuadro en pantalla — el raymarch (24-40
-        pasos) sólo cuesta ahí, nunca en el resto de la escena. Se
-        reconstruye SOLO si el tamaño cambia (orbe se mueve/cambia de
-        tamaño con la ventana), no cada frame."""
+        """FBO propio del orbe (FASE C), cuadrado, a la resolución de su
+        propio cuadro en pantalla — el pase del orbe (red de filamentos +
+        ruido 3D) sólo cuesta ahí, nunca en el resto de la escena, y a
+        1:1 los filamentos finos sobreviven en vez de convertirse en
+        motas al minificar. Se reconstruye SOLO si el tamaño cambia (orbe
+        se mueve/cambia de tamaño con la ventana), no cada frame."""
         _, dh = self._device_size()
         diameter_px = self._light_radius * dh * 2.0 * _ORB_MARGIN
-        size = max(8, min(round(diameter_px * 0.5), dh * 2))
+        size = max(8, min(round(diameter_px), dh * 2))
         if self._orb_fbo_size != (size, size):
             fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
             fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8
             self._fbos["orb"] = QtOpenGL.QOpenGLFramebufferObject(size, size, fmt)
+            self._set_fbo_linear(self._fbos["orb"])
             self._orb_fbo_size = (size, size)
 
     def _scissor_rect_around_orb(self, margin: float, fbo_w: int, fbo_h: int) -> tuple[int, int, int, int]:
@@ -834,10 +934,12 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         return x0, y0, max(1, x1 - x0), max(1, y1 - y0)
 
     def _render_orb(self) -> None:
-        """Raymarch real del orbe (plasma vía textura de ruido 3D, 2
-        muestras — nunca fbm de varias octavas), restringido al cuadro
-        pequeño de `_ensure_orb_fbo`, y compuesto luego sobre la escena
-        (pase barato de pantalla completa, ver `blit.frag`)."""
+        """Orbe de plasma: red de filamentos luminosos sobre vidrio
+        índigo, núcleo que late, órbitas con estela y pulsos ligados a la
+        energía real (`u_energy`). La textura 2D cacheada (dos redes +
+        halo) se deforma por capas con el ruido 3D; el pase vive en el
+        FBO 1:1 de `_ensure_orb_fbo` y se compone sobre la escena (ver
+        `blit.frag`)."""
         self._gl.glDisable(_GL_BLEND)
         self._ensure_orb_fbo()
         fbo = self._fbos["orb"]
@@ -845,21 +947,36 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._gl.glViewport(0, 0, fbo.width(), fbo.height())
         self._gl.glClear(_GL_COLOR_BUFFER_BIT)
         style = STATE_STYLES[self._state]
-        tint = tuple(c / 255.0 for c in style.primary) if self._state != OrbState.ERROR else (1.0, 0.25, 0.32)
+        if self._state != OrbState.ERROR:
+            tint = tuple(c / 255.0 for c in style.primary)
+            tint2 = tuple(c / 255.0 for c in style.secondary)
+            accent = tuple(c / 255.0 for c in style.accent)
+        else:
+            tint = (1.0, 0.25, 0.32)
+            tint2 = (0.50, 0.05, 0.12)
+            accent = (1.0, 0.80, 0.85)
         state_mult = 1.8 if self._state is OrbState.THINKING else 1.0
         p = self._programs["orb"]
         p.maybe_reload()
         p.bind()
         p.set_uniform("u_time", self._time)
         p.set_uniform("u_energy", self._energy)
+        p.set_uniform("u_activity", self._orb_activity())
         p.set_uniform("u_tint", *tint)
+        p.set_uniform("u_tint2", *tint2)
+        p.set_uniform("u_accent", *accent)
         p.set_uniform("u_stateMult", state_mult)
         p.set_uniform("u_hover", 1.0 if self._hover else 0.0)
         p.set_uniform("u_steps", self._settings.raymarch_steps)
         self._noise_tex.bind(3)
         p.set_uniform("u_noise3d", 3)
+        if self._filament_tex is not None:
+            self._filament_tex.bind(4)
+            p.set_uniform("u_filaments", 4)
         self._draw_fullscreen()
         self._noise_tex.release()
+        if self._filament_tex is not None:
+            self._filament_tex.release()
         p.release()
         fbo.release()
 
@@ -952,6 +1069,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             fmt = QtOpenGL.QOpenGLFramebufferObjectFormat()
             fmt.setInternalTextureFormat(0x8058)  # GL_RGBA8
             self._fbos["glass"] = QtOpenGL.QOpenGLFramebufferObject(gw, gh, fmt)
+            self._set_fbo_linear(self._fbos["glass"])
             self._glass_fbo_size = (gw, gh)
         return gw, gh
 
@@ -1112,9 +1230,14 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._bind_texture(p, "u_streak", 2, streak_tex)
         self._bind_texture(p, "u_godray", 3, self._fbos["godray"].texture())
         p.set_uniform("u_time", self._time)
-        p.set_uniform("u_bloomStrength", 0.9)
+        # El bloom/rayos se muestrean con GL_LINEAR (ver `_set_fbo_linear`):
+        # con el filtro nearest anterior, 0.9/0.7 se veía bien porque los
+        # texels brillantes quedaban concentrados; al difuminarlos de verdad,
+        # esos mismos valores lavaban los filamentos del orbe. 0.55/0.35
+        # conserva el detalle y mantiene el glow exterior.
+        p.set_uniform("u_bloomStrength", 0.55)
         p.set_uniform("u_streakStrength", 0.5 if self._settings.streak_enabled else 0.0)
-        p.set_uniform("u_godrayStrength", 0.7)
+        p.set_uniform("u_godrayStrength", 0.35)
         p.set_uniform("u_aberration", 0.0 if self._reduced_motion else self._settings.aberration)
         p.set_uniform("u_grain", 0.0 if self._reduced_motion else self._settings.grain)
         p.set_uniform("u_vignette", self._settings.vignette)

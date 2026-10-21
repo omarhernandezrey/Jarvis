@@ -167,6 +167,10 @@ class HudBridge(QtCore.QObject):
 
     def _apply_message(self, role: str, text: str) -> None:
         self._window.chat.add_message(role, text)
+        # mensajes que llegan por el backend (CLI, integraciones): el
+        # interior del orbe también reacciona a la conversación
+        if role in ("user", "assistant"):
+            self._window.pulse_orb_activity(0.45 if role == "user" else 0.35)
 
     @property
     def window(self) -> Optional[HudWindow]:
