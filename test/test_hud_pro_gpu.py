@@ -519,18 +519,21 @@ def test_pulse_activity_arms_the_neutron_kick():
     assert stage._neutron_kick == 0.7
 
 
-def test_neutrons_freeze_in_idle_and_move_only_on_interaction():
-    """En reposo la fase no avanza: los neutrones quedan suspendidos.
+def test_neutrons_drift_gently_in_idle_and_surge_on_interaction():
+    """En reposo la fase avanza muy despacio (respiración, nunca cero) y
+    se dispara al interactuar.
 
-    El reloj global (`u_time`) sigue latiendo para el plasma, pero la
-    posición de los neutrones usa una fase aparte que sólo se alimenta de
-    interacción real. Sin esto giraban solos en IDLE y dejaban de sentirse
-    como una reacción a Jarvis."""
+    Reportado en uso real: congelar del todo en IDLE se veía "muerto". La
+    fase de los neutrones ahora usa `_IDLE_DRIFT` como piso — movimiento
+    sutil y continuo — y un salto grande (kick/estado activo) para que la
+    reacción real siga sintiéndose como un salto, no como "más de lo
+    mismo"."""
     from hud_pro.gpu.stage import HoloStage
     from hud_pro.state import OrbState
 
     class _Stage:
         _neutron_speed = HoloStage._neutron_speed
+        _IDLE_DRIFT = HoloStage._IDLE_DRIFT
         _state = OrbState.IDLE
         _energy = 0.0
         _neutron_kick = 0.0
@@ -540,32 +543,36 @@ def test_neutrons_freeze_in_idle_and_move_only_on_interaction():
 
     stage = _Stage()
     HoloStage._advance_neutrons(stage, 0.25)
-    assert stage._neutron_flow == 0.0
-    assert stage._neutron_motion == 0.0
+    idle_flow = stage._neutron_flow
+    assert 0.0 < idle_flow < 0.10  # avanza, pero muy despacio
+    idle_motion = stage._neutron_motion
+    assert 0.0 < idle_motion < 0.30
 
     stage._neutron_kick = 0.7
+    stage._neutron_flow = 0.0
     HoloStage._advance_neutrons(stage, 0.25)
-    assert stage._neutron_flow > 0.0
+    assert stage._neutron_flow > idle_flow * 10  # el kick dispara muy por encima del drift
     assert stage._neutron_motion == 1.0
 
     stage._neutron_kick = 0.0
     stage._state = OrbState.THINKING
     stage._neutron_flow = 0.0
     HoloStage._advance_neutrons(stage, 0.25)
-    assert stage._neutron_flow > 0.0
+    assert stage._neutron_flow > idle_flow * 10
 
 
-def test_orb_clock_freezes_in_idle_and_advances_on_interaction():
+def test_orb_clock_drifts_gently_in_idle_and_surges_on_interaction():
     """La red, el núcleo y el barrido de anillos usan el mismo reloj gated.
 
-    El reloj global no basta: si el orbe usa `u_time` sigue respirando en
-    LISTO aunque los neutrones estén quietos. `_orb_flow` sólo avanza con
-    interacción real y se congela en reposo."""
+    `_orb_flow` avanza despacio en LISTO (`_IDLE_ENGAGEMENT`, respiración
+    mínima para que el orbe nunca se vea apagado) y se dispara con
+    interacción real (kick o estado activo)."""
     from hud_pro.gpu.stage import HoloStage
     from hud_pro.state import OrbState
 
     class _Stage:
         _orb_engagement = HoloStage._orb_engagement
+        _IDLE_ENGAGEMENT = HoloStage._IDLE_ENGAGEMENT
         _state = OrbState.IDLE
         _neutron_kick = 0.0
         _orb_flow = 0.0
@@ -573,17 +580,19 @@ def test_orb_clock_freezes_in_idle_and_advances_on_interaction():
 
     stage = _Stage()
     HoloStage._advance_orb(stage, 0.25)
-    assert stage._orb_flow == 0.0
+    idle_flow = stage._orb_flow
+    assert 0.0 < idle_flow < 0.10
 
     stage._neutron_kick = 0.22
+    stage._orb_flow = 0.0
     HoloStage._advance_orb(stage, 0.25)
-    assert stage._orb_flow > 0.0
+    assert stage._orb_flow > idle_flow * 3
 
     stage._neutron_kick = 0.0
     stage._state = OrbState.THINKING
     stage._orb_flow = 0.0
     HoloStage._advance_orb(stage, 0.25)
-    assert stage._orb_flow > 0.0
+    assert stage._orb_flow > idle_flow * 3
 
 
 def test_fbo_filter_helper_uses_bilinear_and_clamp_to_edge():

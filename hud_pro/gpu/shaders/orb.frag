@@ -83,9 +83,10 @@ void main() {
     float energy = clamp(u_energy, 0.0, 1.0);
     float activity = clamp(u_activity, 0.0, 1.6);
     float stateMult = clamp(u_stateMult, 0.2, 4.0);
-    // el reloj interno está congelado en reposo: la red y el núcleo sólo
-    // respiran cuando Jarvis interactúa de verdad. Al teclear/enviar,
-    // escuchar, hablar o pensar, este tiempo avanza y todo se agita.
+    // el reloj interno late despacio en reposo (la red y el núcleo
+    // respiran, nunca se ven muertos) y se dispara cuando Jarvis
+    // interactúa de verdad: al teclear/enviar, escuchar, hablar o pensar,
+    // este tiempo se acelera y todo se agita con fuerza.
     float speed = (0.90 + 0.35 * stateMult)
                 * (0.75 + 0.45 * energy + 0.55 * activity);
 

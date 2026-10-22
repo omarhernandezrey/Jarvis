@@ -136,12 +136,12 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # los acelera durante ~1s aunque el brillo del orbe ya se haya
         # apagado. Así el movimiento se nota de verdad al teclear/enviar.
         self._neutron_kick = 0.0
-        # fase acumulada: en reposo NO avanza, así que las partículas
-        # quedan suspendidas hasta que Jarvis interactúa de verdad.
+        # fase acumulada: en reposo avanza muy despacio (respiración, el
+        # orbe nunca se ve "muerto") y se dispara con interacción real.
         self._neutron_flow = 0.0
         self._neutron_motion = 0.0
-        # reloj interno del orbe: también se congela en LISTO. La red, el
-        # núcleo y las órbitas sólo respiran cuando hay interacción.
+        # reloj interno del orbe: mismo criterio — late suave en LISTO, la
+        # red/núcleo/órbitas se agitan de verdad con la interacción.
         self._orb_flow = 0.0
         self._state = OrbState.IDLE
         self._paused = False
@@ -306,13 +306,18 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             base = 0.18
         return max(0.0, min(1.6, base + self._activity_boost))
 
-    def _neutron_speed(self) -> float:
-        """Velocidad de los neutrones: cero en reposo, alta al interactuar.
+    # velocidad base en IDLE: nunca cero — un "respirar" lento y continuo
+    # para que el orbe no se vea apagado/muerto sin interacción. Muy por
+    # debajo de cualquier estado activo (≈5% de THINKING) para que la
+    # reacción real siga sintiéndose como un salto, no como más de lo mismo.
+    _IDLE_DRIFT = 0.16
 
-        La posición no depende directamente del reloj: `_advance_neutrons`
-        acumula una fase sólo mientras hay interacción real. En IDLE sin
-        ningún pulso la fase se congela; al teclear/enviar o mientras el
-        orbe está escuchando/hablando/pensando, avanza."""
+    def _neutron_speed(self) -> float:
+        """Velocidad de los neutrones: suave en reposo, alta al interactuar.
+
+        En IDLE sin pulso avanzan a `_IDLE_DRIFT` (movimiento sutil, nunca
+        estático); al teclear/enviar o mientras el orbe está escuchando/
+        hablando/pensando, la velocidad sube de golpe."""
         if self._state is OrbState.THINKING:
             base = 3.20
         elif self._state is OrbState.LISTENING:
@@ -322,7 +327,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         elif self._state is OrbState.ERROR:
             base = 1.60
         else:
-            base = 0.0
+            base = self._IDLE_DRIFT
         # el pulso de una tecla tiene que notarse: 12x el kick y un techo
         # alto lo suficiente para que cruce el orbe antes de apagarse.
         return min(5.50, base + 12.00 * self._neutron_kick)
@@ -335,11 +340,16 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         self._neutron_motion = min(1.0, speed / 0.90)
         self._neutron_flow += dt * speed
 
+    # mismo criterio que `_IDLE_DRIFT`: el reloj del núcleo/red/anillos
+    # también respira despacio en reposo en vez de congelarse del todo.
+    _IDLE_ENGAGEMENT = 0.16
+
     def _orb_engagement(self) -> float:
-        """0 en LISTO; 1.25 durante la interacción real."""
+        """`_IDLE_ENGAGEMENT` en LISTO (respiración mínima); 1.25 durante
+        la interacción real."""
         if self._state is not OrbState.IDLE:
             return 1.25
-        return min(1.25, self._neutron_kick * 6.0)
+        return min(1.25, self._IDLE_ENGAGEMENT + self._neutron_kick * 6.0)
 
     def _advance_orb(self, dt: float) -> None:
         if self._reduced_motion:
