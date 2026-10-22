@@ -140,6 +140,9 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # quedan suspendidas hasta que Jarvis interactúa de verdad.
         self._neutron_flow = 0.0
         self._neutron_motion = 0.0
+        # reloj interno del orbe: también se congela en LISTO. La red, el
+        # núcleo y las órbitas sólo respiran cuando hay interacción.
+        self._orb_flow = 0.0
         self._state = OrbState.IDLE
         self._paused = False
         self._init_ok = False
@@ -311,16 +314,18 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         ningún pulso la fase se congela; al teclear/enviar o mientras el
         orbe está escuchando/hablando/pensando, avanza."""
         if self._state is OrbState.THINKING:
-            base = 2.45
+            base = 3.20
         elif self._state is OrbState.LISTENING:
-            base = 0.75 + 1.40 * self._energy
+            base = 1.00 + 1.80 * self._energy
         elif self._state is OrbState.SPEAKING:
-            base = 0.80 + 1.40 * self._energy
+            base = 1.05 + 1.80 * self._energy
         elif self._state is OrbState.ERROR:
-            base = 1.20
+            base = 1.60
         else:
             base = 0.0
-        return base + 4.20 * self._neutron_kick
+        # el pulso de una tecla tiene que notarse: 12x el kick y un techo
+        # alto lo suficiente para que cruce el orbe antes de apagarse.
+        return min(5.50, base + 12.00 * self._neutron_kick)
 
     def _advance_neutrons(self, dt: float) -> None:
         if self._reduced_motion:
@@ -329,6 +334,17 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         speed = self._neutron_speed()
         self._neutron_motion = min(1.0, speed / 0.90)
         self._neutron_flow += dt * speed
+
+    def _orb_engagement(self) -> float:
+        """0 en LISTO; 1.25 durante la interacción real."""
+        if self._state is not OrbState.IDLE:
+            return 1.25
+        return min(1.25, self._neutron_kick * 6.0)
+
+    def _advance_orb(self, dt: float) -> None:
+        if self._reduced_motion:
+            return
+        self._orb_flow += dt * self._orb_engagement()
 
     def set_energy(self, energy: float) -> None:
         e = max(0.0, min(1.0, float(energy)))
@@ -702,8 +718,12 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             self._time += dt
         # el pulso del interior se apaga solo (tecleo/envío/respuesta)
         self._activity_boost = max(0.0, self._activity_boost - dt * 2.2)
-        self._neutron_kick = max(0.0, self._neutron_kick - dt * 0.65)
+        # integrar con el kick vigente ANTES de apagarlo: si el frame tardó
+        # (ventana tapada, carga puntual), el pulso igual produce movimiento
+        # en vez de consumirse sin avanzar la fase.
         self._advance_neutrons(dt)
+        self._advance_orb(dt)
+        self._neutron_kick = max(0.0, self._neutron_kick - dt * 0.70)
 
         gl_started = False
         if self._timer_query is not None:
@@ -835,7 +855,9 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p = self._programs["dynamic_bg"]
         p.maybe_reload()
         p.bind()
-        p.set_uniform("u_time", self._time)
+        # el fondo también despierta con la interacción: en LISTO nada
+        # orbita ni barre por su cuenta.
+        p.set_uniform("u_time", self._orb_flow)
         p.set_uniform("u_energy", self._energy)
         p.set_uniform("u_resolution", float(w), float(h))
         p.set_uniform("u_tint", *tint)
@@ -926,7 +948,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p = self._programs["dust"]
         p.maybe_reload()
         p.bind()
-        p.set_uniform("u_time", self._time)
+        p.set_uniform("u_time", self._orb_flow)
         p.set_uniform("u_tint", *tint)
         self._gl.glEnable(_GL_PROGRAM_POINT_SIZE)
         self._gl.glEnable(_GL_BLEND)
@@ -1000,7 +1022,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p = self._programs["orb"]
         p.maybe_reload()
         p.bind()
-        p.set_uniform("u_time", self._time)
+        p.set_uniform("u_orbFlow", self._orb_flow)
         p.set_uniform("u_energy", self._energy)
         p.set_uniform("u_activity", self._orb_activity())
         p.set_uniform("u_neutronKick", self._neutron_kick)
@@ -1075,7 +1097,9 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p = self._programs["rings"]
         p.maybe_reload()
         p.bind()
-        p.set_uniform("u_time", self._time)
+        # el barrido de los anillos también es parte del orbe: se congela
+        # en reposo y sólo gira cuando Jarvis interactúa.
+        p.set_uniform("u_time", self._orb_flow)
         p.set_uniform("u_stateMult", state_mult)
         p.set_uniform("u_resolution", float(scene.width()), float(scene.height()))
         p.set_uniform("u_lightUv", *self._light_uv)
@@ -1273,7 +1297,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         streak_tex = self._fbos["streak"].texture() if self._settings.streak_enabled else self._fbos["kawase0"].texture()
         self._bind_texture(p, "u_streak", 2, streak_tex)
         self._bind_texture(p, "u_godray", 3, self._fbos["godray"].texture())
-        p.set_uniform("u_time", self._time)
+        p.set_uniform("u_time", self._orb_flow)
         # El bloom/rayos se muestrean con GL_LINEAR (ver `_set_fbo_linear`):
         # con el filtro nearest anterior, 0.9/0.7 se veía bien porque los
         # texels brillantes quedaban concentrados; al difuminarlos de verdad,

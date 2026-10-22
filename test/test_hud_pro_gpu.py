@@ -555,6 +555,37 @@ def test_neutrons_freeze_in_idle_and_move_only_on_interaction():
     assert stage._neutron_flow > 0.0
 
 
+def test_orb_clock_freezes_in_idle_and_advances_on_interaction():
+    """La red, el núcleo y el barrido de anillos usan el mismo reloj gated.
+
+    El reloj global no basta: si el orbe usa `u_time` sigue respirando en
+    LISTO aunque los neutrones estén quietos. `_orb_flow` sólo avanza con
+    interacción real y se congela en reposo."""
+    from hud_pro.gpu.stage import HoloStage
+    from hud_pro.state import OrbState
+
+    class _Stage:
+        _orb_engagement = HoloStage._orb_engagement
+        _state = OrbState.IDLE
+        _neutron_kick = 0.0
+        _orb_flow = 0.0
+        _reduced_motion = False
+
+    stage = _Stage()
+    HoloStage._advance_orb(stage, 0.25)
+    assert stage._orb_flow == 0.0
+
+    stage._neutron_kick = 0.22
+    HoloStage._advance_orb(stage, 0.25)
+    assert stage._orb_flow > 0.0
+
+    stage._neutron_kick = 0.0
+    stage._state = OrbState.THINKING
+    stage._orb_flow = 0.0
+    HoloStage._advance_orb(stage, 0.25)
+    assert stage._orb_flow > 0.0
+
+
 def test_fbo_filter_helper_uses_bilinear_and_clamp_to_edge():
     """Las texturas de FBO nacen con GL_NEAREST en esta build de Qt; los
     pases reducidos (bloom/rayos/escena) asumen GL_LINEAR. Sin este filtro

@@ -2,7 +2,7 @@
 in vec2 vUv;
 out vec4 fragColor;
 
-uniform float u_time;
+uniform float u_orbFlow;
 uniform float u_energy;
 uniform float u_activity;
 uniform float u_neutronKick;
@@ -79,12 +79,13 @@ void main() {
         return;
     }
 
-    float t = max(u_time, 0.0);
+    float t = max(u_orbFlow, 0.0);
     float energy = clamp(u_energy, 0.0, 1.0);
     float activity = clamp(u_activity, 0.0, 1.6);
     float stateMult = clamp(u_stateMult, 0.2, 4.0);
-    // la red nunca está quieta: respira en reposo y se agita con voz,
-    // tecleo, respuestas y generación (actividad real del sistema)
+    // el reloj interno está congelado en reposo: la red y el núcleo sólo
+    // respiran cuando Jarvis interactúa de verdad. Al teclear/enviar,
+    // escuchar, hablar o pensar, este tiempo avanza y todo se agita.
     float speed = (0.90 + 0.35 * stateMult)
                 * (0.75 + 0.45 * energy + 0.55 * activity);
 
@@ -225,7 +226,7 @@ void main() {
     float heat = clamp(activity + 0.85 * u_neutronKick, 0.0, 1.8);
     float neutronFlow = max(u_neutronFlow, 0.0);
     float neutronMotion = clamp(u_neutronMotion, 0.0, 1.0);
-    float tailSpan = (0.050 + 0.045 * min(heat, 1.2) + 0.010 * energy)
+    float tailSpan = (0.065 + 0.060 * min(heat, 1.2) + 0.012 * energy)
                    * neutronMotion;
     float sparkShadow = 0.0;
     vec3 sparkEmission = vec3(0.0);
@@ -239,8 +240,10 @@ void main() {
             vec2 mid = neutronPos(fi, neutronFlow - tailSpan * 0.5);
             vec2 tail = neutronPos(fi, neutronFlow - tailSpan);
 
-            float headSize = 0.018 + 0.010 * h2 + 0.003 * heat;
-            float trailWidth = 0.0035 + 0.0025 * h3 + 0.0015 * heat;
+            float headSize = 0.018 + 0.010 * h2 + 0.003 * heat
+                           + 0.004 * neutronMotion;
+            float trailWidth = 0.0035 + 0.0025 * h3 + 0.0015 * heat
+                             + 0.0015 * neutronMotion;
             vec2 hd = uv - head;
             float hd2 = dot(hd, hd);
             float hlen = sqrt(hd2);
@@ -276,10 +279,11 @@ void main() {
                                 neutronMotion);
             sparkShadow += (exp(-hd2 / (headSize * headSize * 2.5)) * 2.5
                           + trailShadow * 0.12) * flicker;
-            sparkEmission += vec3(1.0) * (bead * 2.30 + headGlow * 0.45 + trailCore * 0.45) * flicker
-                           + mix(u_tint, vec3(1.0), 0.18) * (shell * 0.85) * flicker
-                           + mix(u_tint, u_accent, 0.35) * trailGlow * 0.28 * flicker
-                           + mix(u_tint, u_accent, 0.55) * halo * 0.025 * flicker;
+            float alive = 0.82 + 0.28 * neutronMotion;
+            sparkEmission += (vec3(1.0) * (bead * 2.30 + headGlow * 0.45 + trailCore * 0.58) * flicker
+                            + mix(u_tint, vec3(1.0), 0.18) * (shell * 0.85) * flicker
+                            + mix(u_tint, u_accent, 0.35) * trailGlow * 0.36 * flicker
+                            + mix(u_tint, u_accent, 0.55) * halo * 0.025 * flicker) * alive;
         }
     }
     float sparkMask = body * (0.72 + 0.28 * cloud);
