@@ -544,21 +544,21 @@ def test_neutrons_drift_gently_in_idle_and_surge_on_interaction():
     stage = _Stage()
     HoloStage._advance_neutrons(stage, 0.25)
     idle_flow = stage._neutron_flow
-    assert 0.0 < idle_flow < 0.10  # avanza, pero muy despacio
+    assert 0.0 < idle_flow < 0.25  # avanza de forma notable, pero muy por debajo de interactuar
     idle_motion = stage._neutron_motion
-    assert 0.0 < idle_motion < 0.30
+    assert 0.30 < idle_motion < 0.90  # visible a simple vista, no a tope
 
     stage._neutron_kick = 0.7
     stage._neutron_flow = 0.0
     HoloStage._advance_neutrons(stage, 0.25)
-    assert stage._neutron_flow > idle_flow * 10  # el kick dispara muy por encima del drift
+    assert stage._neutron_flow > idle_flow * 4  # el kick dispara muy por encima del drift
     assert stage._neutron_motion == 1.0
 
     stage._neutron_kick = 0.0
     stage._state = OrbState.THINKING
     stage._neutron_flow = 0.0
     HoloStage._advance_neutrons(stage, 0.25)
-    assert stage._neutron_flow > idle_flow * 10
+    assert stage._neutron_flow > idle_flow * 4
 
 
 def test_orb_clock_drifts_gently_in_idle_and_surges_on_interaction():
@@ -581,18 +581,18 @@ def test_orb_clock_drifts_gently_in_idle_and_surges_on_interaction():
     stage = _Stage()
     HoloStage._advance_orb(stage, 0.25)
     idle_flow = stage._orb_flow
-    assert 0.0 < idle_flow < 0.10
+    assert 0.0 < idle_flow < 0.20
 
     stage._neutron_kick = 0.22
     stage._orb_flow = 0.0
     HoloStage._advance_orb(stage, 0.25)
-    assert stage._orb_flow > idle_flow * 3
+    assert stage._orb_flow > idle_flow * 2
 
     stage._neutron_kick = 0.0
     stage._state = OrbState.THINKING
     stage._orb_flow = 0.0
     HoloStage._advance_orb(stage, 0.25)
-    assert stage._orb_flow > idle_flow * 3
+    assert stage._orb_flow > idle_flow * 2
 
 
 def test_fbo_filter_helper_uses_bilinear_and_clamp_to_edge():

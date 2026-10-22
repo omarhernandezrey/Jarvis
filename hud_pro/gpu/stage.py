@@ -307,10 +307,12 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         return max(0.0, min(1.6, base + self._activity_boost))
 
     # velocidad base en IDLE: nunca cero — un "respirar" lento y continuo
-    # para que el orbe no se vea apagado/muerto sin interacción. Muy por
-    # debajo de cualquier estado activo (≈5% de THINKING) para que la
-    # reacción real siga sintiéndose como un salto, no como más de lo mismo.
-    _IDLE_DRIFT = 0.16
+    # para que el orbe no se vea apagado/muerto sin interacción. Por debajo
+    # de cualquier estado activo (≈17% de THINKING) para que la reacción
+    # real siga sintiéndose como un salto, pero lo bastante alto para que
+    # el ojo lo note sin fijarse (0.16 medía movimiento real en píxeles
+    # pero era imperceptible a simple vista — reportado en uso real).
+    _IDLE_DRIFT = 0.55
 
     def _neutron_speed(self) -> float:
         """Velocidad de los neutrones: suave en reposo, alta al interactuar.
@@ -342,7 +344,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
 
     # mismo criterio que `_IDLE_DRIFT`: el reloj del núcleo/red/anillos
     # también respira despacio en reposo en vez de congelarse del todo.
-    _IDLE_ENGAGEMENT = 0.16
+    _IDLE_ENGAGEMENT = 0.50
 
     def _orb_engagement(self) -> float:
         """`_IDLE_ENGAGEMENT` en LISTO (respiración mínima); 1.25 durante
