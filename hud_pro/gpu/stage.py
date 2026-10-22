@@ -132,6 +132,10 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # pulso transitorio del interior: tecleo, envío, respuesta o
         # cambio de estado; decae solo en `paintGL` (ver `pulse_activity`)
         self._activity_boost = 0.0
+        # los neutrones guardan inercia propia: un pulso de interacción
+        # los acelera durante ~1s aunque el brillo del orbe ya se haya
+        # apagado. Así el movimiento se nota de verdad al teclear/enviar.
+        self._neutron_kick = 0.0
         self._state = OrbState.IDLE
         self._paused = False
         self._init_ok = False
@@ -199,6 +203,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             # cada cambio de estado enciende el interior (escucha, habla,
             # generación, error) con un pulso que se apaga solo
             self._activity_boost = max(self._activity_boost, 0.45)
+            self._neutron_kick = max(self._neutron_kick, 0.55)
         entering_thinking = state is OrbState.THINKING and self._state is not OrbState.THINKING
         leaving_thinking = state is not OrbState.THINKING and self._state is OrbState.THINKING
         self._state = state
@@ -273,9 +278,12 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         Lo alimenta el HUD con actividad REAL del sistema: cada tecla en
         el campo de texto, el envío de un mensaje, cada trozo de respuesta
         del LLM y los cambios de estado. `paintGL` lo hace decaer, así que
-        no se acumula sin límite."""
+        no se acumula sin límite. Además arma `_neutron_kick`, que decae
+        más despacio: los neutrones siguen acelerados aunque el brillo del
+        orbe ya se haya apagado."""
         value = max(0.0, min(1.0, float(amount)))
         self._activity_boost = max(self._activity_boost, value)
+        self._neutron_kick = max(self._neutron_kick, value)
 
     def _orb_activity(self) -> float:
         """Actividad 0..1.6 del interior por estado + pulso transitorio."""
@@ -663,6 +671,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
             self._time += dt
         # el pulso del interior se apaga solo (tecleo/envío/respuesta)
         self._activity_boost = max(0.0, self._activity_boost - dt * 2.2)
+        self._neutron_kick = max(0.0, self._neutron_kick - dt * 0.65)
 
         gl_started = False
         if self._timer_query is not None:
@@ -962,6 +971,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p.set_uniform("u_time", self._time)
         p.set_uniform("u_energy", self._energy)
         p.set_uniform("u_activity", self._orb_activity())
+        p.set_uniform("u_neutronKick", self._neutron_kick)
         p.set_uniform("u_tint", *tint)
         p.set_uniform("u_tint2", *tint2)
         p.set_uniform("u_accent", *accent)

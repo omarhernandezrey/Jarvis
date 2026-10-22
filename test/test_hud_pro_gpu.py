@@ -503,6 +503,22 @@ def test_noise3d_tiles_without_seams():
     assert edge_diff < interior_diff * 3 + 5
 
 
+def test_pulse_activity_arms_the_neutron_kick():
+    """La interacción real no sólo enciende el brillo: deja inercia en los
+    neutrones. Sin un kick propio seguirían acelerados sólo durante los
+    ~0.1s que tarda en apagarse `_activity_boost` (imperceptible a 24fps)."""
+    from hud_pro.gpu.stage import HoloStage
+
+    class _Stage:
+        _activity_boost = 0.0
+        _neutron_kick = 0.0
+
+    stage = _Stage()
+    HoloStage.pulse_activity(stage, 0.7)
+    assert stage._activity_boost == 0.7
+    assert stage._neutron_kick == 0.7
+
+
 def test_fbo_filter_helper_uses_bilinear_and_clamp_to_edge():
     """Las texturas de FBO nacen con GL_NEAREST en esta build de Qt; los
     pases reducidos (bloom/rayos/escena) asumen GL_LINEAR. Sin este filtro

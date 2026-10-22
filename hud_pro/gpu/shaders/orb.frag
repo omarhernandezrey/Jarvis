@@ -5,6 +5,7 @@ out vec4 fragColor;
 uniform float u_time;
 uniform float u_energy;
 uniform float u_activity;
+uniform float u_neutronKick;
 uniform vec3  u_tint;
 uniform vec3  u_tint2;
 uniform vec3  u_accent;
@@ -37,6 +38,33 @@ mat2 rot2(float a) {
     float c = cos(a);
     float s = sin(a);
     return mat2(c, -s, s, c);
+}
+
+vec2 neutronPos(float fi, float tt, float rush) {
+    float h1 = hash12(vec2(fi, 3.1));
+    float h2 = hash12(vec2(fi, 7.7));
+    float h3 = hash12(vec2(fi, 11.3));
+    float h4 = hash12(vec2(fi, 17.9));
+    float dir = h4 > 0.5 ? 1.0 : -1.0;
+    float omega = (2.50 + 3.50 * h1) * rush;
+    float ang = tt * omega * dir + h2 * TAU;
+    // radio siempre LEJOS del núcleo: los neutrones golpean la red de
+    // filamentos, no se esconden en el brillo central. El radio sube y
+    // baja a otra frecuencia, así que rayan el orbe en espirales cerradas.
+    float radPhase = tt * (1.20 + 2.40 * h3) * rush * (0.60 + 0.40 * h1)
+                   + h4 * TAU;
+    float rad = EDGE * (0.32 + 0.42 * (0.5 + 0.5 * sin(radPhase)));
+    float squash = 0.50 + 0.35 * h3;
+    vec2 p = vec2(cos(ang) * rad, sin(ang) * rad * squash);
+    p += EDGE * (0.02 + 0.04 * min(rush, 3.0)) * vec2(
+        sin(tt * omega * 2.30 + h2 * TAU),
+        cos(tt * omega * 1.90 + h1 * TAU)
+    );
+    float plen = length(p);
+    if (plen > EDGE * 0.92) {
+        p *= (EDGE * 0.92) / max(plen, 1e-5);
+    }
+    return rot2(h2 * TAU + tt * (0.16 + 0.10 * h1) * dir) * p;
 }
 
 void main() {
@@ -187,37 +215,68 @@ void main() {
     bodyCol += mix(u_accent, vec3(1.0), 0.35) * orbitLine
              * (0.60 + 0.55 * energy + 0.45 * activity);
 
-    // --- neutrones: chispas vivas sobre la red ---
-    float sparks = 0.0;
+    // --- neutrones: proyectiles de luz que cruzan el plasma a toda
+    // velocidad y dejan estela; la interacción real (teclas, envío,
+    // respuesta, voz) los acelera sin piedad. ---
+    float heat = clamp(activity + 0.85 * u_neutronKick, 0.0, 1.8);
+    float neutronRush = (0.70 + 0.55 * stateMult)
+                      * (0.62 + 0.55 * energy + 1.05 * heat);
+    float tailSpan = 0.050 + 0.045 * min(heat, 1.2) + 0.010 * energy;
+    float sparkShadow = 0.0;
     vec3 sparkEmission = vec3(0.0);
     if (body > 0.01) {
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 10; i++) {
             float fi = float(i);
             float h1 = hash12(vec2(fi, 3.1));
             float h2 = hash12(vec2(fi, 7.7));
             float h3 = hash12(vec2(fi, 11.3));
-            float h4 = hash12(vec2(fi, 17.9));
-            float dir = h4 > 0.5 ? 1.0 : -1.0;
-            float ang = t * dir * (0.18 + 0.38 * h1)
-                      * (0.70 + 0.65 * stateMult)
-                      * (0.75 + 0.50 * energy + 0.45 * activity) + h2 * TAU;
-            float rad = EDGE * (0.10 + 0.58 * h3);
-            vec2 pos = vec2(cos(ang) * rad, sin(ang) * rad * (0.40 + 0.32 * h1));
-            float ca = cos(h2 * TAU);
-            float sa = sin(h2 * TAU);
-            pos = mat2(ca, -sa, sa, ca) * pos;
-            float depth = 0.55 + 0.45 * sin(ang * 1.3 + h3 * 8.0);
-            float size = 0.009 + 0.012 * h2;
-            vec2 delta = uv - pos;
-            float spark = exp(-dot(delta, delta) / (size * size)) * (0.45 + 0.75 * depth);
-            sparks += spark;
-            sparkEmission += mix(u_tint, vec3(1.0), 0.55) * spark;
+            vec2 head = neutronPos(fi, t, neutronRush);
+            vec2 mid = neutronPos(fi, t - tailSpan * 0.5, neutronRush);
+            vec2 tail = neutronPos(fi, t - tailSpan, neutronRush);
+
+            float headSize = 0.018 + 0.010 * h2 + 0.003 * heat;
+            float trailWidth = 0.0035 + 0.0025 * h3 + 0.0015 * heat;
+            vec2 hd = uv - head;
+            float hd2 = dot(hd, hd);
+            float hlen = sqrt(hd2);
+            float bead = 1.0 - smoothstep(headSize * 0.52, headSize * 0.95, hlen);
+            float headGlow = exp(-hd2 / (headSize * headSize * 4.0));
+            float shell = exp(-hd2 / (headSize * headSize * 3.0))
+                        * (1.0 - exp(-hd2 / (headSize * headSize * 1.8)));
+            float halo = exp(-hd2 / (headSize * headSize * 14.0));
+
+            vec2 pa1 = uv - mid;
+            vec2 ba1 = head - mid;
+            float t1 = clamp(dot(pa1, ba1) / max(dot(ba1, ba1), 1e-7), 0.0, 1.0);
+            vec2 o1 = pa1 - ba1 * t1;
+            float w1 = 0.40 + 0.60 * t1;
+
+            vec2 pa2 = uv - tail;
+            vec2 ba2 = mid - tail;
+            float t2 = clamp(dot(pa2, ba2) / max(dot(ba2, ba2), 1e-7), 0.0, 1.0);
+            vec2 o2 = pa2 - ba2 * t2;
+            float w2 = 0.08 + 0.36 * t2;
+
+            float trailGlow = exp(-dot(o1, o1) / (trailWidth * trailWidth)) * w1
+                            + exp(-dot(o2, o2) / (trailWidth * trailWidth)) * w2;
+            float trailCore = exp(-dot(o1, o1) / (trailWidth * trailWidth * 0.16)) * w1
+                            + exp(-dot(o2, o2) / (trailWidth * trailWidth * 0.16)) * w2;
+            float trailShadow = exp(-dot(o1, o1) / (trailWidth * trailWidth * 4.0)) * w1
+                              + exp(-dot(o2, o2) / (trailWidth * trailWidth * 4.0)) * w2;
+
+            float flicker = 0.82 + 0.18 * sin(t * (4.0 + 3.0 * h3) + h1 * TAU);
+            sparkShadow += (exp(-hd2 / (headSize * headSize * 2.5)) * 2.5
+                          + trailShadow * 0.12) * flicker;
+            sparkEmission += vec3(1.0) * (bead * 2.30 + headGlow * 0.45 + trailCore * 0.45) * flicker
+                           + mix(u_tint, vec3(1.0), 0.18) * (shell * 0.85) * flicker
+                           + mix(u_tint, u_accent, 0.35) * trailGlow * 0.28 * flicker
+                           + mix(u_tint, u_accent, 0.55) * halo * 0.025 * flicker;
         }
     }
-    float sparkMask = body * (0.30 + 0.70 * cloud);
-    bodyCol = mix(bodyCol, inkCol, clamp(sparks * 0.30, 0.0, 0.45));
+    float sparkMask = body * (0.72 + 0.28 * cloud);
+    bodyCol = mix(bodyCol, vec3(0.0), clamp(sparkShadow * 0.55, 0.0, 0.78));
     bodyCol += sparkEmission * sparkMask
-             * (0.60 + 0.65 * energy + 0.45 * activity);
+             * (0.95 + 0.35 * energy + 0.50 * heat);
 
     // --- borde de vidrio + halo de la esfera ---
     float rimThin = smoothstep(EDGE - 0.016, EDGE - 0.006, sd)
