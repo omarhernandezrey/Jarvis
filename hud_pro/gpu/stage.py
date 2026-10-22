@@ -136,6 +136,10 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # los acelera durante ~1s aunque el brillo del orbe ya se haya
         # apagado. Así el movimiento se nota de verdad al teclear/enviar.
         self._neutron_kick = 0.0
+        # fase acumulada: en reposo NO avanza, así que las partículas
+        # quedan suspendidas hasta que Jarvis interactúa de verdad.
+        self._neutron_flow = 0.0
+        self._neutron_motion = 0.0
         self._state = OrbState.IDLE
         self._paused = False
         self._init_ok = False
@@ -298,6 +302,33 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         else:
             base = 0.18
         return max(0.0, min(1.6, base + self._activity_boost))
+
+    def _neutron_speed(self) -> float:
+        """Velocidad de los neutrones: cero en reposo, alta al interactuar.
+
+        La posición no depende directamente del reloj: `_advance_neutrons`
+        acumula una fase sólo mientras hay interacción real. En IDLE sin
+        ningún pulso la fase se congela; al teclear/enviar o mientras el
+        orbe está escuchando/hablando/pensando, avanza."""
+        if self._state is OrbState.THINKING:
+            base = 2.45
+        elif self._state is OrbState.LISTENING:
+            base = 0.75 + 1.40 * self._energy
+        elif self._state is OrbState.SPEAKING:
+            base = 0.80 + 1.40 * self._energy
+        elif self._state is OrbState.ERROR:
+            base = 1.20
+        else:
+            base = 0.0
+        return base + 4.20 * self._neutron_kick
+
+    def _advance_neutrons(self, dt: float) -> None:
+        if self._reduced_motion:
+            self._neutron_motion = 0.0
+            return
+        speed = self._neutron_speed()
+        self._neutron_motion = min(1.0, speed / 0.90)
+        self._neutron_flow += dt * speed
 
     def set_energy(self, energy: float) -> None:
         e = max(0.0, min(1.0, float(energy)))
@@ -672,6 +703,7 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         # el pulso del interior se apaga solo (tecleo/envío/respuesta)
         self._activity_boost = max(0.0, self._activity_boost - dt * 2.2)
         self._neutron_kick = max(0.0, self._neutron_kick - dt * 0.65)
+        self._advance_neutrons(dt)
 
         gl_started = False
         if self._timer_query is not None:
@@ -972,6 +1004,8 @@ class HoloStage(QtOpenGLWidgets.QOpenGLWidget if QtOpenGLWidgets else object):
         p.set_uniform("u_energy", self._energy)
         p.set_uniform("u_activity", self._orb_activity())
         p.set_uniform("u_neutronKick", self._neutron_kick)
+        p.set_uniform("u_neutronFlow", self._neutron_flow)
+        p.set_uniform("u_neutronMotion", self._neutron_motion)
         p.set_uniform("u_tint", *tint)
         p.set_uniform("u_tint2", *tint2)
         p.set_uniform("u_accent", *accent)

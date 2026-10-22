@@ -519,6 +519,42 @@ def test_pulse_activity_arms_the_neutron_kick():
     assert stage._neutron_kick == 0.7
 
 
+def test_neutrons_freeze_in_idle_and_move_only_on_interaction():
+    """En reposo la fase no avanza: los neutrones quedan suspendidos.
+
+    El reloj global (`u_time`) sigue latiendo para el plasma, pero la
+    posición de los neutrones usa una fase aparte que sólo se alimenta de
+    interacción real. Sin esto giraban solos en IDLE y dejaban de sentirse
+    como una reacción a Jarvis."""
+    from hud_pro.gpu.stage import HoloStage
+    from hud_pro.state import OrbState
+
+    class _Stage:
+        _neutron_speed = HoloStage._neutron_speed
+        _state = OrbState.IDLE
+        _energy = 0.0
+        _neutron_kick = 0.0
+        _neutron_flow = 0.0
+        _neutron_motion = 0.0
+        _reduced_motion = False
+
+    stage = _Stage()
+    HoloStage._advance_neutrons(stage, 0.25)
+    assert stage._neutron_flow == 0.0
+    assert stage._neutron_motion == 0.0
+
+    stage._neutron_kick = 0.7
+    HoloStage._advance_neutrons(stage, 0.25)
+    assert stage._neutron_flow > 0.0
+    assert stage._neutron_motion == 1.0
+
+    stage._neutron_kick = 0.0
+    stage._state = OrbState.THINKING
+    stage._neutron_flow = 0.0
+    HoloStage._advance_neutrons(stage, 0.25)
+    assert stage._neutron_flow > 0.0
+
+
 def test_fbo_filter_helper_uses_bilinear_and_clamp_to_edge():
     """Las texturas de FBO nacen con GL_NEAREST en esta build de Qt; los
     pases reducidos (bloom/rayos/escena) asumen GL_LINEAR. Sin este filtro

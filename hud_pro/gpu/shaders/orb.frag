@@ -6,6 +6,8 @@ uniform float u_time;
 uniform float u_energy;
 uniform float u_activity;
 uniform float u_neutronKick;
+uniform float u_neutronFlow;
+uniform float u_neutronMotion;
 uniform vec3  u_tint;
 uniform vec3  u_tint2;
 uniform vec3  u_accent;
@@ -40,23 +42,25 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
-vec2 neutronPos(float fi, float tt, float rush) {
+vec2 neutronPos(float fi, float tt) {
     float h1 = hash12(vec2(fi, 3.1));
     float h2 = hash12(vec2(fi, 7.7));
     float h3 = hash12(vec2(fi, 11.3));
     float h4 = hash12(vec2(fi, 17.9));
     float dir = h4 > 0.5 ? 1.0 : -1.0;
-    float omega = (2.50 + 3.50 * h1) * rush;
-    float ang = tt * omega * dir + h2 * TAU;
+    float omega = 2.50 + 3.50 * h1;
+    // reparto angular casi uniforme (ángulo áureo) para que, cuando la
+    // fase se congela en reposo, no queden amontonados en un lado.
+    float ang = tt * omega * dir + fi * 2.399963 + h2 * 0.60;
     // radio siempre LEJOS del núcleo: los neutrones golpean la red de
     // filamentos, no se esconden en el brillo central. El radio sube y
     // baja a otra frecuencia, así que rayan el orbe en espirales cerradas.
-    float radPhase = tt * (1.20 + 2.40 * h3) * rush * (0.60 + 0.40 * h1)
+    float radPhase = tt * (1.20 + 2.40 * h3) * (0.60 + 0.40 * h1)
                    + h4 * TAU;
     float rad = EDGE * (0.32 + 0.42 * (0.5 + 0.5 * sin(radPhase)));
     float squash = 0.50 + 0.35 * h3;
     vec2 p = vec2(cos(ang) * rad, sin(ang) * rad * squash);
-    p += EDGE * (0.02 + 0.04 * min(rush, 3.0)) * vec2(
+    p += EDGE * (0.02 + 0.04 * clamp(u_neutronMotion, 0.0, 1.0)) * vec2(
         sin(tt * omega * 2.30 + h2 * TAU),
         cos(tt * omega * 1.90 + h1 * TAU)
     );
@@ -64,7 +68,7 @@ vec2 neutronPos(float fi, float tt, float rush) {
     if (plen > EDGE * 0.92) {
         p *= (EDGE * 0.92) / max(plen, 1e-5);
     }
-    return rot2(h2 * TAU + tt * (0.16 + 0.10 * h1) * dir) * p;
+    return rot2(h2 * 0.90 + tt * (0.16 + 0.10 * h1) * dir) * p;
 }
 
 void main() {
@@ -215,13 +219,14 @@ void main() {
     bodyCol += mix(u_accent, vec3(1.0), 0.35) * orbitLine
              * (0.60 + 0.55 * energy + 0.45 * activity);
 
-    // --- neutrones: proyectiles de luz que cruzan el plasma a toda
-    // velocidad y dejan estela; la interacción real (teclas, envío,
-    // respuesta, voz) los acelera sin piedad. ---
+    // --- neutrones: en reposo quedan suspendidos; cuando Jarvis
+    // interactúa de verdad (teclas, envío, respuesta, voz) la fase avanza
+    // y cruzan el plasma a toda velocidad dejando estela. ---
     float heat = clamp(activity + 0.85 * u_neutronKick, 0.0, 1.8);
-    float neutronRush = (0.70 + 0.55 * stateMult)
-                      * (0.62 + 0.55 * energy + 1.05 * heat);
-    float tailSpan = 0.050 + 0.045 * min(heat, 1.2) + 0.010 * energy;
+    float neutronFlow = max(u_neutronFlow, 0.0);
+    float neutronMotion = clamp(u_neutronMotion, 0.0, 1.0);
+    float tailSpan = (0.050 + 0.045 * min(heat, 1.2) + 0.010 * energy)
+                   * neutronMotion;
     float sparkShadow = 0.0;
     vec3 sparkEmission = vec3(0.0);
     if (body > 0.01) {
@@ -230,9 +235,9 @@ void main() {
             float h1 = hash12(vec2(fi, 3.1));
             float h2 = hash12(vec2(fi, 7.7));
             float h3 = hash12(vec2(fi, 11.3));
-            vec2 head = neutronPos(fi, t, neutronRush);
-            vec2 mid = neutronPos(fi, t - tailSpan * 0.5, neutronRush);
-            vec2 tail = neutronPos(fi, t - tailSpan, neutronRush);
+            vec2 head = neutronPos(fi, neutronFlow);
+            vec2 mid = neutronPos(fi, neutronFlow - tailSpan * 0.5);
+            vec2 tail = neutronPos(fi, neutronFlow - tailSpan);
 
             float headSize = 0.018 + 0.010 * h2 + 0.003 * heat;
             float trailWidth = 0.0035 + 0.0025 * h3 + 0.0015 * heat;
@@ -257,14 +262,18 @@ void main() {
             vec2 o2 = pa2 - ba2 * t2;
             float w2 = 0.08 + 0.36 * t2;
 
-            float trailGlow = exp(-dot(o1, o1) / (trailWidth * trailWidth)) * w1
-                            + exp(-dot(o2, o2) / (trailWidth * trailWidth)) * w2;
-            float trailCore = exp(-dot(o1, o1) / (trailWidth * trailWidth * 0.16)) * w1
-                            + exp(-dot(o2, o2) / (trailWidth * trailWidth * 0.16)) * w2;
-            float trailShadow = exp(-dot(o1, o1) / (trailWidth * trailWidth * 4.0)) * w1
-                              + exp(-dot(o2, o2) / (trailWidth * trailWidth * 4.0)) * w2;
+            float trailGlow = (exp(-dot(o1, o1) / (trailWidth * trailWidth)) * w1
+                             + exp(-dot(o2, o2) / (trailWidth * trailWidth)) * w2)
+                             * neutronMotion;
+            float trailCore = (exp(-dot(o1, o1) / (trailWidth * trailWidth * 0.16)) * w1
+                             + exp(-dot(o2, o2) / (trailWidth * trailWidth * 0.16)) * w2)
+                             * neutronMotion;
+            float trailShadow = (exp(-dot(o1, o1) / (trailWidth * trailWidth * 4.0)) * w1
+                               + exp(-dot(o2, o2) / (trailWidth * trailWidth * 4.0)) * w2)
+                               * neutronMotion;
 
-            float flicker = 0.82 + 0.18 * sin(t * (4.0 + 3.0 * h3) + h1 * TAU);
+            float flicker = mix(1.0, 0.82 + 0.18 * sin(t * (4.0 + 3.0 * h3) + h1 * TAU),
+                                neutronMotion);
             sparkShadow += (exp(-hd2 / (headSize * headSize * 2.5)) * 2.5
                           + trailShadow * 0.12) * flicker;
             sparkEmission += vec3(1.0) * (bead * 2.30 + headGlow * 0.45 + trailCore * 0.45) * flicker
