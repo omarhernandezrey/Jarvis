@@ -64,6 +64,12 @@ vec2 neutronPos(float fi, float tt) {
         sin(tt * omega * 2.30 + h2 * TAU),
         cos(tt * omega * 1.90 + h1 * TAU)
     );
+    // nervio: un temblor de alta frecuencia que sólo aparece con el pulso
+    // de interacción — el neutrón se sobresalta en vez de sólo acelerar.
+    p += EDGE * 0.05 * clamp(u_neutronKick, 0.0, 1.0) * vec2(
+        sin(tt * (5.3 + 3.0 * h3) + h1 * TAU),
+        cos(tt * (4.7 + 2.0 * h4) + h2 * TAU)
+    );
     float plen = length(p);
     if (plen > EDGE * 0.92) {
         p *= (EDGE * 0.92) / max(plen, 1e-5);
@@ -89,6 +95,10 @@ void main() {
     // este tiempo se acelera y todo se agita con fuerza.
     float speed = (0.90 + 0.35 * stateMult)
                 * (0.75 + 0.45 * energy + 0.55 * activity);
+    // pulso crudo de interacción (tecla, envío, respuesta, cambio de
+    // estado): úsalo para que el átomo reaccione AL INSTANTE, no sólo
+    // más rápido con el tiempo — un organismo vivo responde al toque.
+    float kick = clamp(u_neutronKick, 0.0, 1.0);
 
     // nube de rayos-X: el borde ya no es un vidrio nítido, se difumina como
     // el halo de un escaneo (referencia: "rotation atom with filaments").
@@ -103,7 +113,7 @@ void main() {
     float wn2 = texture(u_noise3d, vec3(np * 1.7 + 0.31 + driftB, -t * 0.15 * speed)).g - 0.5;
     float wn3 = texture(u_noise3d, vec3(np * 2.6 - 0.17 + driftB * 0.6, t * 0.27 * speed)).g - 0.5;
     vec2 warp = (vec2(wn1, wn2) + vec2(wn3, -wn3) * 0.45)
-              * (0.060 + 0.030 * energy + 0.035 * activity) * edgeFade;
+              * (0.060 + 0.030 * energy + 0.035 * activity + 0.085 * kick) * edgeFade;
 
     // --- dos redes (3ª en calidad alta): giran de verdad, como un átomo
     // que rota en 3D, no sólo se mecen. `squashY` finge el tumbo del eje
@@ -157,19 +167,31 @@ void main() {
              * (0.07 + 0.20 * energy + 0.18 * activity);
 
     // núcleo: mancha de tinta ancha y densa al centro (átomo de rayos-X),
-    // no un foco de luz. La voz/actividad la hace más DENSA y profunda,
-    // nunca más blanca — `hot` sólo aporta un acento sutil en el borde
-    // del cúmulo, jamás un pico blanco puro.
+    // no un foco de luz. "Respira" con el latido (su radio se expande y
+    // contrae, no sólo su brillo) y se CONTRAE de golpe ante un pulso de
+    // interacción real — un flinch, como algo vivo que reacciona al
+    // toque. `hot` sólo aporta un acento sutil, jamás un pico blanco puro.
     vec3 inkDeep = mix(inkCol, u_tint2, 0.45) * 0.55;
-    float darkCore = exp(-sd * sd * 5.0);
-    float beat = 0.55 + 0.45 * sin(t * (1.9 + 2.4 * energy + 1.4 * activity) + 0.4);
+    float heartbeat = sin(t * (1.9 + 2.4 * energy + 1.4 * activity) + 0.4);
+    float beat = 0.55 + 0.45 * heartbeat;
+    float breathR = 1.0 + 0.11 * heartbeat - 0.18 * kick;
+    float breathR2 = max(breathR * breathR, 0.22);
+    float darkCore = exp(-sd * sd * 5.0 / breathR2);
     bodyCol = mix(bodyCol, inkDeep, darkCore * (0.74 + 0.20 * activity + 0.12 * beat));
-    float nucleusDensity = exp(-sd * sd * 22.0);
+    float nucleusDensity = exp(-sd * sd * 22.0 / breathR2);
     bodyCol = mix(bodyCol, inkDeep * 0.45, nucleusDensity
                 * (0.58 + 0.24 * activity + 0.16 * energy) * (0.6 + 0.4 * beat));
     vec3 hot = mix(u_tint2, u_accent, 0.5);
     bodyCol += hot * exp(-sd * sd * 70.0) * (1.0 - nucleusDensity * 0.6)
              * (0.05 + 0.10 * energy + 0.12 * activity) * (0.5 + 0.5 * beat);
+
+    // onda de choque: un anillo que viaja desde el centro hacia afuera en
+    // cada pulso de interacción real (voz, tecla, envío, cambio de
+    // estado) — "vivo" es reaccionar al instante, no sólo acelerarse.
+    float ringPhase = sd * 13.0 - t * 5.0;
+    float shockRing = exp(-pow(fract(ringPhase * 0.5 + 0.5) - 0.5, 2.0) * 50.0)
+                     * kick * body;
+    bodyCol += mix(u_tint2, u_accent, 0.45) * shockRing * 0.40;
 
     // nodos vivos: chispas que se encienden y apagan sobre los filamentos
     float nodeNoise = texture(u_noise3d, vec3(uv * 2.2 + warp, t * 0.11)).r;
