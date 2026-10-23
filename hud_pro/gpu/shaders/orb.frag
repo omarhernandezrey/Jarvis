@@ -90,9 +90,10 @@ void main() {
     float speed = (0.90 + 0.35 * stateMult)
                 * (0.75 + 0.45 * energy + 0.55 * activity);
 
-    // esfera de vidrio: interior sólido con borde suave
-    float body = smoothstep(EDGE + 0.006, EDGE - 0.045, sd);
-    float edgeFade = smoothstep(EDGE, EDGE * 0.78, sd);
+    // nube de rayos-X: el borde ya no es un vidrio nítido, se difumina como
+    // el halo de un escaneo (referencia: "rotation atom with filaments").
+    float body = smoothstep(EDGE + 0.070, EDGE - 0.150, sd);
+    float edgeFade = smoothstep(EDGE, EDGE * 0.70, sd);
 
     // --- advección orgánica: la red fluye, no sólo rota ---
     vec2 np = uv * 0.58;
@@ -104,21 +105,24 @@ void main() {
     vec2 warp = (vec2(wn1, wn2) + vec2(wn3, -wn3) * 0.45)
               * (0.060 + 0.030 * energy + 0.035 * activity) * edgeFade;
 
-    // --- dos redes (3ª en calidad alta): respiran, giran y se mecen ---
-    float breathe = 1.0 + (0.040 + 0.025 * energy + 0.030 * activity)
+    // --- dos redes (3ª en calidad alta): giran de verdad, como un átomo
+    // que rota en 3D, no sólo se mecen. `squashY` finge el tumbo del eje
+    // (se achata hacia un anillo de canto, como en el video de referencia). ---
+    float squashY = 0.74 + 0.26 * cos(t * 0.045 * speed + 0.4);
+    float breathe = 1.0 + (0.030 + 0.020 * energy + 0.022 * activity)
                   * sin(t * 1.05 * stateMult + 0.6);
-    float angA = 0.28 * sin(t * 0.37 * stateMult) + t * 0.05 * speed;
-    vec2 uvA = rot2(angA) * uv * breathe;
+    float angA = t * 0.16 * speed + 0.12 * sin(t * 0.37 * stateMult);
+    vec2 uvA = rot2(angA) * (uv * vec2(1.0, squashY)) * breathe;
     vec4 texA = texture(u_filaments, uvA * 0.5 + 0.5 + warp, -0.35);
 
-    float angB = -0.24 + 0.20 * sin(t * 0.29 * stateMult + 1.9) - t * 0.035 * speed;
-    vec2 uvB = rot2(angB) * uv * (0.86 * breathe);
+    float angB = -t * 0.12 * speed + 0.10 * sin(t * 0.29 * stateMult + 1.9);
+    vec2 uvB = rot2(angB) * (uv * vec2(1.0, squashY)) * (0.86 * breathe);
     vec4 texB = texture(u_filaments, uvB * 0.5 + 0.5 - warp * 0.80, -0.30);
 
     vec4 texC = vec4(0.0);
     if (u_steps >= 32) {
-        float angC = 0.80 + 0.18 * sin(t * 0.23 + 0.9) + t * 0.028 * speed;
-        vec2 uvC = rot2(angC) * uv * 1.14;
+        float angC = t * 0.095 * speed + 0.08 * sin(t * 0.23 + 0.9);
+        vec2 uvC = rot2(angC) * (uv * vec2(1.0, squashY)) * 1.14;
         texC = texture(u_filaments, uvC * 0.5 + 0.5 + warp * 1.30, -0.25);
     }
 
@@ -128,11 +132,12 @@ void main() {
     cloud = smoothstep(0.08, 0.72, cloud);
     float thinVein = smoothstep(0.62, 0.94, vein);
 
-    // --- cuerpo: vidrio índigo profundo, coherente con el HUD oscuro ---
+    // --- cuerpo: vidrio índigo profundo, mucho más contenido — el brillo
+    // ambiental ya no compite con la mancha oscura del núcleo ---
     float radial = smoothstep(0.02, EDGE, sd);
-    vec3 deepBody = mix(u_tint2 * 0.20, u_tint * 0.14, radial)
-                  + vec3(0.003, 0.010, 0.030);
-    deepBody += mix(u_tint, u_accent, 0.55) * smoothstep(0.34, EDGE, sd) * 0.07;
+    vec3 deepBody = mix(u_tint2 * 0.13, u_tint * 0.09, radial)
+                  + vec3(0.002, 0.007, 0.020);
+    deepBody += mix(u_tint, u_accent, 0.55) * smoothstep(0.34, EDGE, sd) * 0.045;
     deepBody *= 0.95 + 0.10 * (wn1 + 0.5);
     vec3 bodyCol = deepBody;
 
@@ -145,23 +150,26 @@ void main() {
 
     float fil = smoothstep(0.10, 0.50, vein);
     float filCore = smoothstep(0.52, 0.92, vein);
-    vec3 filCol = mix(u_tint, u_accent, 0.55);
+    vec3 filCol = mix(u_tint, u_accent, 0.42);
     float patch = 0.70 + 0.30 * smoothstep(0.15, 0.75, cloud);
-    bodyCol += filCol * fil * patch * (0.20 + 0.28 * energy + 0.38 * activity);
-    bodyCol += mix(u_accent, vec3(1.0), 0.55) * filCore
-             * (0.13 + 0.32 * energy + 0.28 * activity);
+    bodyCol += filCol * fil * patch * (0.12 + 0.18 * energy + 0.26 * activity);
+    bodyCol += mix(u_accent, vec3(1.0), 0.30) * filCore
+             * (0.07 + 0.20 * energy + 0.18 * activity);
 
-    // núcleo: halo oscuro + corazón blanco que late con la voz
-    float darkCore = exp(-sd * sd * 24.0);
-    bodyCol = mix(bodyCol, inkCol * 0.55, darkCore * 0.60);
+    // núcleo: mancha de tinta ancha y densa al centro (átomo de rayos-X),
+    // no un foco de luz. La voz/actividad la hace más DENSA y profunda,
+    // nunca más blanca — `hot` sólo aporta un acento sutil en el borde
+    // del cúmulo, jamás un pico blanco puro.
+    vec3 inkDeep = mix(inkCol, u_tint2, 0.45) * 0.55;
+    float darkCore = exp(-sd * sd * 5.0);
     float beat = 0.55 + 0.45 * sin(t * (1.9 + 2.4 * energy + 1.4 * activity) + 0.4);
-    float nucleus = exp(-sd * sd * 120.0);
-    vec3 hot = mix(u_accent, vec3(1.0), 0.60);
-    bodyCol += hot * exp(-sd * sd * 18.0) * activity * 0.06;
-    bodyCol += hot * nucleus
-             * (0.30 + 0.45 * energy + 0.40 * activity) * (0.55 + 0.45 * beat);
-    bodyCol += vec3(1.0) * exp(-sd * sd * 520.0)
-             * (0.40 + 0.45 * energy + 0.30 * activity);
+    bodyCol = mix(bodyCol, inkDeep, darkCore * (0.74 + 0.20 * activity + 0.12 * beat));
+    float nucleusDensity = exp(-sd * sd * 22.0);
+    bodyCol = mix(bodyCol, inkDeep * 0.45, nucleusDensity
+                * (0.58 + 0.24 * activity + 0.16 * energy) * (0.6 + 0.4 * beat));
+    vec3 hot = mix(u_tint2, u_accent, 0.5);
+    bodyCol += hot * exp(-sd * sd * 70.0) * (1.0 - nucleusDensity * 0.6)
+             * (0.05 + 0.10 * energy + 0.12 * activity) * (0.5 + 0.5 * beat);
 
     // nodos vivos: chispas que se encienden y apagan sobre los filamentos
     float nodeNoise = texture(u_noise3d, vec3(uv * 2.2 + warp, t * 0.11)).r;
@@ -241,10 +249,10 @@ void main() {
             vec2 mid = neutronPos(fi, neutronFlow - tailSpan * 0.5);
             vec2 tail = neutronPos(fi, neutronFlow - tailSpan);
 
-            float headSize = 0.018 + 0.010 * h2 + 0.003 * heat
-                           + 0.004 * neutronMotion;
-            float trailWidth = 0.0035 + 0.0025 * h3 + 0.0015 * heat
-                             + 0.0015 * neutronMotion;
+            float headSize = 0.024 + 0.012 * h2 + 0.004 * heat
+                           + 0.005 * neutronMotion;
+            float trailWidth = 0.0050 + 0.0030 * h3 + 0.0018 * heat
+                             + 0.0018 * neutronMotion;
             vec2 hd = uv - head;
             float hd2 = dot(hd, hd);
             float hlen = sqrt(hd2);
@@ -278,33 +286,46 @@ void main() {
 
             float flicker = mix(1.0, 0.82 + 0.18 * sin(t * (4.0 + 3.0 * h3) + h1 * TAU),
                                 neutronMotion);
-            sparkShadow += (exp(-hd2 / (headSize * headSize * 2.5)) * 2.5
-                          + trailShadow * 0.12) * flicker;
+            // gota de tinta, no chispa blanca: el nodo oscurece su zona
+            // (sparkShadow) y sólo asoma un acento índigo tenue, con una
+            // cola translúcida en vez de un rastro brillante.
+            sparkShadow += (exp(-hd2 / (headSize * headSize * 1.6)) * 3.6
+                          + trailShadow * 0.22) * flicker;
             float alive = 0.82 + 0.28 * neutronMotion;
-            sparkEmission += (vec3(1.0) * (bead * 2.30 + headGlow * 0.45 + trailCore * 0.58) * flicker
-                            + mix(u_tint, vec3(1.0), 0.18) * (shell * 0.85) * flicker
-                            + mix(u_tint, u_accent, 0.35) * trailGlow * 0.36 * flicker
-                            + mix(u_tint, u_accent, 0.55) * halo * 0.025 * flicker) * alive;
+            vec3 inkBead = mix(inkCol, u_tint2, 0.5) * 0.6;
+            sparkEmission += (inkBead * (bead * 1.10 + headGlow * 0.22 + trailCore * 0.30) * flicker
+                            + mix(u_tint, vec3(1.0), 0.12) * (shell * 0.40) * flicker
+                            + mix(u_tint, u_accent, 0.30) * trailGlow * 0.20 * flicker
+                            + mix(u_tint, u_accent, 0.45) * halo * 0.015 * flicker) * alive;
         }
     }
     float sparkMask = body * (0.72 + 0.28 * cloud);
-    bodyCol = mix(bodyCol, vec3(0.0), clamp(sparkShadow * 0.55, 0.0, 0.78));
+    bodyCol = mix(bodyCol, vec3(0.0), clamp(sparkShadow * 0.70, 0.0, 0.85));
     bodyCol += sparkEmission * sparkMask
-             * (0.95 + 0.35 * energy + 0.50 * heat);
+             * (0.55 + 0.25 * energy + 0.35 * heat);
 
-    // --- borde de vidrio + halo de la esfera ---
-    float rimThin = smoothstep(EDGE - 0.016, EDGE - 0.006, sd)
-                  * (1.0 - smoothstep(EDGE - 0.002, EDGE + 0.010, sd));
-    float rimWide = smoothstep(EDGE - 0.060, EDGE - 0.010, sd)
-                  * (1.0 - smoothstep(EDGE - 0.002, EDGE + 0.020, sd));
-    float halo = exp(-max(sd - EDGE, 0.0) * 30.0);
-    float haloFar = exp(-max(sd - EDGE, 0.0) * 9.0);
+    // pase final: por más que el resto del shader sume brillo (nubes,
+    // pulsos, chispas), el centro del átomo tiene que seguir leyendo como
+    // una mancha de tinta ancha y densa — se atenúa la luminancia ahí en
+    // vez de pelear término a término contra cada fuente de luz. El borde
+    // de la mancha se perturba con el mismo ruido que ya mueve la red,
+    // para que no sea un círculo perfecto.
+    float inkMask = smoothstep(0.46, 0.04, sd + 0.07 * (wn1 + wn2));
+    bodyCol *= mix(1.0, 0.18, inkMask * (0.85 + 0.15 * beat));
+
+    // --- halo difuso de rayos-X, no un filo de vidrio nítido ---
+    float rimThin = smoothstep(EDGE - 0.040, EDGE - 0.010, sd)
+                  * (1.0 - smoothstep(EDGE - 0.010, EDGE + 0.050, sd));
+    float rimWide = smoothstep(EDGE - 0.140, EDGE - 0.020, sd)
+                  * (1.0 - smoothstep(EDGE - 0.010, EDGE + 0.090, sd));
+    float halo = exp(-max(sd - EDGE, 0.0) * 10.0);
+    float haloFar = exp(-max(sd - EDGE, 0.0) * 3.0);
 
     vec3 col = bodyCol * body;
-    col += mix(u_tint, vec3(1.0), 0.35)
-         * (rimThin * (0.38 + 0.05 * activity) + rimWide * 0.07);
-    col += u_tint * halo * (0.08 + 0.04 * energy + 0.05 * min(activity, 1.0));
-    col += u_tint2 * haloFar * 0.030;
+    col += mix(u_tint, vec3(1.0), 0.22)
+         * (rimThin * (0.20 + 0.04 * activity) + rimWide * 0.08);
+    col += u_tint * halo * (0.06 + 0.03 * energy + 0.04 * min(activity, 1.0));
+    col += u_tint2 * haloFar * 0.045;
     col *= (1.0 + 0.16 * u_hover);
 
     float alpha = clamp(body * 0.91 + rimThin * 0.38 + rimWide * 0.08
