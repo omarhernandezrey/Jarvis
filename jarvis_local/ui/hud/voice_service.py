@@ -161,11 +161,16 @@ class VoiceService(QObject):
     def stop_speech(self) -> None:
         self._stop_speech.set()
 
-    def _speak(self, text: str) -> None:
-        try:
-            import numpy as np
-            import sounddevice as sd
+    def _resolve_samples(self, text: str) -> tuple:
+        """Decide CON QUE VOZ se habla y devuelve (muestras, samplerate), o
+        (None, 0) si no hay ninguna disponible.
 
+        Esta decisión vive aparte de la reproducción a propósito: necesita
+        probarse en una máquina sin tarjeta de sonido (un runner de CI, un
+        contenedor), donde `import sounddevice` falla antes de llegar aquí.
+        Mezclarlas hacía que la prueba del respaldo dependiera del hardware.
+        """
+        try:
             from jarvis_local.voice import tts
 
             mp3 = tts._cache_get(text)
@@ -216,7 +221,21 @@ class VoiceService(QObject):
                 else:
                     self.notice.emit("voz no disponible: no se pudo generar el "
                                       "audio — esta respuesta no se habló")
-                return
+                return None, 0
+
+            return samples, sr
+        except Exception as e:                          # noqa: BLE001
+            self.notice.emit(f"voz no disponible: {e}")
+            return None, 0
+
+    def _speak(self, text: str) -> None:
+        try:
+            import numpy as np
+            import sounddevice as sd
+
+            samples, sr = self._resolve_samples(text)
+            if samples is None or sr <= 0:
+                return  # `_resolve_samples` ya avisó del motivo concreto
 
             self._speaking = True
             self.speakingChanged.emit(True)
