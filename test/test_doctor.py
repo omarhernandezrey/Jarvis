@@ -152,3 +152,55 @@ def test_doctor_spotify_sin_red_no_verificable(tmp_path, monkeypatch):
     ok, texto = doctor._check_spotify()
     assert texto.startswith(doctor.WARN)
     assert "no verificable" in texto
+
+
+# ── Voz de salida (las dos capas) ─────────────────────────────────────────
+# Antes el doctor no comprobaba la voz: la unica forma de descubrir que
+# Jarvis se habia quedado mudo era hablarle y no oir nada.
+
+def test_doctor_avisa_si_edge_tts_esta_en_version_bloqueada(monkeypatch):
+    """La causa real de la mudez: edge-tts 7.2.8, que Microsoft rechaza con
+    403. El doctor tiene que senalar la version, no solo que el paquete
+    importe."""
+    import edge_tts
+
+    from jarvis_local import doctor
+
+    monkeypatch.setattr(edge_tts, "__version__", "7.2.8", raising=False)
+    lineas = doctor._check_voz_salida()
+    principal = next(t for _, t in lineas if "Voz principal" in t)
+    assert "403" in principal
+    assert "pip install -U edge-tts" in principal
+
+
+def test_doctor_ok_con_edge_tts_al_dia(monkeypatch):
+    import edge_tts
+
+    from jarvis_local import doctor
+
+    monkeypatch.setattr(edge_tts, "__version__", "7.3.1", raising=False)
+    lineas = doctor._check_voz_salida()
+    ok, principal = next((o, t) for o, t in lineas if "Voz principal" in t)
+    assert ok is True
+    assert "7.3.1" in principal
+
+
+def test_doctor_avisa_si_falta_la_voz_local_de_respaldo(monkeypatch):
+    """Sin la capa 2, un fallo de la capa 1 vuelve a significar silencio
+    total: eso es un aviso, no un detalle informativo."""
+    from jarvis_local import doctor
+    from jarvis_local.voice import tts
+
+    monkeypatch.setattr(tts, "is_piper_available", lambda: False)
+    lineas = doctor._check_voz_salida()
+    ok, respaldo = next((o, t) for o, t in lineas if "respaldo" in t)
+    assert ok is False
+    assert "piper.download_voices" in respaldo
+
+
+def test_doctor_incluye_la_voz_en_el_informe():
+    from jarvis_local.doctor import diagnosticar
+
+    _, informe = diagnosticar()
+    assert "Voz principal" in informe
+    assert "Voz de respaldo (local)" in informe

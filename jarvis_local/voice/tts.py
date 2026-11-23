@@ -1,15 +1,27 @@
 """
 JARVIS Local - Text-to-Speech (Fase 3C)
-Unica voz : edge-tts + PyAV + sounddevice (voz neural masculina latina).
-            Sin API key. Requiere internet SIEMPRE: esta maquina esta
-            conectada de forma permanente, asi que no hay fallback a otro
-            motor de voz. Si la voz neural no esta disponible (sin
-            internet, o falla del servicio), Jarvis se queda en silencio
-            en vez de hablar con espeak-ng/pyttsx3 -- nunca se usa una voz
-            distinta a la configurada (ver _DEFAULT_EDGE_VOICE).
+
+Jarvis NUNCA se queda mudo. Hay dos capas de voz, las dos neurales:
+
+Capa 1    : edge-tts + PyAV + sounddevice (es-MX-JorgeNeural, la voz
+            "oficial" de Jarvis). Sin API key, pero depende de un endpoint
+            no documentado de Microsoft que REQUIERE internet y que, cada
+            cierto tiempo, empieza a responder 403 a la version instalada
+            de edge-tts hasta que se actualiza el paquete.
+Capa 2    : Piper, TTS neural que corre 100% en esta maquina (es_MX-ald,
+            masculina mexicana). Sin internet y sin servicios de terceros.
+            Entra en accion SOLO si la capa 1 falla.
+
+Por que existe la capa 2: el diseno anterior era "voz neural de Microsoft
+o silencio". El 2026-11-23 Microsoft empezo a devolver 403 a edge-tts
+7.2.8 y Jarvis se quedo completamente mudo -- y no era la primera vez. Un
+Jarvis que no responde es un Jarvis roto, asi que ahora un 403 degrada la
+voz (suena Piper, con acento mexicano parecido) en vez de apagarla. Ver
+`_piper_speak`.
+
 Cache     : las frases generadas se guardan en data/tts_cache, asi que las
             respuestas repetidas ("Te escucho.", saludos) suenan al instante
-            y siguen sonando con voz neural aunque no haya internet.
+            y siguen sonando con la voz de la capa 1 aunque no haya internet.
 """
 import asyncio
 import contextlib
@@ -198,6 +210,108 @@ def _play_numpy(audio: np.ndarray, samplerate: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Capa 2: Piper -- voz neural LOCAL de respaldo (sin internet, sin terceros)
+# ---------------------------------------------------------------------------
+
+# Voz masculina mexicana, la mas parecida a es-MX-JorgeNeural dentro del
+# catalogo de Piper. Configurable en config.yaml -> voice.tts_fallback_voice.
+_DEFAULT_PIPER_VOICE = "es_MX-ald-medium"
+_PIPER_DIR = BASE_DIR / "data" / "piper_voices"
+
+_configured_piper = str(_cfg_voice.get("tts_fallback_voice", _DEFAULT_PIPER_VOICE))
+_PIPER_VOICE = _configured_piper or _DEFAULT_PIPER_VOICE
+
+# El modelo pesa ~63 MB: se carga una sola vez, y solo si de verdad se
+# necesita (si la capa 1 nunca falla, Piper nunca se carga en memoria).
+_piper_loaded = None
+
+
+def piper_model_path():
+    """Ruta del .onnx de la voz local de respaldo."""
+    return _PIPER_DIR / f"{_PIPER_VOICE}.onnx"
+
+
+def piper_download_hint() -> str:
+    """Comando exacto para instalar la voz local. Se muestra cuando falta:
+    un error accionable vale mas que 'no hay voz disponible'."""
+    return (
+        f"python -m piper.download_voices {_PIPER_VOICE} "
+        f"--download-dir {_PIPER_DIR}"
+    )
+
+
+def is_piper_available() -> bool:
+    """La voz local de respaldo esta lista: paquete piper instalado Y
+    modelo descargado en disco."""
+    try:
+        import piper  # noqa: F401
+    except Exception:
+        return False
+    return piper_model_path().exists()
+
+
+def _get_piper_voice():
+    """Carga (una vez) el modelo local. None si no se puede."""
+    global _piper_loaded
+    if _piper_loaded is not None:
+        return _piper_loaded
+    try:
+        from piper import PiperVoice
+        _piper_loaded = PiperVoice.load(str(piper_model_path()))
+        return _piper_loaded
+    except Exception:
+        return None
+
+
+def _piper_synth(text: str) -> tuple:
+    """Sintetiza con Piper. Retorna (array_float32, samplerate) o (None, 0).
+
+    Respeta voice.tts_rate / voice.tts_volume igual que la capa 1:
+    `length_scale` es inverso a la velocidad (mas largo = mas lento), asi
+    que un tts_rate alto se traduce en length_scale bajo.
+    """
+    try:
+        from piper.config import SynthesisConfig
+
+        voice = _get_piper_voice()
+        if voice is None:
+            return None, 0
+
+        syn = SynthesisConfig(
+            length_scale=175.0 / max(_rate_wpm, 1),
+            volume=max(0.0, min(_volume_float, 1.0)),
+        )
+        chunks = list(voice.synthesize(text, syn_config=syn))
+        if not chunks:
+            return None, 0
+        audio = np.concatenate([c.audio_float_array for c in chunks])
+        return audio.astype(np.float32), int(chunks[0].sample_rate)
+    except Exception:
+        return None, 0
+
+
+def _piper_speak(text: str) -> bool:
+    """Habla con la voz local. Es la red de seguridad: si esto tambien
+    falla, Jarvis se queda mudo y lo dice con el motivo concreto."""
+    if not is_piper_available():
+        print(
+            f"[TTS] La voz principal ({_EDGE_VOICE}) fallo y la voz local de "
+            f"respaldo no esta instalada, asi que Jarvis no puede hablar.\n"
+            f"      Instalala con: {piper_download_hint()}"
+        )
+        return False
+    audio, sr = _piper_synth(text)
+    if audio is None or sr <= 0:
+        print(f"[TTS] La voz local ({_PIPER_VOICE}) no pudo sintetizar el texto.")
+        return False
+    print(
+        f"[TTS] Voz principal ({_EDGE_VOICE}) no disponible -- hablando con la "
+        f"voz local de respaldo ({_PIPER_VOICE})."
+    )
+    return _play_numpy(audio, sr)
+
+
+# ---------------------------------------------------------------------------
 # API publica
 # ---------------------------------------------------------------------------
 
@@ -222,13 +336,10 @@ def speak(text: str) -> bool:
                 if not from_cache:
                     _cache_put(text, mp3_bytes)
                 return _play_numpy(audio, sr)
-        # Sin fallback: nunca se usa una voz distinta a _EDGE_VOICE. Si la
-        # voz neural no esta disponible (sin internet, o falla del
-        # servicio), Jarvis se queda en silencio en vez de hablar con
-        # espeak-ng/pyttsx3.
-        print(f"[TTS] Voz neural ({_EDGE_VOICE}) no disponible; Jarvis no habla esta vez "
-              "(requiere internet, sin voz de respaldo por diseno).")
-        return False
+        # Capa 1 caida (403 de Microsoft, sin internet, PyAV sin poder
+        # decodificar...). Antes esto era silencio garantizado; ahora se
+        # degrada a la voz neural local para que Jarvis siga respondiendo.
+        return _piper_speak(text)
     except Exception as e:
         print(f"[TTS Error] {e}")
         return False
@@ -247,14 +358,15 @@ def is_speaking() -> bool:
 
 
 def is_available() -> bool:
-    """Hay forma de hablar: paquete edge-tts instalado (la unica via, no
-    hay fallback). No confirma que haya internet en este momento -- eso
-    solo se sabe al intentar speak()."""
+    """Hay alguna forma de hablar: la capa 1 (edge-tts) o la capa 2 (voz
+    local Piper). No confirma que haya internet en este momento -- eso
+    solo se sabe al intentar speak(); pero si la capa 2 esta lista,
+    speak() funciona aunque la 1 este caida."""
     try:
         import edge_tts  # noqa: F401
         return True
     except Exception:
-        return False
+        return is_piper_available()
 
 
 def list_voices() -> list[dict]:
@@ -328,7 +440,12 @@ def get_voice_state() -> dict:
         "voice_index": _voice_index_pyttsx3,
         "rate": _rate_wpm,
         "volume": _volume_float,
-        "engine": f"edge-tts ({_EDGE_VOICE}) | sin voz de respaldo (requiere internet)",
+        "engine": (
+            f"edge-tts ({_EDGE_VOICE}) | respaldo local: piper ({_PIPER_VOICE})"
+            + ("" if is_piper_available() else " [NO INSTALADO]")
+        ),
         "edge_voice": _EDGE_VOICE,
+        "fallback_voice": _PIPER_VOICE,
+        "fallback_ready": is_piper_available(),
         "cache_dir": str(_CACHE_DIR),
     }

@@ -584,13 +584,85 @@ def test_tts_playback_terminates_and_clears_speaking(monkeypatch):
     assert changes[:1] == [True] and changes[-1] is False, changes
 
 
+def test_tts_hud_cae_a_la_voz_local_cuando_la_neural_falla(monkeypatch):
+    """El HUD tiene su propio camino de audio (necesita las muestras crudas
+    para la envolvente del orbe), asi que la capa de respaldo de tts.py no
+    le llegaba gratis: habia que cablearla aqui tambien. Con la voz local
+    lista, un 403 de Microsoft NO debe dejar mudo al HUD.
+
+    Se prueba `_resolve_samples` (la DECISION de voz) y no `_speak`: la
+    reproduccion necesita tarjeta de sonido, y en un runner de CI no hay
+    ninguna -- alli `import sounddevice` falla antes de llegar al respaldo,
+    asi que probarlo por `_speak` medía el hardware, no el cableado."""
+    import numpy as np
+
+    from jarvis_local.ui.hud.voice_service import VoiceService
+    from jarvis_local.voice import tts
+
+    def _sin_internet(coro):
+        coro.close()  # evita "coroutine was never awaited"
+        return b""
+
+    tono = (0.2 * np.sin(np.linspace(0, 240, 8820))).astype(np.float32)
+    llamado = {"piper": False}
+
+    def _piper(text):
+        llamado["piper"] = True
+        return (tono, 22050)
+
+    monkeypatch.setattr(tts, "_cache_get", lambda text: b"")
+    monkeypatch.setattr(tts, "_run_async", _sin_internet)
+    monkeypatch.setattr(tts, "is_piper_available", lambda: True)
+    monkeypatch.setattr(tts, "_piper_synth", _piper)
+
+    v = VoiceService(ViewModel())
+    avisos = []
+    v.notice.connect(avisos.append)
+
+    samples, sr = v._resolve_samples("esto debe sonar con la voz de respaldo")
+
+    assert llamado["piper"], "el HUD no recurrió a la voz local"
+    assert samples is not None and sr == 22050, (
+        "el HUD se quedó sin muestras teniendo voz local disponible"
+    )
+    assert avisos, "el HUD no avisó de que cambió de voz"
+    assert "respaldo" in avisos[0].lower()
+
+
+def test_tts_hud_sin_ninguna_voz_dice_como_instalar_la_local(monkeypatch):
+    """Las dos capas caídas: el HUD no puede hablar, pero el aviso tiene que
+    ser accionable (el comando exacto), no un 'no disponible' a secas."""
+    from jarvis_local.ui.hud.voice_service import VoiceService
+    from jarvis_local.voice import tts
+
+    def _sin_internet(coro):
+        coro.close()
+        return b""
+
+    monkeypatch.setattr(tts, "_cache_get", lambda text: b"")
+    monkeypatch.setattr(tts, "_run_async", _sin_internet)
+    monkeypatch.setattr(tts, "is_piper_available", lambda: False)
+    monkeypatch.setattr(tts, "_piper_synth", lambda text: (None, 0))
+
+    v = VoiceService(ViewModel())
+    avisos = []
+    v.notice.connect(avisos.append)
+
+    samples, sr = v._resolve_samples("ninguna voz disponible")
+
+    assert samples is None and sr == 0
+    assert avisos and "piper.download_voices" in avisos[0]
+
+
 def test_tts_network_failure_emits_visible_notice(monkeypatch):
-    """El bug reportado ("a veces JARVIS no habla, sin patrón"): edge-tts
-    requiere internet SIEMPRE (sin voz de respaldo, por diseño) y una caída
-    transitoria dejaba `_speak` en un `return` silencioso -- nada se oía y
-    nada se veía (a diferencia de la CLI, que al menos imprime). `notice` ya
-    estaba cableado a un toast visible en hud_pro_runtime.py/hud/app.py:
-    ahora `_speak` lo usa cuando la generación de audio falla de verdad."""
+    """El bug reportado ("a veces JARVIS no habla, sin patrón"): una caída
+    transitoria de edge-tts dejaba `_speak` en un `return` silencioso --
+    nada se oía y nada se veía (a diferencia de la CLI, que al menos
+    imprime). `notice` ya estaba cableado a un toast visible en
+    hud_pro_runtime.py/hud/app.py: ahora `_speak` lo usa cuando la
+    generación de audio falla de verdad. Con la voz local de respaldo
+    tambien caída (aquí forzado) es el único caso en que Jarvis queda mudo
+    -- y ni así debe hacerlo en silencio."""
     import time
 
     from jarvis_local.ui.hud.voice_service import VoiceService
@@ -602,17 +674,20 @@ def test_tts_network_failure_emits_visible_notice(monkeypatch):
 
     monkeypatch.setattr(tts, "_cache_get", lambda text: b"")
     monkeypatch.setattr(tts, "_run_async", _sin_internet)  # simula sin internet
+    monkeypatch.setattr(tts, "is_piper_available", lambda: False)
+    monkeypatch.setattr(tts, "_piper_synth", lambda text: (None, 0))
 
     v = VoiceService(ViewModel())
     avisos = []
     v.notice.connect(avisos.append)
 
-    v.speak("esto no debería sonar")
-    t0 = time.monotonic()
-    while not avisos and time.monotonic() - t0 < 5:
-        _app.processEvents()
-        time.sleep(0.02)
+    # Por `_resolve_samples` y no por `speak()`: en un runner de CI no hay
+    # tarjeta de sonido, y alli `_speak` moria en su `import sounddevice`
+    # ANTES de llegar a la generacion -- el aviso salia igual, pero por el
+    # fallo de reproduccion, asi que el test pasaba sin probar lo que dice.
+    samples, sr = v._resolve_samples("esto no debería sonar")
 
+    assert samples is None and sr == 0
     assert avisos, "edge-tts falló sin avisar -- el bug original: silencio total, sin toast"
     assert "no" in avisos[0].lower()
     assert v.speaking is False  # nunca llegó a "hablar": nada que reproducir
@@ -638,17 +713,18 @@ def test_tts_corrupt_audio_emits_visible_notice(monkeypatch):
 
     monkeypatch.setattr(tts, "_run_async", _bytes_corruptos)
     monkeypatch.setattr(tts, "_mp3_bytes_to_numpy", lambda data: (None, 0))
+    # Voz local tambien caída: es el único escenario en que queda mudo.
+    monkeypatch.setattr(tts, "is_piper_available", lambda: False)
+    monkeypatch.setattr(tts, "_piper_synth", lambda text: (None, 0))
 
     v = VoiceService(ViewModel())
     avisos = []
     v.notice.connect(avisos.append)
 
-    v.speak("esto tampoco debería sonar")
-    t0 = time.monotonic()
-    while not avisos and time.monotonic() - t0 < 5:
-        _app.processEvents()
-        time.sleep(0.02)
+    # Misma razon que el test anterior: se prueba la decision, no el audio.
+    samples, sr = v._resolve_samples("esto tampoco debería sonar")
 
+    assert samples is None and sr == 0
     assert avisos, "el MP3 corrupto falló sin avisar -- mismo bug, otro camino"
     assert "no" in avisos[0].lower()
     assert v.speaking is False

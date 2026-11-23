@@ -7,7 +7,14 @@ faster-whisper>=1.0,<2
 pyttsx3>=2.90,<3
 sounddevice>=0.5
 numpy>=2.0
-edge-tts>=6.1
+# Capa 1 de voz. El minimo NO es decorativo: Microsoft empezo a devolver 403
+# al handshake de edge-tts 7.2.8 (2026-11-23) y Jarvis se quedo mudo. Cada vez
+# que Microsoft rota el esquema del token Sec-MS-GEC hay que subir este minimo.
+edge-tts>=7.3.1
+# Capa 2 de voz: TTS neural local, para que un 403 degrade la voz en vez de
+# apagarla. El modelo de voz NO va en el repo (63 MB); se descarga con
+#   python -m piper.download_voices es_MX-ald-medium --download-dir data/piper_voices
+piper-tts>=1.8,<2
 psutil>=5.9
 pillow>=10.0
 selenium>=4.20

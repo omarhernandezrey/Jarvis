@@ -113,4 +113,5 @@ voice:
   tts_enabled: true
   tts_rate: 175
   tts_voice: es-MX-JorgeNeural
+  tts_fallback_voice: es_MX-ald-medium
   tts_volume: 1.0

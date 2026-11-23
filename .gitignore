@@ -59,3 +59,6 @@ reminders.json.test
 # cobertura
 .coverage
 htmlcov/
+
+# Modelos de voz local de Piper (~63 MB cada uno): se descargan, no se versionan.
+data/piper_voices/

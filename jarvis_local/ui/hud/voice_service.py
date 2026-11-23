@@ -161,11 +161,16 @@ class VoiceService(QObject):
     def stop_speech(self) -> None:
         self._stop_speech.set()
 
-    def _speak(self, text: str) -> None:
-        try:
-            import numpy as np
-            import sounddevice as sd
+    def _resolve_samples(self, text: str) -> tuple:
+        """Decide CON QUE VOZ se habla y devuelve (muestras, samplerate), o
+        (None, 0) si no hay ninguna disponible.
 
+        Esta decisión vive aparte de la reproducción a propósito: necesita
+        probarse en una máquina sin tarjeta de sonido (un runner de CI, un
+        contenedor), donde `import sounddevice` falla antes de llegar aquí.
+        Mezclarlas hacía que la prueba del respaldo dependiera del hardware.
+        """
+        try:
             from jarvis_local.voice import tts
 
             mp3 = tts._cache_get(text)
@@ -175,31 +180,62 @@ class VoiceService(QObject):
                     mp3 = tts._run_async(tts._edge_generate_async(text))
                     if mp3:
                         break
-            if not mp3:
-                # edge-tts requiere internet SIEMPRE (sin voz de respaldo,
-                # por diseño — ver jarvis_local/voice/tts.py); un fallo aquí
-                # antes dejaba a JARVIS mudo sin ningún aviso -- en CLI al
-                # menos había un print(), en el HUD nada en absoluto. notice
-                # ya está cableado a un toast visible (hud_pro_runtime.py /
-                # hud/app.py), así que un fallo real ahora se ve en vez de
-                # pasar desapercibido. `_edge_generate_async` se traga
-                # CUALQUIER excepción (no solo de red: paquete roto, config
-                # de voz inválida, rechazo del servicio) -- el mensaje no
-                # afirma una causa que no se puede confirmar desde aquí.
-                self.notice.emit("voz no disponible: no se pudo generar el "
-                                  "audio (edge-tts) — esta respuesta no se habló")
-                return
-            samples, sr = tts._mp3_bytes_to_numpy(mp3)
+            # La capa 1 (edge-tts) puede fallar por red, por un 403 de
+            # Microsoft a la versión instalada, o devolviendo un MP3 corrupto.
+            # Los dos casos acaban igual: sin muestras que reproducir.
+            samples, sr = (None, 0)
+            if mp3:
+                samples, sr = tts._mp3_bytes_to_numpy(mp3)
+                if samples is not None and sr > 0 and not from_cache:
+                    tts._cache_put(text, mp3)
+
             if samples is None or sr <= 0:
-                # mismo caso: bytes de sobra pero el MP3 vino corrupto/
-                # incompleto (conexión cortada a media descarga) -- sin este
-                # aviso es el mismo silencio inexplicable que el `if not mp3`
-                # de arriba, solo que un paso más adelante.
-                self.notice.emit("voz no disponible: el audio recibido no se "
-                                  "pudo decodificar — esta respuesta no se habló")
-                return
-            if not from_cache:
-                tts._cache_put(text, mp3)
+                # Capa 2: voz neural LOCAL. Aquí no se puede llamar a
+                # tts.speak() (reproduce por su cuenta y el HUD necesita las
+                # muestras crudas para la envolvente del orbe), así que se
+                # pide solo la síntesis y sigue el mismo camino de audio.
+                samples, sr = tts._piper_synth(text)
+                if samples is not None and sr > 0:
+                    # Jarvis SÍ habla, pero con otra voz: decirlo evita que
+                    # el cambio de timbre parezca un fallo nuevo.
+                    self.notice.emit(
+                        "voz principal no disponible — hablando con la voz "
+                        "local de respaldo"
+                    )
+
+            if samples is None or sr <= 0:
+                # Las DOS capas caídas: ahora sí Jarvis no puede hablar. El
+                # aviso va a un toast visible (hud_pro_runtime.py / hud/app.py)
+                # porque el bug original era silencio total sin ninguna señal.
+                # `_edge_generate_async` se traga CUALQUIER excepción (no solo
+                # de red: paquete roto, config de voz inválida, rechazo del
+                # servicio), así que el mensaje no afirma una causa que no se
+                # puede confirmar desde aquí -- salvo la que sí se puede
+                # comprobar: si falta el modelo local, se dice cómo instalarlo.
+                if not tts.is_piper_available():
+                    self.notice.emit(
+                        "voz no disponible: la voz principal falló y la voz "
+                        "local de respaldo no está instalada — "
+                        + tts.piper_download_hint()
+                    )
+                else:
+                    self.notice.emit("voz no disponible: no se pudo generar el "
+                                      "audio — esta respuesta no se habló")
+                return None, 0
+
+            return samples, sr
+        except Exception as e:                          # noqa: BLE001
+            self.notice.emit(f"voz no disponible: {e}")
+            return None, 0
+
+    def _speak(self, text: str) -> None:
+        try:
+            import numpy as np
+            import sounddevice as sd
+
+            samples, sr = self._resolve_samples(text)
+            if samples is None or sr <= 0:
+                return  # `_resolve_samples` ya avisó del motivo concreto
 
             self._speaking = True
             self.speakingChanged.emit(True)
