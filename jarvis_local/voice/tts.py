@@ -29,9 +29,22 @@ import hashlib
 import io
 
 import numpy as np
-import sounddevice as sd
 
 from jarvis_local.config import BASE_DIR, get_config
+
+# Importar `sounddevice` inicializa PortAudio, y en una maquina sin servidor
+# de audio (runner de CI, contenedor, servidor headless) eso lanza
+# PortAudioError -- que hereda de Exception, no de ImportError. Sin esta
+# proteccion, el import de este modulo revienta ahi mismo y se lleva por
+# delante a todo el que lo importe (incluida la coleccion de pytest). Sin
+# salida de audio Jarvis no puede sonar, pero el modulo tiene que poder
+# importarse para que el fallo se cuente, no para que explote.
+try:
+    import sounddevice as sd
+    _AUDIO_OUT_OK = True
+except Exception:
+    sd = None
+    _AUDIO_OUT_OK = False
 
 # Voz principal y UNICA: hombre mexicano (la mas usada en proyectos JARVIS
 # en espanol). Configurable en config.yaml -> voice.tts_voice, pero si ese
@@ -184,6 +197,10 @@ def _mp3_bytes_to_numpy(mp3_bytes: bytes) -> tuple:
 
 
 def _play_numpy(audio: np.ndarray, samplerate: int) -> bool:
+    if not _AUDIO_OUT_OK:
+        print("[TTS] Sin salida de audio en esta maquina (PortAudio no "
+              "inicializo): Jarvis genero la voz pero no puede reproducirla.")
+        return False
     try:
         sd.play(audio, samplerate=samplerate)
         sd.wait()

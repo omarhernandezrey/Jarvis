@@ -545,3 +545,53 @@ if __name__ == "__main__":
     test_calibrate_formula()
     test_calibrate_diagnose_integration()
     print("OK: Todos los tests de voz pasaron.")
+
+
+def test_los_modulos_de_voz_importan_sin_servidor_de_audio(tmp_path):
+    """Regresion del CI rojo (2026-11-23): importar `sounddevice` tambien
+    INICIALIZA PortAudio, y en una maquina sin servidor de audio (runner de
+    CI, contenedor, servidor headless) eso lanza PortAudioError, que hereda
+    de Exception y NO de ImportError. `stt.py` capturaba solo ImportError,
+    asi que el error propagaba y reventaba la IMPORTACION del modulo: la
+    coleccion entera de pytest moria con exit code 2 ('interrumpido') en
+    las tres versiones de Python. `tts.py` ni siquiera protegia el import.
+
+    Se prueba en un subproceso con un `sounddevice` falso que lanza el
+    error de verdad: asi el test vale en esta maquina (que SI tiene audio)
+    igual que en el runner."""
+    import subprocess
+
+    (tmp_path / "sounddevice.py").write_text(
+        'class PortAudioError(Exception):\n'
+        '    pass\n'
+        '\n'
+        'raise PortAudioError(\n'
+        '    "Error initializing PortAudio: Unanticipated host error "\n'
+        '    "[PaErrorCode -9999]: \'PulseAudio_Initialize: Can\'t connect to server\'"\n'
+        ')\n',
+        encoding="utf-8",
+    )
+
+    repo = Path(__file__).resolve().parent.parent
+    codigo = (
+        "import jarvis_local.voice.stt as s\n"
+        "import jarvis_local.voice.tts as t\n"
+        "assert s._AUDIO_OK is False, f'_AUDIO_OK={s._AUDIO_OK}'\n"
+        "assert s._sd is None, '_sd deberia quedar en None'\n"
+        "assert t._AUDIO_OUT_OK is False, '_AUDIO_OUT_OK deberia ser False'\n"
+        "assert t.speak('hola') is False, 'sin audio no puede decir que hablo'\n"
+        "print('IMPORTS_OK')\n"
+    )
+    entorno = dict(os.environ)
+    # El falso va PRIMERO para tapar al sounddevice real de esta maquina.
+    entorno["PYTHONPATH"] = f"{tmp_path}{os.pathsep}{repo}"
+
+    r = subprocess.run(
+        [sys.executable, "-c", codigo],
+        capture_output=True, text=True, env=entorno, cwd=str(repo), timeout=180,
+    )
+    assert r.returncode == 0, (
+        "los modulos de voz no sobreviven a una maquina sin audio:\n"
+        + r.stderr[-2000:]
+    )
+    assert "IMPORTS_OK" in r.stdout
