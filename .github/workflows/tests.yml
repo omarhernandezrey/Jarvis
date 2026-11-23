@@ -74,24 +74,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           QT_QPA_PLATFORM: offscreen
-        # DIAGNOSTICO TEMPORAL: los logs de un job devuelven 403 sin
-        # permisos de admin, pero las ANOTACIONES de un check-run si son
-        # legibles por la API publica. Emitir los fallos como `::error::`
-        # es la unica forma de ver desde fuera que test rompe. Quitar en
-        # cuanto este diagnosticado.
-        run: |
-          set +e
-          python -m pytest test -v --tb=short > pytest-out.txt 2>&1
-          code=$?
-          set -e
-          echo "::notice::pytest exit code = $code"
-          if [ "$code" != "0" ]; then
-            grep -E "^(FAILED|ERROR)" pytest-out.txt | head -15 \
-              | while IFS= read -r l; do echo "::error::$l"; done
-            tail -25 pytest-out.txt \
-              | while IFS= read -r l; do echo "::error::COLA| $l"; done
-          fi
-          exit $code
+        run: python -m pytest test -v --tb=short
 
   # PLAN_EJECUCION FASE J · J5 — el job de Windows se ELIMINÓ aquí (estaba
   # antes de "live"). Llevaba en rojo desde antes de FASE B sin que nadie
