@@ -584,13 +584,56 @@ def test_tts_playback_terminates_and_clears_speaking(monkeypatch):
     assert changes[:1] == [True] and changes[-1] is False, changes
 
 
+def test_tts_hud_cae_a_la_voz_local_cuando_la_neural_falla(monkeypatch):
+    """El HUD tiene su propio camino de audio (necesita las muestras crudas
+    para la envolvente del orbe), asi que la capa de respaldo de tts.py no
+    le llegaba gratis: habia que cablearla aqui tambien. Con la voz local
+    lista, un 403 de Microsoft NO debe dejar mudo al HUD."""
+    import time
+
+    import numpy as np
+
+    from jarvis_local.ui.hud.voice_service import VoiceService
+    from jarvis_local.voice import tts
+
+    def _sin_internet(coro):
+        coro.close()  # evita "coroutine was never awaited"
+        return b""
+
+    # 0.4 s de tono audible: suficiente para que arranque la reproducción.
+    tono = (0.2 * np.sin(np.linspace(0, 240, 8820))).astype(np.float32)
+
+    monkeypatch.setattr(tts, "_cache_get", lambda text: b"")
+    monkeypatch.setattr(tts, "_run_async", _sin_internet)
+    monkeypatch.setattr(tts, "is_piper_available", lambda: True)
+    monkeypatch.setattr(tts, "_piper_synth", lambda text: (tono, 22050))
+
+    v = VoiceService(ViewModel())
+    avisos = []
+    v.notice.connect(avisos.append)
+
+    v.speak("esto debe sonar con la voz de respaldo")
+    t0 = time.monotonic()
+    while not avisos and time.monotonic() - t0 < 5:
+        _app.processEvents()
+        time.sleep(0.02)
+
+    assert avisos, "el HUD no avisó de que cambió de voz"
+    assert "respaldo" in avisos[0].lower()
+    assert "no disponible: " not in avisos[0], (
+        f"el HUD se dio por mudo teniendo voz local: {avisos[0]}"
+    )
+
+
 def test_tts_network_failure_emits_visible_notice(monkeypatch):
-    """El bug reportado ("a veces JARVIS no habla, sin patrón"): edge-tts
-    requiere internet SIEMPRE (sin voz de respaldo, por diseño) y una caída
-    transitoria dejaba `_speak` en un `return` silencioso -- nada se oía y
-    nada se veía (a diferencia de la CLI, que al menos imprime). `notice` ya
-    estaba cableado a un toast visible en hud_pro_runtime.py/hud/app.py:
-    ahora `_speak` lo usa cuando la generación de audio falla de verdad."""
+    """El bug reportado ("a veces JARVIS no habla, sin patrón"): una caída
+    transitoria de edge-tts dejaba `_speak` en un `return` silencioso --
+    nada se oía y nada se veía (a diferencia de la CLI, que al menos
+    imprime). `notice` ya estaba cableado a un toast visible en
+    hud_pro_runtime.py/hud/app.py: ahora `_speak` lo usa cuando la
+    generación de audio falla de verdad. Con la voz local de respaldo
+    tambien caída (aquí forzado) es el único caso en que Jarvis queda mudo
+    -- y ni así debe hacerlo en silencio."""
     import time
 
     from jarvis_local.ui.hud.voice_service import VoiceService
@@ -602,6 +645,8 @@ def test_tts_network_failure_emits_visible_notice(monkeypatch):
 
     monkeypatch.setattr(tts, "_cache_get", lambda text: b"")
     monkeypatch.setattr(tts, "_run_async", _sin_internet)  # simula sin internet
+    monkeypatch.setattr(tts, "is_piper_available", lambda: False)
+    monkeypatch.setattr(tts, "_piper_synth", lambda text: (None, 0))
 
     v = VoiceService(ViewModel())
     avisos = []
@@ -638,6 +683,9 @@ def test_tts_corrupt_audio_emits_visible_notice(monkeypatch):
 
     monkeypatch.setattr(tts, "_run_async", _bytes_corruptos)
     monkeypatch.setattr(tts, "_mp3_bytes_to_numpy", lambda data: (None, 0))
+    # Voz local tambien caída: es el único escenario en que queda mudo.
+    monkeypatch.setattr(tts, "is_piper_available", lambda: False)
+    monkeypatch.setattr(tts, "_piper_synth", lambda text: (None, 0))
 
     v = VoiceService(ViewModel())
     avisos = []

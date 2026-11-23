@@ -152,6 +152,50 @@ def _check_microfono() -> tuple[bool, str]:
         return _linea(WARN, "Micrófono", f"no verificable: {e}")
 
 
+def _check_voz_salida() -> list[tuple[bool, str]]:
+    """Las dos capas de voz. Antes no se comprobaba ninguna, asi que la
+    unica forma de enterarse de que Jarvis se habia quedado mudo era
+    hablarle y no oir nada (paso el 2026-11-23 con el 403 de Microsoft a
+    edge-tts 7.2.8). Aqui se ve antes de usarlo."""
+    try:
+        from jarvis_local.voice import tts
+    except Exception as e:  # noqa: BLE001
+        return [_linea(NO, "Voz (salida)", f"no se pudo cargar el módulo: {e}")]
+
+    out: list[tuple[bool, str]] = []
+
+    # Capa 1: edge-tts. Se comprueba la VERSION, no solo que importe: el
+    # fallo real fue una version instalada que Microsoft empezo a rechazar.
+    _MIN_EDGE = (7, 3, 1)
+    try:
+        import edge_tts
+        v = getattr(edge_tts, "__version__", "0")
+        partes = tuple(int(p) for p in v.split(".")[:3])
+        if partes >= _MIN_EDGE:
+            out.append(_linea(OK, "Voz principal", f"edge-tts {v} ({tts._EDGE_VOICE})"))
+        else:
+            out.append(_linea(
+                WARN, "Voz principal",
+                f"edge-tts {v} es anterior a "
+                f"{'.'.join(map(str, _MIN_EDGE))}: Microsoft responde 403 a esas "
+                "versiones — `pip install -U edge-tts`",
+            ))
+    except Exception as e:  # noqa: BLE001
+        out.append(_linea(WARN, "Voz principal", f"edge-tts no utilizable: {e}"))
+
+    # Capa 2: la red de seguridad. Si falta, un fallo de la capa 1 vuelve a
+    # significar silencio total -- por eso es WARN y no informativo.
+    if tts.is_piper_available():
+        out.append(_linea(OK, "Voz de respaldo (local)", tts._PIPER_VOICE))
+    else:
+        out.append(_linea(
+            WARN, "Voz de respaldo (local)",
+            f"sin instalar — si la voz principal falla, Jarvis se queda mudo. "
+            f"Instálala: `{tts.piper_download_hint()}`",
+        ))
+    return out
+
+
 def _check_navegador() -> tuple[bool, str]:
     for exe in ("google-chrome", "chromium", "chromium-browser", "chrome"):
         if shutil.which(exe):
@@ -168,6 +212,7 @@ def diagnosticar() -> tuple[bool, str]:
         [_check_google_calendar()],
         [_check_spotify()],
         [_check_microfono()],
+        _check_voz_salida(),
         [_check_navegador()],
     ]
     lineas = ["JARVIS · diagnóstico del entorno", "=" * 34]

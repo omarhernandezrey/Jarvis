@@ -215,11 +215,28 @@ beam_size=5, vad_filter=True)`. Devuelve texto.
 
 ### Salida (TTS)
 
-`voice/tts.py`: `speak(text)` → cache en `data/tts_cache` → si no, `edge-tts`
-(voz `es-MX-JorgeNeural`) genera MP3 en memoria → `_mp3_bytes_to_numpy` (PyAV) →
-`_play_numpy` = `sd.play(audio, sr); sd.wait()` (**bloqueante, sin callback por
-frame**). `is_speaking()` → bool global. `is_available()` → hay `edge_tts`
-importable (no confirma internet). Sin voz de respaldo por diseño.
+`voice/tts.py`: `speak(text)` → cache en `data/tts_cache` → si no, **capa 1**
+`edge-tts` (voz `es-MX-JorgeNeural`) genera MP3 en memoria →
+`_mp3_bytes_to_numpy` (PyAV) → `_play_numpy` = `sd.play(audio, sr); sd.wait()`
+(**bloqueante, sin callback por frame**). `is_speaking()` → bool global.
+
+Si la capa 1 falla, entra la **capa 2**: `_piper_speak` → Piper, TTS neural
+**local** (`es_MX-ald-medium`, masculina mexicana), sin internet ni terceros.
+Jarvis solo queda mudo si fallan las dos, y entonces imprime el comando exacto
+para instalar el modelo local. `is_available()` → hay `edge_tts` importable o
+voz local lista (no confirma internet). El modelo (~63 MB) vive en
+`data/piper_voices/` y **no está versionado**.
+
+> Esto reemplaza el diseño anterior ("voz neural de Microsoft o silencio"). El
+> 2026-11-23 Microsoft empezó a devolver 403 al handshake de `edge-tts` 7.2.8 y
+> Jarvis se quedó completamente mudo — y no era la primera vez. Por eso
+> `requirements.txt` fija `edge-tts>=7.3.1` (mínimo, no decorativo) y
+> `python -m jarvis_local.cli doctor` comprueba **las dos capas**, incluida la
+> versión de `edge-tts`.
+
+El HUD **no** llama a `speak()`: `ui/hud/voice_service.py::_speak` repite el
+pipeline porque necesita las muestras crudas para la envolvente del orbe. Tiene
+su propia caída a `tts._piper_synth` — si se toca una, hay que tocar la otra.
 
 ⇒ **Envolvente de energía del TTS: NO expuesta hoy.** `SPEAKING` en la GUI usa
 `sin()` + `random.uniform()`. Para que sea real haría falta reproducir con

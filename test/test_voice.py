@@ -171,22 +171,14 @@ def test_tts_speak_does_not_crash():
     assert result is False
 
 
-def test_tts_no_piper_import():
-    import jarvis_local.voice.tts as tts_mod
-    source = open(tts_mod.__file__, encoding="utf-8").read()
-    assert "piper" not in source
-    assert "piper_tts" not in source
-    assert "gTTS" not in source
-
-
-def test_tts_no_offline_fallback_engine():
-    """Jarvis solo debe usar la voz neural configurada: no debe quedar
-    codigo que hable con espeak-ng/pyttsx3 como respaldo automatico."""
-    import jarvis_local.voice.tts as tts_mod
-    source = open(tts_mod.__file__, encoding="utf-8").read()
-    assert "_offline_speak" not in source
-    assert "_pyttsx3_speak" not in source
-    assert "_espeak_speak" not in source
+def test_tts_tiene_voz_local_de_respaldo():
+    """Regresion: antes este modulo prohibia cualquier respaldo, asi que un
+    403 de Microsoft dejaba a Jarvis completamente mudo (paso el
+    2026-11-23, y no era la primera vez). La capa local tiene que existir."""
+    from jarvis_local.voice import tts as tts_mod
+    assert hasattr(tts_mod, "_piper_speak")
+    assert hasattr(tts_mod, "is_piper_available")
+    assert tts_mod._DEFAULT_PIPER_VOICE == "es_MX-ald-medium"
 
 
 def test_tts_default_voice_is_jorge():
@@ -208,21 +200,93 @@ def test_tts_invalid_voice_name_rejected():
     assert set_edge_voice("") is False
 
 
-def test_tts_speak_stays_silent_when_neural_voice_unavailable():
-    """Si la voz neural falla (sin internet, error del servicio), speak()
-    debe devolver False y quedarse en silencio -- nunca debe hablar con
-    otra voz."""
+async def _edge_caido(_text):
+    """Simula la capa 1 caida: edge-tts devuelve 0 bytes (403, sin red...)."""
+    return b""
+
+
+def test_tts_habla_con_voz_local_cuando_la_neural_falla():
+    """El fallo que rompio a Jarvis: la voz de Microsoft devuelve 403. Con
+    la voz local lista, speak() TIENE que sonar igual -- no quedarse mudo."""
     from jarvis_local.voice import tts as tts_mod
 
-    async def _empty_bytes(_text):
-        return b""
+    audio = np.zeros(2048, dtype=np.float32)
+    with (
+        patch.object(tts_mod, "_edge_generate_async", side_effect=_edge_caido),
+        patch.object(tts_mod, "_cache_get", return_value=b""),
+        patch.object(tts_mod, "is_piper_available", return_value=True),
+        patch.object(tts_mod, "_piper_synth", return_value=(audio, 22050)),
+        patch.object(tts_mod, "_play_numpy", return_value=True) as play,
+    ):
+        result = tts_mod.speak("La voz neural de Microsoft esta caida.")
+
+    assert result is True, "Jarvis se quedo mudo con la voz local disponible"
+    assert play.call_count == 1
+    assert play.call_args[0][1] == 22050
+
+
+def test_tts_prefiere_la_voz_principal_y_no_toca_la_local():
+    """La capa 2 es un respaldo, no un reemplazo: si edge-tts responde, la
+    voz de siempre (Jorge) es la que suena y Piper ni se carga."""
+    from jarvis_local.voice import tts as tts_mod
+
+    async def _edge_ok(_text):
+        return b"mp3-falso"
+
+    audio = np.zeros(1024, dtype=np.float32)
+    with (
+        patch.object(tts_mod, "_edge_generate_async", side_effect=_edge_ok),
+        patch.object(tts_mod, "_cache_get", return_value=b""),
+        patch.object(tts_mod, "_cache_put"),
+        patch.object(tts_mod, "_mp3_bytes_to_numpy", return_value=(audio, 24000)),
+        patch.object(tts_mod, "_play_numpy", return_value=True),
+        patch.object(tts_mod, "_piper_synth") as piper,
+    ):
+        result = tts_mod.speak("La voz principal funciona.")
+
+    assert result is True
+    piper.assert_not_called()
+
+
+def test_tts_sin_voz_local_instalada_dice_como_instalarla():
+    """Si las dos capas estan caidas, Jarvis no puede hablar -- pero el
+    mensaje tiene que ser accionable (el comando exacto), nunca un
+    'no disponible' a secas."""
+    from jarvis_local.voice import tts as tts_mod
 
     with (
-        patch.object(tts_mod, "_edge_generate_async", side_effect=_empty_bytes),
+        patch.object(tts_mod, "_edge_generate_async", side_effect=_edge_caido),
         patch.object(tts_mod, "_cache_get", return_value=b""),
+        patch.object(tts_mod, "is_piper_available", return_value=False),
+        patch("builtins.print") as pr,
     ):
-        result = tts_mod.speak("Texto de prueba sin voz neural disponible.")
+        result = tts_mod.speak("Las dos capas de voz estan caidas.")
+
     assert result is False
+    salida = " ".join(str(c) for c in pr.call_args_list)
+    assert "piper.download_voices" in salida
+    assert "es_MX-ald-medium" in salida
+
+
+def test_requirements_fija_el_minimo_de_edge_tts():
+    """La mudez venia de quedarse clavado en edge-tts 7.2.8, que Microsoft
+    empezo a rechazar con 403. Un minimo laxo (>=6.1) deja que un entorno
+    ya instalado se quede en una version bloqueada para siempre."""
+    # Ojo: BASE_DIR apunta a un temp durante los tests; aqui hace falta el
+    # requirements.txt de verdad del repo.
+    repo = Path(__file__).resolve().parent.parent
+    req = (repo / "requirements.txt").read_text(encoding="utf-8")
+    linea = next(
+        ln for ln in req.splitlines()
+        if ln.strip().startswith("edge-tts")
+    )
+    version = linea.split(">=")[1].strip()
+    partes = tuple(int(p) for p in version.split("."))
+    assert partes >= (7, 3, 1), (
+        f"edge-tts fijado en >={version}: las versiones por debajo de 7.3.1 "
+        "reciben 403 de Microsoft y dejan a Jarvis mudo"
+    )
+    assert "piper-tts" in req, "falta la capa de voz local en requirements.txt"
 
 
 def test_config_has_voice_section():
@@ -466,7 +530,7 @@ if __name__ == "__main__":
     test_tts_set_volume_invalid()
     test_tts_is_available()
     test_tts_speak_does_not_crash()
-    test_tts_no_piper_import()
+    test_tts_tiene_voz_local_de_respaldo()
     test_config_has_voice_section()
     test_voz_does_not_import_tools()
     test_logs_dont_contain_transcription()
