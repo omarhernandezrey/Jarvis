@@ -28,7 +28,17 @@ try:
     import numpy as _np
     import sounddevice as _sd
     _AUDIO_OK = True
-except ImportError:
+except Exception:
+    # `except ImportError` NO bastaba, y eso rompia el CI entero: importar
+    # `sounddevice` no solo importa, tambien inicializa PortAudio, y en una
+    # maquina sin servidor de audio (un runner de CI, un contenedor, un
+    # servidor headless) eso lanza sounddevice.PortAudioError
+    #   'PulseAudio_Initialize: Can't connect to server'
+    # que hereda de Exception, NO de ImportError. Al no capturarse,
+    # propagaba y reventaba la IMPORTACION del modulo -- es decir, la
+    # coleccion de pytest (exit code 2, 'interrumpido'), no un test suelto.
+    # Capturar Exception es lo que hace que "no hay audio" degrade a
+    # _AUDIO_OK = False, que es justo para lo que existe esta bandera.
     _AUDIO_OK = False
     _sd = None
     _np = None
