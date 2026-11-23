@@ -604,3 +604,118 @@ def test_reduced_motion_suppresses_arcs_and_ripples():
         r.advance(1 / 60)
     assert r._arcs == []
     assert r._ripples == []
+
+
+# ── Solapes de layout detectados en capturas reales (2026-11-23) ──────────
+
+def test_widgets_de_esquina_no_invaden_el_panel_lateral(qapp):
+    """El medidor de tokens se anclaba al borde derecho de la VENTANA, que
+    es justo donde vive el panel lateral cuando esta visible: quedaba
+    dibujado encima de "RECORDATORIOS". Se vio a 1600x900; a 1920x1080 el
+    solape tambien existia, solo que caia sobre la zona vacia del panel y
+    no se notaba -- por eso se comprueba la interseccion de geometrias y
+    no el aspecto."""
+    w = HudWindow()
+    try:
+        for ancho, alto in ((1920, 1080), (1600, 900), (1440, 920)):
+            w.resize(ancho, alto)
+            w.show()
+            pump(qapp, 80)
+            w.set_state(OrbState.SPEAKING)   # el medidor solo se ve generando
+            w._position_corner_widgets()
+            pump(qapp, 40)
+            if not w._side_dock.isVisible():
+                continue
+            dock = w._side_dock.geometry()
+            for nombre, widget in (("token_gauge", w.token_gauge),
+                                   ("corner_tool", w.corner_tool)):
+                if not widget.isVisible():
+                    continue
+                assert not widget.geometry().intersects(dock), (
+                    f"{nombre} se solapa con el panel lateral a {ancho}x{alto}: "
+                    f"{widget.geometry()} vs {dock}"
+                )
+    finally:
+        w.close()
+
+
+def test_widgets_de_esquina_usan_todo_el_ancho_sin_panel(qapp):
+    """Sin panel lateral a la vista, los de la derecha SI deben llegar al
+    borde de la ventana: el arreglo no debe dejarlos encogidos siempre."""
+    w = HudWindow()
+    try:
+        w.resize(1024, 700)          # angosta: el panel es un cajon cerrado
+        w.show()
+        pump(qapp, 80)
+        w.set_state(OrbState.SPEAKING)
+        w._position_corner_widgets()
+        pump(qapp, 40)
+        assert not w._side_dock.isVisible()
+        derecha = w.token_gauge.geometry().right()
+        assert derecha >= w._root.width() - 20, (
+            f"el medidor se quedo a {w._root.width() - derecha}px del borde "
+            "sin panel lateral que esquivar"
+        )
+    finally:
+        w.close()
+
+
+def test_velo_protege_la_legibilidad_de_la_cromatica_superior(qapp):
+    """El escenario GPU ocupa la ventana entera y el orbe se pinta hasta
+    ~1.85x su radio con espectro: sus arcos cruzan por detras de la barra
+    superior en TODOS los tamaños. Al estrechar la ventana, el texto de la
+    barra entra en el camino del orbe y deja de leerse (reportado a
+    1024x700: "tapa OLLAMA y el chip MEM"). El velo garantiza el contraste
+    sin encoger el orbe."""
+    w = HudWindow()
+    try:
+        for ancho, alto in ((1920, 1080), (1366, 768), (1024, 700)):
+            w.resize(ancho, alto)
+            w.show()
+            pump(qapp, 80)
+            velo = w._chrome_scrim.geometry()
+            assert w._chrome_scrim.isVisible(), f"velo oculto a {ancho}x{alto}"
+            assert velo.width() == w._root.width(), "el velo no cubre todo el ancho"
+            assert velo.top() <= 0, "el velo debe empezar en el borde superior"
+            # tiene que llegar MAS ABAJO que la cromatica que protege
+            assert velo.bottom() > w._services_row_widget.geometry().bottom(), (
+                f"el velo acaba en {velo.bottom()} pero los chips llegan a "
+                f"{w._services_row_widget.geometry().bottom()} ({ancho}x{alto})"
+            )
+    finally:
+        w.close()
+
+
+def test_velo_se_va_con_el_modo_enfoque(qapp):
+    """Modo enfoque esconde TODA la cromatica; el velo existe solo para
+    protegerla, asi que sin ella sobra (taparia el orbe por nada)."""
+    w = HudWindow()
+    try:
+        w.resize(1366, 768)
+        w.show()
+        pump(qapp, 80)
+        assert w._chrome_scrim.isVisible()
+        w._toggle_focus_mode()
+        pump(qapp, 40)
+        assert not w._chrome_scrim.isVisible(), "el velo sigue puesto en modo enfoque"
+        w._toggle_focus_mode()
+        pump(qapp, 40)
+        assert w._chrome_scrim.isVisible(), "el velo no volvio al salir de enfoque"
+    finally:
+        w.close()
+
+
+def test_velo_no_roba_clics(qapp):
+    """Es decoracion: si interceptara el raton, el orbe dejaria de recibir
+    hover/clic en toda la franja superior."""
+    from hud_pro.qt_compat import Qt
+
+    w = HudWindow()
+    try:
+        w.show()
+        pump(qapp, 60)
+        assert w._chrome_scrim.testAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+    finally:
+        w.close()
