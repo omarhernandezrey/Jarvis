@@ -503,6 +503,136 @@ def test_noise3d_tiles_without_seams():
     assert edge_diff < interior_diff * 3 + 5
 
 
+def test_pulse_activity_arms_the_neutron_kick():
+    """La interacción real no sólo enciende el brillo: deja inercia en los
+    neutrones. Sin un kick propio seguirían acelerados sólo durante los
+    ~0.1s que tarda en apagarse `_activity_boost` (imperceptible a 24fps)."""
+    from hud_pro.gpu.stage import HoloStage
+
+    class _Stage:
+        _activity_boost = 0.0
+        _neutron_kick = 0.0
+
+    stage = _Stage()
+    HoloStage.pulse_activity(stage, 0.7)
+    assert stage._activity_boost == 0.7
+    assert stage._neutron_kick == 0.7
+
+
+def test_neutrons_drift_gently_in_idle_and_surge_on_interaction():
+    """En reposo la fase avanza muy despacio (respiración, nunca cero) y
+    se dispara al interactuar.
+
+    Reportado en uso real: congelar del todo en IDLE se veía "muerto". La
+    fase de los neutrones ahora usa `_IDLE_DRIFT` como piso — movimiento
+    sutil y continuo — y un salto grande (kick/estado activo) para que la
+    reacción real siga sintiéndose como un salto, no como "más de lo
+    mismo"."""
+    from hud_pro.gpu.stage import HoloStage
+    from hud_pro.state import OrbState
+
+    class _Stage:
+        _neutron_speed = HoloStage._neutron_speed
+        _IDLE_DRIFT = HoloStage._IDLE_DRIFT
+        _state = OrbState.IDLE
+        _energy = 0.0
+        _neutron_kick = 0.0
+        _neutron_flow = 0.0
+        _neutron_motion = 0.0
+        _reduced_motion = False
+
+    stage = _Stage()
+    HoloStage._advance_neutrons(stage, 0.25)
+    idle_flow = stage._neutron_flow
+    assert 0.0 < idle_flow < 0.25  # avanza de forma notable, pero muy por debajo de interactuar
+    idle_motion = stage._neutron_motion
+    assert 0.30 < idle_motion < 0.90  # visible a simple vista, no a tope
+
+    stage._neutron_kick = 0.7
+    stage._neutron_flow = 0.0
+    HoloStage._advance_neutrons(stage, 0.25)
+    assert stage._neutron_flow > idle_flow * 4  # el kick dispara muy por encima del drift
+    assert stage._neutron_motion == 1.0
+
+    stage._neutron_kick = 0.0
+    stage._state = OrbState.THINKING
+    stage._neutron_flow = 0.0
+    HoloStage._advance_neutrons(stage, 0.25)
+    assert stage._neutron_flow > idle_flow * 4
+
+
+def test_orb_clock_drifts_gently_in_idle_and_surges_on_interaction():
+    """La red, el núcleo y el barrido de anillos usan el mismo reloj gated.
+
+    `_orb_flow` avanza despacio en LISTO (`_IDLE_ENGAGEMENT`, respiración
+    mínima para que el orbe nunca se vea apagado) y se dispara con
+    interacción real (kick o estado activo)."""
+    from hud_pro.gpu.stage import HoloStage
+    from hud_pro.state import OrbState
+
+    class _Stage:
+        _orb_engagement = HoloStage._orb_engagement
+        _IDLE_ENGAGEMENT = HoloStage._IDLE_ENGAGEMENT
+        _state = OrbState.IDLE
+        _neutron_kick = 0.0
+        _orb_flow = 0.0
+        _reduced_motion = False
+
+    stage = _Stage()
+    HoloStage._advance_orb(stage, 0.25)
+    idle_flow = stage._orb_flow
+    assert 0.0 < idle_flow < 0.20
+
+    stage._neutron_kick = 0.22
+    stage._orb_flow = 0.0
+    HoloStage._advance_orb(stage, 0.25)
+    assert stage._orb_flow > idle_flow * 2
+
+    stage._neutron_kick = 0.0
+    stage._state = OrbState.THINKING
+    stage._orb_flow = 0.0
+    HoloStage._advance_orb(stage, 0.25)
+    assert stage._orb_flow > idle_flow * 2
+
+
+def test_fbo_filter_helper_uses_bilinear_and_clamp_to_edge():
+    """Las texturas de FBO nacen con GL_NEAREST en esta build de Qt; los
+    pases reducidos (bloom/rayos/escena) asumen GL_LINEAR. Sin este filtro
+    aparecían cuadros rectos sobre el orbe en PENSANDO (bug real)."""
+    from hud_pro.gpu import stage as stage_mod
+
+    calls: list[tuple] = []
+
+    class _GL:
+        def glActiveTexture(self, unit):
+            calls.append(("active", unit))
+
+        def glBindTexture(self, target, tex):
+            calls.append(("bind", target, tex))
+
+        def glTexParameteri(self, target, pname, value):
+            calls.append(("param", target, pname, value))
+
+    class _FBO:
+        def texture(self):
+            return 77
+
+    class _Stage:
+        _gl = _GL()
+
+    stage_mod.HoloStage._set_fbo_linear(_Stage(), _FBO())
+
+    params = {(call[2], call[3]) for call in calls if call[0] == "param"}
+    assert params == {
+        (stage_mod._GL_TEXTURE_MIN_FILTER, stage_mod._GL_LINEAR),
+        (stage_mod._GL_TEXTURE_MAG_FILTER, stage_mod._GL_LINEAR),
+        (stage_mod._GL_TEXTURE_WRAP_S, stage_mod._GL_CLAMP_TO_EDGE),
+        (stage_mod._GL_TEXTURE_WRAP_T, stage_mod._GL_CLAMP_TO_EDGE),
+    }
+    assert ("bind", stage_mod._GL_TEXTURE_2D, 77) in calls
+    assert ("bind", stage_mod._GL_TEXTURE_2D, 0) in calls
+
+
 # ── FASE B: comportamiento real de HoloStage (necesita sesión gráfica) ──
 @pytest.mark.skipif(not HAS_REAL_DISPLAY, reason="necesita una sesión gráfica real (Wayland/X11)")
 def test_holostage_scan_wave_triggers_on_state_change_and_energy_onset():
