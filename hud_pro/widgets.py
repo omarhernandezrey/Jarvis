@@ -493,6 +493,50 @@ def _divider(parent: QtWidgets.QWidget) -> QtWidgets.QFrame:
     return d
 
 
+class ChromeScrim(QtWidgets.QWidget):
+    """Velo degradado bajo la cromática superior (barra + chips).
+
+    El escenario GPU ocupa la ventana ENTERA y el orbe se pinta hasta
+    ~1.85x su radio cuando hay espectro (medido en los 4 estados): sus
+    arcos cruzan por detrás de la barra superior en TODOS los tamaños. En
+    pantallas anchas no molesta porque el texto de la barra queda a la
+    derecha del arco, pero al estrechar la ventana ese texto entra en el
+    camino del orbe y deja de leerse -- reportado a 1024x700 ("tapa
+    OLLAMA y el chip MEM").
+
+    Acotar el orbe a su extensión pintada lo obligaría a encoger ~15 % en
+    todas las resoluciones y desharía el ajuste de altura ya validado
+    (ver `eventFilter`, cy_pref=0.40). Este velo arregla la legibilidad
+    sin tocar el orbe: opaco arriba, transparente al final de los chips,
+    así la cromática siempre tiene contraste y el orbe se sigue viendo
+    cruzar por detrás.
+    """
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        # Decorativo puro: no debe robar clics al orbe ni a la barra.
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # noqa: N802
+        if self.height() <= 0:
+            return
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        grad = QtGui.QLinearGradient(0.0, 0.0, 0.0, float(self.height()))
+        arriba = QtGui.QColor(theme.BG_0)
+        arriba.setAlphaF(0.88)
+        medio = QtGui.QColor(theme.BG_0)
+        medio.setAlphaF(0.45)
+        abajo = QtGui.QColor(theme.BG_0)
+        abajo.setAlphaF(0.0)
+        grad.setColorAt(0.0, arriba)
+        grad.setColorAt(0.62, medio)
+        grad.setColorAt(1.0, abajo)
+        p.fillRect(self.rect(), QtGui.QBrush(grad))
+        p.end()
+
+
 class TopBar(QtWidgets.QWidget):
     """Marca, modelo activo, métricas del sistema, estado y reloj."""
 

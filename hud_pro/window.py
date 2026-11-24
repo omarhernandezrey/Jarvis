@@ -23,7 +23,14 @@ from .panels import (
 from .qt_compat import Qt, QtCore, QtGui, QtWidgets, Signal
 from .startup_checklist import StartupChecklist
 from .state import OrbState, StateLike, parse_state
-from .widgets import BackgroundWidget, ServiceChip, StatusBlock, ToastOverlay, TopBar
+from .widgets import (
+    BackgroundWidget,
+    ChromeScrim,
+    ServiceChip,
+    StatusBlock,
+    ToastOverlay,
+    TopBar,
+)
 
 log = logging.getLogger("jarvis.hud_pro.gpu")
 
@@ -92,6 +99,11 @@ class HudWindow(QtWidgets.QMainWindow):
         # queda en `False` y el fondo raster de `BackgroundWidget` (ya
         # existente, sin tocar) sigue siendo lo único visible.
         self.gpu_stage: Optional[HoloStage] = self._create_gpu_stage(root)
+
+        # Velo de legibilidad de la cromática superior. Va encima del
+        # escenario GPU (que ya nació al fondo) y debajo de la barra y los
+        # chips, que se crean después — ver ChromeScrim para el porqué.
+        self._chrome_scrim = ChromeScrim(root)
 
         outer = QtWidgets.QVBoxLayout(root)
         outer.setContentsMargins(22, 10, 22, 18)
@@ -324,6 +336,21 @@ class HudWindow(QtWidgets.QMainWindow):
     def _sync_gpu_stage_geometry(self) -> None:
         if self.gpu_stage is not None:
             self.gpu_stage.setGeometry(self._root.rect())
+
+    def _sync_chrome_scrim(self) -> None:
+        """El velo cubre desde el borde superior hasta el final de los
+        chips, con un margen extra para que el degradado muera fuera de
+        la cromatica y no se vea un corte. Se re-sincroniza en cada
+        resize: la fila de chips puede cambiar de alto (se ocultan hasta
+        que llega un dato real)."""
+        if not hasattr(self, "_chrome_scrim"):
+            return
+        fin = self._services_row_widget.geometry().bottom()
+        if not self._services_row_widget.isVisible():
+            fin = self.top_bar.geometry().bottom()
+        alto = max(0, fin + 26)
+        self._chrome_scrim.setGeometry(0, 0, self._root.width(), alto)
+        self._chrome_scrim.setVisible(not self._focus_mode and alto > 0)
 
     def _check_gpu_stage_after_first_paint(self) -> None:
         """Un fallo de compilación de shaders se detecta DENTRO de
@@ -692,6 +719,7 @@ class HudWindow(QtWidgets.QMainWindow):
         self._fit_chat_height()
         self._fit_stage_height()
         self._sync_gpu_stage_geometry()
+        self._sync_chrome_scrim()
         if hasattr(self, "_toasts"):
             self._toasts.reposition(self._root.rect())
         if hasattr(self, "_side_dock"):
@@ -706,6 +734,7 @@ class HudWindow(QtWidgets.QMainWindow):
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
+        self._sync_chrome_scrim()
         self._sync_corner_visibility()
         self._position_corner_widgets()
         if self.gpu_stage is not None:
@@ -754,11 +783,21 @@ class HudWindow(QtWidgets.QMainWindow):
         bottom = (self.chat.geometry().top() if self.chat.isVisible() else self._root.height()) - 12
         for w in (self.corner_system, self.corner_services, self.corner_tool, self.token_gauge):
             w.adjustSize()
+        # El borde derecho útil NO es el de la ventana cuando el panel
+        # lateral está a la vista: ahí vive el dock (SISTEMA/ACTIVIDAD), y
+        # anclar a la ventana metía estos widgets DENTRO de él. Se veía a
+        # 1600x900 (el medidor de tokens encima de "RECORDATORIOS"); a
+        # 1920x1080 el solape también existía, sólo que caía sobre la zona
+        # vacía del dock y no se notaba. Pasa igual con el cajón abierto a
+        # mano en pantallas angostas, que es el mismo dock.
+        derecha = self._root.width() - 14
+        if self._side_dock.isVisible():
+            derecha = self._side_dock.geometry().left() - 14
         self.corner_system.move(14, top)
         self.corner_services.move(14, bottom - self.corner_services.height())
-        self.corner_tool.move(self._root.width() - self.corner_tool.width() - 14, top)
+        self.corner_tool.move(derecha - self.corner_tool.width(), top)
         self.token_gauge.move(
-            self._root.width() - self.token_gauge.width() - 14, bottom - self.token_gauge.height(),
+            derecha - self.token_gauge.width(), bottom - self.token_gauge.height(),
         )
 
     def _apply_side_layout(self) -> None:
@@ -788,6 +827,7 @@ class HudWindow(QtWidgets.QMainWindow):
         estado + consola."""
         focus = not self._focus_mode
         self._focus_mode = focus
+        self._sync_chrome_scrim()   # el velo es cromática: se va con ella
         self.top_bar.setVisible(not focus)
         self._services_row_widget.setVisible(not focus)
         self._sync_corner_visibility()
