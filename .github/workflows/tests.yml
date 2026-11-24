@@ -74,7 +74,28 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest test -v --tb=short
+        # Los LOGS de un job de este repo devuelven 403 ("Must have admin
+        # rights to Repository") y aqui no hay `gh auth` (ver CLAUDE.md y
+        # PLAN_EJECUCION J5). Sin esto, un CI rojo solo dice "exit code 1"
+        # y no hay forma de saber QUE test fallo -- que es exactamente lo
+        # que llevo a borrar el job de Windows por indiagnosticable.
+        #
+        # Las ANOTACIONES de un check-run SI son legibles por la API
+        # publica, asi que los fallos se reemiten como `::error::`. En una
+        # corrida verde esto no imprime nada y no cuesta nada: el `if` solo
+        # entra si pytest ya fallo. Por eso es permanente y no temporal.
+        run: |
+          set +e
+          python -m pytest test -v --tb=short > pytest-out.txt 2>&1
+          code=$?
+          set -e
+          if [ "$code" != "0" ]; then
+            grep -E "^(FAILED|ERROR)" pytest-out.txt | head -15 \
+              | while IFS= read -r l; do echo "::error::$l"; done
+            grep -B 30 "short test summary" pytest-out.txt | tail -36 \
+              | while IFS= read -r l; do echo "::error::CTX| $l"; done
+          fi
+          exit $code
 
   # PLAN_EJECUCION FASE J · J5 — el job de Windows se ELIMINÓ aquí (estaba
   # antes de "live"). Llevaba en rojo desde antes de FASE B sin que nadie
