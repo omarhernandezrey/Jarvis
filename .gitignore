@@ -12,6 +12,12 @@ logs/*.log
 logs/
 data/*.json
 data/*.corrupt*
+# Indice semantico: lo DERIVA el propio Jarvis de las memorias, y esas
+# (data/*.json) ya estan ignoradas aqui arriba. Versionar el derivado
+# mientras se ignora su fuente no tiene sentido: ademas cambia en cada
+# uso, asi que ensuciaba `git status` de forma permanente. Si falta, se
+# reconstruye solo (SemanticIndex._load sale vacio y sync() lo rehace).
+data/*.npz
 
 # Cachés generados (reproducibles, no se versionan)
 hud_pro/gpu/_cache/
